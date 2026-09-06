@@ -122,10 +122,19 @@ export class OpponentAI {
       const targetX = (Math.random() - 0.5) * (courtBounds.maxX - courtBounds.minX) * this.config.accuracy;
       const speed = isSmash ? 16.0 : (10.0 + Math.random() * 3.0);
 
+      const netClearance = 1.88;
+      const distanceToNet = Math.max(0.25, Math.abs(projectilePos.z));
+      const forwardSpeed = speed * 1.32;
+      const effectiveForwardSpeed = forwardSpeed * 0.58;
+      const minimumVerticalSpeed = (netClearance - projectilePos.y + 0.5 * 9.8 *
+        Math.pow(distanceToNet / effectiveForwardSpeed, 2)) / (distanceToNet / effectiveForwardSpeed);
+
       hitVel = {
         x: (targetX - projectilePos.x) * 0.8,
-        y: isSmash ? -2.5 : 4.2 + (Math.random() * 1.5),
-        z: -speed
+        y: isSmash && projectilePos.y > 2.1
+          ? Math.min(-2.5, minimumVerticalSpeed)
+          : Math.max(4.2 + (Math.random() * 1.5), minimumVerticalSpeed),
+        z: -forwardSpeed
       };
 
       didHit = true;

@@ -222,6 +222,7 @@ export class MotionHUD {
     // Draw Joint Nodes
     for (let i = 0; i < landmarks.length; i++) {
       const lm = landmarks[i];
+      if (!lm) continue;
       if ((lm.visibility ?? 1) > 0.3) {
         const isWrist = i === PoseLandmark.RIGHT_WRIST || i === PoseLandmark.LEFT_WRIST;
         const radius = isWrist ? 5 : 3;

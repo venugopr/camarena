@@ -38,6 +38,11 @@ export class Avatar3D {
   private racketGroup: THREE.Group | null = null;
   private paddleGroup: THREE.Group | null = null;
   private headMesh: THREE.Mesh;
+  private supportHandPosition = new THREE.Vector3(-0.32, 1.1, -0.15);
+  private racketHeadPosition = new THREE.Vector3(0.42, 1.15, -0.15);
+  private racketRestPosition = new THREE.Vector3(0.42, 0.41, -0.15);
+  private standingConfident = false;
+  private readonly jointSmoothing = 0.18;
 
   private primaryColor: number;
   private jointMat: THREE.MeshStandardMaterial;
@@ -175,7 +180,11 @@ export class Avatar3D {
   /**
    * Update 3D avatar joint and bone positions from tracked world landmarks
    */
-  public update(landmarks: Landmark3D[], dominantArm: 'right' | 'left' = 'right'): void {
+  public update(
+    landmarks: Landmark3D[],
+    dominantArm: 'right' | 'left' = 'right',
+    rawLandmarks: Landmark3D[] = landmarks
+  ): void {
     if (!landmarks || landmarks.length < 33) return;
 
     // Invert Y and adjust scale for Three.js coordinate system (Y is up, Z is depth)
@@ -186,7 +195,7 @@ export class Avatar3D {
     // Position joints
     for (let i = 0; i < 33; i++) {
       const pos = toThree(landmarks[i]);
-      this.joints[i].position.copy(pos);
+      this.joints[i].position.lerp(pos, this.jointSmoothing);
     }
 
     // Position and orient bones
@@ -213,7 +222,15 @@ export class Avatar3D {
     const nose = this.joints[PoseLandmark.NOSE].position;
     this.headMesh.position.copy(nose);
 
-    // Position equipment on active wrist
+    const hipsVisible = (landmarks[PoseLandmark.LEFT_HIP].visibility ?? 0) >= 0.65 &&
+      (landmarks[PoseLandmark.RIGHT_HIP].visibility ?? 0) >= 0.65;
+    const lowerBodyVisible = [PoseLandmark.LEFT_KNEE, PoseLandmark.RIGHT_KNEE,
+      PoseLandmark.LEFT_ANKLE, PoseLandmark.RIGHT_ANKLE]
+      .every(index => (rawLandmarks[index]?.visibility ?? 0) >= 0.45);
+    this.standingConfident = hipsVisible && lowerBodyVisible;
+
+    // Keep equipment in the peripheral strike plane. Raw landmarks are mirrored
+    // screen coordinates, so 1 - x preserves the camera's mirror orientation.
     const wristIdx = dominantArm === 'right' ? PoseLandmark.RIGHT_WRIST : PoseLandmark.LEFT_WRIST;
     const elbowIdx = dominantArm === 'right' ? PoseLandmark.RIGHT_ELBOW : PoseLandmark.LEFT_ELBOW;
 
@@ -221,10 +238,25 @@ export class Avatar3D {
     const elbowPos = this.joints[elbowIdx].position;
     const forearmDir = new THREE.Vector3().subVectors(wristPos, elbowPos).normalize();
 
+    const rawWrist = rawLandmarks[wristIdx];
+    const rawSupport = rawLandmarks[PoseLandmark.LEFT_WRIST];
+    const trackingNeutral = !rawWrist || ((1 - rawWrist.x) > 0.38 && (1 - rawWrist.x) < 0.62);
     if (this.racketGroup && this.racketGroup.visible) {
-      this.racketGroup.position.copy(wristPos);
+      const target = trackingNeutral
+        ? this.racketRestPosition
+        : new THREE.Vector3(
+          THREE.MathUtils.clamp((1 - rawWrist.x - 0.5) * 2.4, -0.9, 0.9),
+          THREE.MathUtils.clamp((1 - rawWrist.y) * 2.1, 0.55, 2.5),
+          -0.15
+        );
+      this.racketGroup.position.lerp(target, 0.22);
       const quat = new THREE.Quaternion().setFromUnitVectors(upVector, forearmDir);
       this.racketGroup.setRotationFromQuaternion(quat);
+      this.racketHeadPosition.set(
+        this.racketGroup.position.x,
+        this.racketGroup.position.y + 0.74,
+        this.racketGroup.position.z
+      );
     }
 
     if (this.paddleGroup && this.paddleGroup.visible) {
@@ -232,6 +264,26 @@ export class Avatar3D {
       const quat = new THREE.Quaternion().setFromUnitVectors(upVector, forearmDir);
       this.paddleGroup.setRotationFromQuaternion(quat);
     }
+
+    if (rawSupport) {
+      this.supportHandPosition.lerp(new THREE.Vector3(
+        THREE.MathUtils.clamp((1 - rawSupport.x - 0.5) * 1.8, -1.0, 1.0),
+        THREE.MathUtils.clamp((1 - rawSupport.y) * 2.0, 0.65, 2.2),
+        -0.15
+      ), 0.25);
+    }
+  }
+
+  public getSupportHandWorldPosition(): THREE.Vector3 {
+    return this.supportHandPosition.clone().add(this.group.position);
+  }
+
+  public getRacketHeadWorldPosition(): THREE.Vector3 {
+    return this.racketHeadPosition.clone().add(this.group.position);
+  }
+
+  public isStandingConfident(): boolean {
+    return this.standingConfident;
   }
 
   public setJointColor(colorHex: number): void {
