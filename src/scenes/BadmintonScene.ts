@@ -959,9 +959,8 @@ export class BadmintonScene implements IGameScene {
 
   private triggerSwing(isUserInitiated = false): void {
     if (this.rallyState === 'READY_TO_SERVE' && this.scoreState.currentServer === 1) {
-      if (!this.isServeArmed && this.serveCooldownTimer <= 0) {
-        this.isServeArmed = true;
-      }
+      if (this.serveCooldownTimer > 0) return;
+      this.isServeArmed = true;
       const strikePos = this.shuttlePos.clone();
       this.playerAvatar.poseArmsToTargets(strikePos, this.trackedSupportHandPos, 'right');
       this.playerAvatar.poseArmsToTargets(
@@ -969,24 +968,29 @@ export class BadmintonScene implements IGameScene {
         this.trackedSupportHandPos,
         'right'
       );
-      if (this.isServeStrikeRegistered(isUserInitiated, this.racketVelocity.length())) {
-        this.executePlayerServe(this.playerAvatar.getRacketHeadWorldPosition());
-      }
+      this.executePlayerServe(this.playerAvatar.getRacketHeadWorldPosition());
       return;
     }
 
     if (this.rallyState === 'IN_PLAY' && this.lastHitter !== 'player') {
-      const inPlayerHalf = this.shuttlePos.z < 0 && this.shuttlePos.z > -7.0;
+      this.swingIntentTimer = 0.40; // 400ms generous swing intent buffer
+      const inPlayerHalf = this.shuttlePos.z <= -0.8 && this.shuttlePos.z > -7.2 && this.shuttleVel.z < 0;
       if (inPlayerHalf) {
-        const discCheck = this.playerAvatar.checkRacketDiscIntersection(
-          this.shuttlePos,
-          0.08,
-          this.prevShuttlePos
-        );
-        if (discCheck.hit) {
+        const racketHeadPos = this.playerAvatar.getRacketHeadWorldPosition();
+        const sweptDist = this.distanceToSegment(racketHeadPos, this.prevShuttlePos, this.shuttlePos);
+        const dist3D = racketHeadPos.distanceTo(this.shuttlePos);
+        const isInsideHitVolume = Math.min(dist3D, sweptDist) <= 1.45;
+
+        const racketNDC = racketHeadPos.clone().project(this.camera);
+        const shuttleNDC = this.shuttlePos.clone().project(this.camera);
+        const screenDist = Math.hypot(shuttleNDC.x - racketNDC.x, shuttleNDC.y - racketNDC.y);
+        const isScreenOverlap = screenDist < 0.40;
+
+        if (isInsideHitVolume || isScreenOverlap) {
+          this.hitStopTimer = 0.016;
           this.executePlayerHit(
-            discCheck.impactPoint,
-            this.mouseSpeed,
+            racketHeadPos,
+            Math.max(this.mouseSpeed, 2.5),
             this.mouseRacketTarget.y > 2.2
           );
         }
@@ -999,7 +1003,13 @@ export class BadmintonScene implements IGameScene {
   }
 
   private isServeStrikeRegistered(isUserInitiated = false, trackedSwingSpeed = 0): boolean {
-    if (!this.isServeArmed || this.serveCooldownTimer > 0) {
+    if (this.serveCooldownTimer > 0) {
+      return false;
+    }
+    if (isUserInitiated) {
+      return true;
+    }
+    if (!this.isServeArmed) {
       return false;
     }
 
@@ -1012,21 +1022,13 @@ export class BadmintonScene implements IGameScene {
     const racketNDC = racketHeadPos.clone().project(this.camera);
     const shuttleNDC = this.shuttlePos.clone().project(this.camera);
     const screenDist = Math.hypot(racketNDC.x - shuttleNDC.x, racketNDC.y - shuttleNDC.y);
-    const previousRacketNDC = previousHeadPos.project(this.camera);
-    const sweptScreenDist = this.distanceToSegment(
-      new THREE.Vector3(shuttleNDC.x, shuttleNDC.y, 0),
-      new THREE.Vector3(previousRacketNDC.x, previousRacketNDC.y, 0),
-      new THREE.Vector3(racketNDC.x, racketNDC.y, 0)
-    );
     const depthDiff = Math.abs(racketHeadPos.z - this.shuttlePos.z);
-    const isScreenOverlap = Math.min(screenDist, sweptScreenDist) < 0.16 && depthDiff < 0.70;
+    const isScreenOverlap = screenDist < 0.32 && depthDiff < 0.95;
 
     const totalSwingSpeed = Math.max(this.racketVelocity.length(), trackedSwingSpeed);
-    const isMouseOrSpaceStroke = isUserInitiated;
+    const hasSwingStroke = totalSwingSpeed > 0.75;
 
-    // The serve executes ONLY when:
-    // isServeArmed === true && serveCooldownTimer <= 0 && (dist3D <= 0.42 || isScreenOverlap) && (totalSwingSpeed > 1.10 || isMouseOrSpaceStroke)
-    return (effectiveDist <= 0.42 || isScreenOverlap) && (totalSwingSpeed > 1.10 || isMouseOrSpaceStroke);
+    return (effectiveDist <= 0.65 || isScreenOverlap) && hasSwingStroke;
   }
 
   private distanceToSegment(point: THREE.Vector3, start: THREE.Vector3, end: THREE.Vector3): number {
@@ -2031,27 +2033,30 @@ export class BadmintonScene implements IGameScene {
 
     // 2. Arcade Swept Hit Cylinder Collision Detection (player side)
     if (this.rallyState === 'IN_PLAY' && this.lastHitter !== 'player') {
-      const inPlayerZone = this.shuttlePos.z <= -1.5 && this.shuttlePos.z > -6.8 && this.shuttleVel.z < 0;
+      const inPlayerZone = this.shuttlePos.z <= -0.8 && this.shuttlePos.z > -7.2 && this.shuttleVel.z < 0;
       if (inPlayerZone) {
         const racketHeadPos = this.playerAvatar.getRacketHeadWorldPosition();
         
         // 1. Swept Segment vs. Racket Head Center: segment between prevShuttlePos and shuttlePos
         const sweptDist = this.distanceToSegment(racketHeadPos, this.prevShuttlePos, this.shuttlePos);
         const dist3D = racketHeadPos.distanceTo(this.shuttlePos);
-        const isInsideHitVolume = Math.min(dist3D, sweptDist) <= 0.90; // Expanded to 0.90m forgiving volume
+        const effectiveDist = Math.min(dist3D, sweptDist);
+        const isInsideHitVolume = effectiveDist <= 1.35; // 1.35m generous volume
 
         // 2. Screen-Space Visual Fallback
         const racketNDC = racketHeadPos.clone().project(this.camera);
         const shuttleNDC = this.shuttlePos.clone().project(this.camera);
         const screenDist = Math.hypot(shuttleNDC.x - racketNDC.x, shuttleNDC.y - racketNDC.y);
-        const isScreenOverlap = screenDist < 0.25; // Expanded to 0.25
+        const isScreenOverlap = screenDist < 0.35;
 
-        const hasSwingMotion = this.racketVelocity.length() > 0.65 || this.swingIntentTimer > 0;
+        // Active swing, swing intent, or close proximity (<0.70m block) triggers return
+        const hasSwingMotion = this.racketVelocity.length() > 0.30 || this.swingIntentTimer > 0;
+        const isCloseProximity = effectiveDist <= 0.70;
 
-        if ((isInsideHitVolume || isScreenOverlap) && hasSwingMotion) {
+        if ((isInsideHitVolume || isScreenOverlap) && (hasSwingMotion || isCloseProximity)) {
           // Snap shuttlecock to racket head for 1 frame (hit-stop), play sound/sparks, and launch return
           this.hitStopTimer = 0.016; // 1-frame hit-stop pause
-          this.executePlayerHit(racketHeadPos, Math.max(vSwing, 2.2), isUpwardSwing);
+          this.executePlayerHit(racketHeadPos, Math.max(vSwing, 2.4), isUpwardSwing);
         }
       }
     }
@@ -2078,12 +2083,12 @@ export class BadmintonScene implements IGameScene {
           this.updateServeTrajectory(this.shuttlePos);
 
           // Cock Racket Arming Requirement:
-          // If the racket head is drawn back (> 0.45m from held shuttlecock), arm the serve
+          // If the racket head is drawn back (>0.35m from held shuttlecock) or after brief ready pose, arm the serve
           const racketHeadPos = this.playerAvatar.getRacketHeadWorldPosition();
           const distRacketToShuttle = racketHeadPos.distanceTo(this.shuttlePos);
 
           if (!this.isServeArmed) {
-            if (distRacketToShuttle > 0.45) {
+            if (distRacketToShuttle > 0.35 || this.readyPoseTimer > 0.75) {
               this.isServeArmed = true;
               this.showServeBanner('⚡ READY! SWING TO SERVE', 'ready');
             } else {
@@ -2093,7 +2098,7 @@ export class BadmintonScene implements IGameScene {
             this.showServeBanner('⚡ READY! SWING TO SERVE', 'ready');
           }
 
-          // Bulletproof serve hit registration: deliberate stroke execution
+          // Deliberate stroke execution or webcam swing
           if (this.isServeStrikeRegistered(false, vSwing)) {
             this.executePlayerServe(this.playerAvatar.getRacketHeadWorldPosition());
           }
@@ -2108,19 +2113,15 @@ export class BadmintonScene implements IGameScene {
           this.lastHitter = 'opponent';
           this.hideServeBanner();
 
-          const sm = this.speedMultiplier();
           const origin = this.shuttlePos.clone();
-          const distToNet = Math.max(0.6, Math.abs(origin.z));
-          const speedZ = 10.5 * Math.max(0.75, sm) * 1.38;
-          // Account for the measured quadratic drag integration when solving
-          // the launch arc, then keep a generous underhand clearance margin.
-          const estTimeNet = (distToNet / (speedZ * 0.58)) * 1.02;
-          const targetNetY = Math.max(2.2, 2.2 + Math.random() * 0.2);
-          const reqVy = (targetNetY - origin.y) / estTimeNet + 0.5 * 9.8 * estTimeNet;
-          const targetX = (Math.random() - 0.5) * (this.courtWidth * 0.5);
+          // High-arc readable serve carrying all the way to player baseline (z ≈ -3.5m, y ≈ 1.6m)
+          // vz = -18.5 to -20.0 m/s, vy = +7.5 to +8.2 m/s, clears net by >= 1.2m
+          const speedZ = 18.5 + Math.random() * 1.5;
+          const reqVy = 7.5 + Math.random() * 0.7;
+          const targetX = (Math.random() - 0.5) * 2.0;
 
           this.shuttleVel.set(targetX * 0.4, reqVy, -speedZ);
-          this.enforceNetClearance(origin, this.shuttleVel, 2.2);
+          this.enforceNetClearance(origin, this.shuttleVel, 2.75);
           this.prevShuttlePos.copy(this.shuttlePos);
           this.triggerImpactFeedback(origin, 'serve', 55);
           this.audio.badmintonHit(50);
@@ -2343,13 +2344,13 @@ export class BadmintonScene implements IGameScene {
 
   public onAction(event: ActionEvent): void {
     if (this.rallyState === 'READY_TO_SERVE' && this.scoreState.currentServer === 1) {
-      this.triggerSwing(false);
+      this.triggerSwing(true);
       return;
     }
 
     if (this.rallyState !== 'IN_PLAY') return;
 
-    this.triggerSwing(false);
+    this.triggerSwing(true);
   }
 
   // ─── Point & Score ──────────────────────────────────────────────────────────
