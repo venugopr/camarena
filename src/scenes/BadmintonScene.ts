@@ -154,6 +154,7 @@ export class BadmintonScene implements IGameScene {
   private serveCooldownTimer = 0;
   private isServeArmed = false;
   private serveArmTimer = 0;
+  private floorDropGraceTimer = 0;
 
   // Score
   private targetScore = 11;
@@ -986,12 +987,20 @@ export class BadmintonScene implements IGameScene {
         const shuttleNDC = this.shuttlePos.clone().project(this.camera);
         const screenDist = Math.hypot(shuttleNDC.x - racketNDC.x, shuttleNDC.y - racketNDC.y);
 
-        if (effectiveDist <= 1.10 || screenDist < 0.28) {
+        // Full-height arcade cylinder from Y = 0.15m to 3.20m, expanding to 1.45m for wide edge shots (|x| > 1.20m)
+        const isWideShot = Math.abs(this.shuttlePos.x) > 1.20;
+        const hitRadius = isWideShot ? 1.45 : 1.10;
+        const isVerticalInRange = this.shuttlePos.y >= 0.15 && this.shuttlePos.y <= 3.20;
+        const distHorizontal = Math.hypot(racketHeadPos.x - this.shuttlePos.x, racketHeadPos.z - this.shuttlePos.z);
+        const isCylinderHit = distHorizontal <= hitRadius && isVerticalInRange;
+
+        if (effectiveDist <= hitRadius || isCylinderHit || screenDist < 0.28) {
           this.hitStopTimer = 0.016;
+          this.floorDropGraceTimer = 0;
           this.executePlayerHit(
             racketHeadPos,
             Math.max(this.mouseSpeed, 2.5),
-            this.mouseRacketTarget.y > 2.2
+            this.mouseRacketTarget.y > 2.2 || this.shuttlePos.y < 1.30
           );
         }
       }
@@ -1694,6 +1703,7 @@ export class BadmintonScene implements IGameScene {
     this.serveCooldownTimer = 0.6; // 0.6s grace period to prevent immediate frame-1 serve
     this.isServeArmed = false;
     this.serveArmTimer = 0;
+    this.floorDropGraceTimer = 0;
 
     if (server === 1) {
       this.isShuttleHeld = true;
@@ -1801,6 +1811,7 @@ export class BadmintonScene implements IGameScene {
     this.isShuttleHeld = false;
     this.lastHitter = 'player';
     this.scoreState.rallyCount++;
+    this.floorDropGraceTimer = 0;
     this.hideServeBanner();
     this.hideServeTrajectory();
     this.shuttleTrail = []; // Clear trail on new hit
@@ -1816,7 +1827,17 @@ export class BadmintonScene implements IGameScene {
     let reqVy: number;
     let speedKmh = 65;
 
-    if (contactY > 1.9 && vSwing > 2.8 && !isCasual) {
+    // Underhand Scoop Lift: Low shots (contactY < 1.30m) scooped upward or with defensive intent
+    const isUnderhandScoop = contactY < 1.30 && (isUpward || this.racketVelocity.y > 0.35 || vSwing > 0.40);
+
+    if (isUnderhandScoop) {
+      // Underhand scoop launches with high defensive trajectory over the net deep into opponent court
+      shotType = 'clear';
+      speedZ = 7.0;
+      reqVy = 7.8;
+      speedKmh = 52 + Math.random() * 8;
+      this.audio.badmintonHit(60);
+    } else if (contactY > 1.9 && vSwing > 2.8 && !isCasual) {
       // 1. POWER SMASH (pro/legend only)
       shotType = 'smash';
       speedZ = isPro ? 16.0 : 20.0;
@@ -1830,7 +1851,7 @@ export class BadmintonScene implements IGameScene {
       reqVy = isCasual ? 7.8 : (isPro ? 6.5 : 5.8);
       speedKmh = 60 + Math.random() * 10;
       this.audio.badmintonHit(65);
-    } else if (vSwing < 1.2 || contactY < 1.15) {
+    } else if (vSwing < 1.2) {
       // 3. DROP SHOT
       shotType = 'drop';
       speedZ = isCasual ? 6.5 : (isPro ? 7.5 : 8.5);
@@ -1907,6 +1928,7 @@ export class BadmintonScene implements IGameScene {
     this.timeScaleTarget = 1.0;
     let vSwing = this.mouseSpeed;
     let isUpwardSwing = this.mouseRacketTarget.y > 2.2;
+    let trackedWristVel: { x: number; y: number; z: number } | null = null;
 
     if (motionFrame && motionFrame.worldLandmarks) {
       this.playerAvatar.update(motionFrame.worldLandmarks, motionFrame.metrics.dominantArm, frameDt);
@@ -1926,6 +1948,7 @@ export class BadmintonScene implements IGameScene {
       // Calculate instantaneous wrist velocity for shot classification
       const wristVel = motionFrame.velocities?.[domWristIdx] || motionFrame.metrics.rightWristVelocity;
       if (wristVel) {
+        trackedWristVel = wristVel;
         vSwing = Math.hypot(wristVel.x, wristVel.y, wristVel.z);
         isUpwardSwing = wristVel.y > 0.45;
       }
@@ -1983,9 +2006,25 @@ export class BadmintonScene implements IGameScene {
     this.previousRacketPosition.copy(racketPosition);
     this.readyPoseTimer = 0;
 
-    // 1. Swing Intent Buffer: Keep swing intent alive for generous window (450ms)
-    const effectiveSwingSpeed = Math.max(vSwing, this.racketVelocity.length());
-    if (effectiveSwingSpeed > 0.40 || isUpwardSwing) {
+    // 1. Omnidirectional Swing Intent Recognition
+    // Calculate total 3D swing velocities across motion tracking and racket displacement
+    const swingVx = Math.abs(this.racketVelocity.x) > (trackedWristVel ? Math.abs(trackedWristVel.x) : 0) ? this.racketVelocity.x : (trackedWristVel?.x || 0);
+    const swingVy = Math.abs(this.racketVelocity.y) > (trackedWristVel ? Math.abs(trackedWristVel.y) : 0) ? this.racketVelocity.y : (trackedWristVel?.y || 0);
+    const swingVz = Math.abs(this.racketVelocity.z) > (trackedWristVel ? Math.abs(trackedWristVel.z) : 0) ? this.racketVelocity.z : (trackedWristVel?.z || 0);
+    const vSwing3D = Math.sqrt(swingVx * swingVx + swingVy * swingVy + swingVz * swingVz);
+    const effectiveSwingSpeed = Math.max(vSwing, vSwing3D, this.racketVelocity.length());
+
+    // Criteria:
+    // 1. Underhand Scoop: Upward velocity vy > +0.45 m/s while shuttlecock is low (y < 1.30m)
+    const isUnderhandScoop = swingVy > 0.45 && this.shuttlePos.y < 1.30;
+    // 2. Wide Forehand / Backhand: Lateral velocity |vx| > +0.50 m/s
+    const isWideLateralStroke = Math.abs(swingVx) > 0.50;
+    // 3. Standard Drive / Clear: Total 3D velocity > 0.60 m/s or forward vz > +0.35 m/s
+    const isStandardStroke = effectiveSwingSpeed > 0.60 || swingVz > 0.35 || (this.isUsingMouse && this.mouseSpeed > 0.40);
+
+    const hasActiveStrokeIntent = isUnderhandScoop || isWideLateralStroke || isStandardStroke || isUpwardSwing;
+
+    if (hasActiveStrokeIntent) {
       this.swingIntentTimer = 0.45; // 450ms intent window
     } else {
       this.swingIntentTimer = Math.max(0, this.swingIntentTimer - deltaTime);
@@ -2014,25 +2053,29 @@ export class BadmintonScene implements IGameScene {
           ? (strikeZ - this.shuttlePos.z) / this.shuttleVel.z
           : Number.POSITIVE_INFINITY;
 
-        const pacingProfile = PACING_PROFILES[
-          this.currentDifficulty === 'legend' ? 'pro' : this.currentDifficulty === 'pro' ? 'normal' : 'casual'
-        ];
-        const hitWindow = pacingProfile.hitTimeWindow / 1000; // e.g. 0.36s casual
-
-        // Balanced arcade cylinder (1.10m), screen overlap < 0.28, in player's court depth (z <= -2.8m)
-        const isInsideHitVolume = effectiveDist <= 1.10;
+        // Full-Height Arcade Hit Volume (Y = 0.15m to 3.20m) & Wide Lateral Reach (|x| > 1.20m -> 1.45m)
+        const isWideShot = Math.abs(this.shuttlePos.x) > 1.20;
+        const hitRadius = isWideShot ? 1.45 : 1.10;
+        const isInsideHitVolume = effectiveDist <= hitRadius;
         const isScreenOverlap = screenDist < 0.28;
         const isInPlayerZone = this.shuttlePos.z <= -2.8;
 
+        // Vertical cylinder test (floor to ceiling Y in [0.15, 3.20])
+        const isVerticalInRange = this.shuttlePos.y >= 0.15 && this.shuttlePos.y <= 3.20;
+        const distHorizontal = Math.hypot(racketHeadPos.x - this.shuttlePos.x, racketHeadPos.z - this.shuttlePos.z);
+        const isCylinderHit = distHorizontal <= hitRadius && isVerticalInRange;
+
         // Arrival window [-0.15s, +0.25s]
         const isWithinTemporalWindow = timeToArrival >= -0.15 && timeToArrival <= 0.25;
-        const hasSwingMotion = effectiveSwingSpeed > 0.45 || hasSwingIntent;
-        const isProximityBlock = effectiveDist <= 0.50 && effectiveSwingSpeed > 0.25;
+        const hasSwingMotion = effectiveSwingSpeed > 0.45 || hasSwingIntent || hasActiveStrokeIntent;
+        const isProximityBlock = (effectiveDist <= 0.55 || (distHorizontal <= 0.55 && isVerticalInRange)) && effectiveSwingSpeed > 0.25;
 
-        if (isInPlayerZone && (((isWithinTemporalWindow && (isInsideHitVolume || isScreenOverlap)) && hasSwingMotion) || isProximityBlock)) {
+        if (isInPlayerZone && (((isWithinTemporalWindow && (isInsideHitVolume || isCylinderHit || isScreenOverlap)) && hasSwingMotion) || isProximityBlock)) {
           // Snap shuttlecock to racket head for 1 frame (hit-stop), play sound/sparks, and launch return
           this.hitStopTimer = 0.016; // 1-frame hit-stop pause
-          this.executePlayerHit(racketHeadPos, Math.max(vSwing, 2.4), isUpwardSwing);
+          this.floorDropGraceTimer = 0;
+          const isUpwardOrScoop = isUpwardSwing || isUnderhandScoop || swingVy > 0.35 || this.shuttlePos.y < 1.30;
+          this.executePlayerHit(racketHeadPos, Math.max(effectiveSwingSpeed, 2.4), isUpwardOrScoop);
         }
       }
     }
@@ -2252,14 +2295,21 @@ export class BadmintonScene implements IGameScene {
       }
 
       // Ground/Floor Impact with Visual Chalk Decal & Singles Line Calling
-      // Guard: Floor drop is strictly evaluated when shuttlecock touches court floor (y <= 0.05m).
-      // Floor drop guard: Under no circumstances may an incoming opponent shot hit the floor before reaching z <= -3.8m
-      if (this.shuttlePos.y <= 0.05) {
-        if (this.shuttleVel.z < 0 && this.shuttlePos.z > -3.8 && this.lastHitter === 'opponent') {
-          this.shuttlePos.y = 0.85;
-          this.shuttleVel.y = Math.max(1.5, this.shuttleVel.y);
+      // True cork floor impact threshold: y <= 0.08m
+      if (this.shuttlePos.y <= 0.08) {
+        // Defer floor drop fault by 120ms if incoming shot is in player's court within 0.80m of racket to allow active scoop
+        const racketHeadPos = this.playerAvatar.getRacketHeadWorldPosition();
+        const distToRacket = racketHeadPos.distanceTo(this.shuttlePos);
+        const isIncomingToPlayer = this.shuttleVel.z < 0 && this.shuttlePos.z <= -2.8 && this.lastHitter === 'opponent';
+
+        if (isIncomingToPlayer && distToRacket <= 0.80 && this.floorDropGraceTimer < 0.120) {
+          this.floorDropGraceTimer += frameDt;
+          // Hold at floor level during grace window so player can scoop it without premature fault
+          this.shuttlePos.y = 0.08;
           return;
         }
+
+        this.floorDropGraceTimer = 0;
         this.shuttlePos.y = 0.05;
         this.isShuttleInPlay = false;
 
@@ -2378,6 +2428,7 @@ export class BadmintonScene implements IGameScene {
 
   private handleRallyPoint(winner: 1 | 2, reason: string): void {
     if (this.rallyState !== 'IN_PLAY') return;
+    this.floorDropGraceTimer = 0;
     this.rallyState = 'POINT_AWARDED';
     this.isShuttleInPlay = false;
     this.shuttleVel.set(0, 0, 0);

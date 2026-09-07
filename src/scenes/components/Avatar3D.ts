@@ -404,11 +404,32 @@ export class Avatar3D {
     const dElbowIdx = PoseLandmark.RIGHT_ELBOW;
     const dWristIdx = PoseLandmark.RIGHT_WRIST;
 
+    // Reset base shoulder & head lateral anchors before applying dynamic reach lean
+    this.joints[dShoulderIdx].position.x = 0.24;
+    this.joints[PoseLandmark.LEFT_SHOULDER].position.x = -0.24;
+    this.joints[PoseLandmark.LEFT_SHOULDER].position.y = 1.35;
+    this.joints[dShoulderIdx].position.y = 1.35;
+    this.headMesh.position.x = 0;
+    this.joints[PoseLandmark.NOSE].position.x = 0;
+
     const shoulderPos = this.joints[dShoulderIdx].position;
     const localTarget = this.group.worldToLocal(dominantWorldTarget.clone());
 
+    // Dynamic Torso Lean & Lateral Reach Expansion
+    const reachOffset = localTarget.x;
+    if (Math.abs(reachOffset) > 0.45) {
+      const spineRoll = THREE.MathUtils.clamp(reachOffset / 1.2, -0.28, 0.28);
+      const shoulderShift = THREE.MathUtils.clamp((reachOffset - Math.sign(reachOffset) * 0.45) * 0.5, -0.25, 0.25);
+      shoulderPos.x += shoulderShift;
+      this.joints[PoseLandmark.LEFT_SHOULDER].position.x += shoulderShift * 0.6;
+      this.joints[PoseLandmark.LEFT_SHOULDER].position.y -= Math.sin(spineRoll) * 0.24;
+      this.joints[dShoulderIdx].position.y += Math.sin(spineRoll) * 0.24;
+      this.headMesh.position.x += shoulderShift * 0.7;
+      this.joints[PoseLandmark.NOSE].position.x += shoulderShift * 0.7;
+    }
+
     const armVector = new THREE.Vector3().subVectors(localTarget, shoulderPos);
-    const armLength = Math.min(0.85, Math.max(0.28, armVector.length()));
+    const armLength = Math.min(0.92, Math.max(0.28, armVector.length()));
     const armDir = armVector.normalize();
 
     const wristPos = new THREE.Vector3().copy(shoulderPos).addScaledVector(armDir, armLength);
@@ -424,6 +445,15 @@ export class Avatar3D {
     if (this.racketGroup && this.racketGroup.visible) {
       this.racketGroup.position.copy(wristPos);
       const quat = new THREE.Quaternion().setFromUnitVectors(upVector, forearmDir);
+
+      // Dynamic underhand scoop pitch: when hand drops to waist/knee level, pitch racket head down
+      const handElevation = wristPos.y - shoulderPos.y;
+      if (wristPos.y <= 1.15 || handElevation < -0.30) {
+        const pitchFactor = THREE.MathUtils.clamp((1.15 - wristPos.y) / 0.60, 0.0, 1.0);
+        const pitchRad = pitchFactor * (-75 * Math.PI / 180);
+        const pitchQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), pitchRad);
+        quat.multiply(pitchQuat);
+      }
       this.racketGroup.setRotationFromQuaternion(quat);
     }
     if (this.paddleGroup && this.paddleGroup.visible) {
@@ -668,12 +698,29 @@ export class Avatar3D {
 
     const wristPos = this.joints[wristIdx].position;
     const elbowPos = this.joints[elbowIdx].position;
+    const shoulderPos = this.joints[PoseLandmark.RIGHT_SHOULDER].position;
+
+    // Dynamic Torso Lean & Lateral Reach Expansion for webcam tracking
+    if (Math.abs(wristPos.x) > 0.45) {
+      const shoulderShift = THREE.MathUtils.clamp((wristPos.x - Math.sign(wristPos.x) * 0.45) * 0.4, -0.25, 0.25);
+      shoulderPos.x += shoulderShift;
+    }
+
     const forearmDir = new THREE.Vector3().subVectors(wristPos, elbowPos).normalize();
     const upVector = new THREE.Vector3(0, 1, 0);
 
     if (this.racketGroup && this.racketGroup.visible) {
       this.racketGroup.position.copy(wristPos);
       const quat = new THREE.Quaternion().setFromUnitVectors(upVector, forearmDir);
+
+      // Dynamic underhand scoop pitch: when hand drops to waist/knee level, pitch racket head down
+      const handElevation = wristPos.y - shoulderPos.y;
+      if (wristPos.y <= 1.15 || handElevation < -0.30) {
+        const pitchFactor = THREE.MathUtils.clamp((1.15 - wristPos.y) / 0.60, 0.0, 1.0);
+        const pitchRad = pitchFactor * (-75 * Math.PI / 180);
+        const pitchQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), pitchRad);
+        quat.multiply(pitchQuat);
+      }
       this.racketGroup.setRotationFromQuaternion(quat);
     }
 
