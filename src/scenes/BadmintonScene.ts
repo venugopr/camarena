@@ -1027,14 +1027,12 @@ export class BadmintonScene implements IGameScene {
 
     const totalSwingSpeed = Math.max(this.racketVelocity.length(), trackedSwingSpeed);
 
-    // 1. Strict non-overlapping contact radius: 0.22m (22cm) or screenDist < 0.12
-    const isInsideVolume = effectiveDist <= 0.22;
-    const isScreenOverlap = screenDist < 0.12;
+    // 1. Resilient contact volume: 0.40m (40cm) or screenDist < 0.18
+    const isInsideVolume = effectiveDist <= 0.40;
+    const isScreenOverlap = screenDist < 0.18;
 
-    // 2. Stroke velocity & direction gate: > 0.85 m/s directed toward shuttle/net
-    // (vz > 0.3 m/s forward or |vx| > 0.4 m/s lateral swing)
-    const hasDirectionalStroke = this.racketVelocity.z > 0.3 || Math.abs(this.racketVelocity.x) > 0.4 || isUserInitiated;
-    const isDeliberateSwing = totalSwingSpeed > 0.85 && hasDirectionalStroke;
+    // 2. Stroke velocity gate: > 0.65 m/s or user initiated
+    const isDeliberateSwing = totalSwingSpeed > 0.65 || isUserInitiated;
 
     if (isUserInitiated) {
       this.isServeArmed = true;
@@ -1696,35 +1694,58 @@ export class BadmintonScene implements IGameScene {
 
   // ─── Reset & Serve ──────────────────────────────────────────────────────────
 
-  private resetBall(server: 1 | 2 = 1): void {
+  private setupServe(server: 1 | 2 = 1): void {
     this.isShuttleInPlay = false;
     this.rallyState = 'READY_TO_SERVE';
-    this.serveCountdown = 2.5;
-    this.serveCooldownTimer = 0.6; // 0.6s grace period to prevent immediate frame-1 serve
     this.isServeArmed = false;
     this.serveArmTimer = 0;
     this.floorDropGraceTimer = 0;
+    this.shuttleTrail = [];
+
+    // Reset AI stance to its home position for every serve
+    this.opponentAI.reset();
+    this.opponentAvatar.group.position.set(this.opponentAI.position.x, 0, this.opponentAI.position.z);
+
+    // Guaranteed visibility & mesh reset
+    this.shuttleGroup.visible = true;
+    this.shuttleGroup.traverse(c => { c.visible = true; });
 
     if (server === 1) {
       this.isShuttleHeld = true;
-      // Shuttlecock follows the user's non-dominant hand directly
-      this.shuttlePos.copy(this.trackedSupportHandPos);
-      this.shuttleVel.set(0, 0, 0);
       this.lastHitter = null;
+      this.serveCooldownTimer = 0.4;
+
+      // Immediate support hand docking directly to player's non-dominant hand
+      const liveHand = this.playerAvatar.getSupportHandWorldPosition();
+      this.shuttlePos.set(liveHand.x, liveHand.y + 0.04, liveHand.z + 0.05);
+      this.shuttleGroup.position.copy(this.shuttlePos);
+      this.prevShuttlePos.copy(this.shuttlePos);
+      this.shuttleVel.set(0, 0, 0);
+
+      // Cork faces net, feathers rest in hand
+      this.shuttleGroup.rotation.set(-Math.PI * 0.45, 0, 0);
+
+      // Immediately activate aim trajectory arc
+      this.updateServeTrajectory(this.shuttlePos);
+
       this.showServeBanner('🏸 DRAW RACKET BACK TO ARM SERVE', 'amber');
       window.dispatchEvent(new CustomEvent('camarena-holding-shuttle', { detail: { isHolding: true } }));
     } else {
       this.isShuttleHeld = false;
-      this.shuttlePos.set(0, 1.4, 4.0);
-      this.shuttleVel.set(0, 0, 0);
       this.lastHitter = 'opponent';
+      this.serveCountdown = 2.5;
+
+      // Dock shuttlecock to opponent server
+      this.shuttlePos.set(this.opponentAvatar.group.position.x, 1.4, this.opponentAvatar.group.position.z + 0.3);
+      this.shuttleGroup.position.copy(this.shuttlePos);
+      this.prevShuttlePos.copy(this.shuttlePos);
+      this.shuttleVel.set(0, 0, 0);
+
       this.hideServeTrajectory();
       this.showServeBanner('🤖 OPPONENT SERVING — Get ready!', 'opponent');
       window.dispatchEvent(new CustomEvent('camarena-holding-shuttle', { detail: { isHolding: false } }));
     }
 
-    this.shuttleGroup.position.copy(this.shuttlePos);
-    this.prevShuttlePos.copy(this.shuttlePos);
     this.previousRacketPosition.copy(this.playerAvatar.getRacketWorldPosition());
     this.racketVelocity.set(0, 0, 0);
     this.readyPoseTimer = 0;
@@ -1738,9 +1759,15 @@ export class BadmintonScene implements IGameScene {
     }
   }
 
+  private resetBall(server: 1 | 2 = 1): void {
+    this.setupServe(server);
+  }
+
   private executePlayerServe(contactPoint = this.playerAvatar.getRacketContactPoint()): void {
     if (this.rallyState !== 'READY_TO_SERVE' || this.scoreState.currentServer !== 1) return;
 
+    // Critical Implementation Guard: Toggle isShuttleHeld = false immediately on frame 1
+    // before applying launch velocity so continuous docking guard doesn't re-dock the shuttle.
     this.isShuttleHeld = false;
     this.rallyState = 'IN_PLAY';
     this.isShuttleInPlay = true;
@@ -1758,9 +1785,9 @@ export class BadmintonScene implements IGameScene {
 
     const isCasual = this.currentDifficulty === 'casual';
     const isPro = this.currentDifficulty === 'pro';
-    // Casual serve: gentle lofty high-clear arc (vz = +7.0 m/s, vy = +7.2 m/s, ~1.65s hang time)
-    const speedZ = isCasual ? 7.0 : (isPro ? 10.5 : 13.5);
-    const launchVY = isCasual ? 7.2 : (isPro ? 6.5 : 5.8);
+    // Casual serve: gentle lofty high-clear arc (vz = +7.2 m/s, vy = +7.4 m/s, ~1.65s hang time)
+    const speedZ = isCasual ? 7.2 : (isPro ? 10.5 : 13.5);
+    const launchVY = isCasual ? 7.4 : (isPro ? 6.5 : 5.8);
 
     const swingX = this.racketVelocity.x;
     const contactOffset = (origin.x - this.playerAvatar.group.position.x) / 0.35;
@@ -1776,15 +1803,15 @@ export class BadmintonScene implements IGameScene {
     this.shuttlePrevQuat.copy(this.shuttleGroup.quaternion);
     this.shuttleTargetQuat.setFromUnitVectors(new THREE.Vector3(0, 1, 0), this.shuttleVel.clone().normalize());
 
-    // Calculate actual serve speed in km/h for the HUD badge (speedZ = 7.0 m/s -> ~25.2 km/h -> 25 km/h)
+    // Calculate actual serve speed in km/h for the HUD badge (speedZ = 7.2 m/s -> ~26 km/h)
     const speedKmh = Math.round(speedZ * 3.6);
     this.triggerImpactFeedback(origin, 'serve', speedKmh);
+    this.audio.badmintonHit(70);
     if (this.shuttleHaloMat && this.shuttleHaloMesh) {
       this.shuttleHaloMat.color.setHex(0xfbbf24);
       this.shuttleHaloMesh.scale.set(1.0, 1.0, 1.0);
       this.shuttleHaloMat.opacity = 0.55;
     }
-    this.audio.badmintonHit(60);
     this.notifyScore();
   }
 
@@ -2088,12 +2115,12 @@ export class BadmintonScene implements IGameScene {
         }
 
         if (this.isShuttleHeld) {
-          // The support hand is always MediaPipe left wrist (15). Once released,
-          // no tracking update is allowed to overwrite the ballistic position.
+          // The support hand is always MediaPipe left wrist (15).
           const handPos = this.playerAvatar.getSupportHandWorldPosition();
           this.shuttlePos.set(handPos.x, handPos.y + 0.04, handPos.z + 0.05);
           this.shuttleGroup.position.copy(this.shuttlePos);
           this.prevShuttlePos.copy(this.shuttlePos);
+          this.shuttleGroup.visible = true;
 
           // Shuttlecock orientation: cork points forward toward net, feathers resting in hand
           this.shuttleGroup.rotation.set(-Math.PI * 0.45, 0, 0);
@@ -2102,14 +2129,14 @@ export class BadmintonScene implements IGameScene {
           this.updateServeTrajectory(this.shuttlePos);
 
           // Physical Cocking / Arming Requirement:
-          // Must draw the racket head back >= 0.42m from the held shuttlecock for at least 0.15s
+          // Must draw the racket head back >= 0.35m from the held shuttlecock for at least 0.12s
           const racketHeadPos = this.playerAvatar.getRacketHeadWorldPosition();
           const distRacketToShuttle = racketHeadPos.distanceTo(this.shuttlePos);
 
           if (!this.isServeArmed) {
-            if (distRacketToShuttle >= 0.42) {
+            if (distRacketToShuttle >= 0.35) {
               this.serveArmTimer += deltaTime;
-              if (this.serveArmTimer >= 0.15) {
+              if (this.serveArmTimer >= 0.12) {
                 this.isServeArmed = true;
                 this.showServeBanner('⚡ READY! SWING TO SERVE', 'ready');
               } else {
@@ -2139,11 +2166,17 @@ export class BadmintonScene implements IGameScene {
           }
 
           // Deliberate stroke execution or webcam swing
-          if (this.isServeStrikeRegistered(false, vSwing)) {
+          if (this.isServeStrikeRegistered(false, effectiveSwingSpeed)) {
             this.executePlayerServe(this.playerAvatar.getRacketHeadWorldPosition());
           }
         }
       } else {
+        // AI server: keep shuttlecock visibly docked to opponent until served
+        this.shuttlePos.set(this.opponentAvatar.group.position.x, 1.4, this.opponentAvatar.group.position.z + 0.3);
+        this.shuttleGroup.position.copy(this.shuttlePos);
+        this.prevShuttlePos.copy(this.shuttlePos);
+        this.shuttleGroup.visible = true;
+
         // AI serves after a fair countdown
         this.serveCountdown -= deltaTime;
         if (this.serveCountdown <= 0) {
