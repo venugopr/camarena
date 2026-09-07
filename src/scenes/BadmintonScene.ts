@@ -5,6 +5,7 @@ import { SoundSynthesizer } from '../core/audio/SoundSynthesizer';
 import { Avatar3D } from './components/Avatar3D';
 import { OpponentAI } from '../core/multiplayer/OpponentAI';
 import { VectorNormalizer } from '../core/motion/VectorNormalizer';
+import { PACING_PROFILES } from '../core/multiplayer/OpponentAI';
 
 export class BadmintonScene implements IGameScene {
   public readonly id: GameModeId = 'badminton';
@@ -38,8 +39,9 @@ export class BadmintonScene implements IGameScene {
   private isShuttleInPlay = false;
   private rallyState: 'READY_TO_SERVE' | 'IN_PLAY' | 'POINT_AWARDED' | 'GAME_OVER' = 'READY_TO_SERVE';
   private lastHitter: 'player' | 'opponent' | null = null;
-  private serveCountdown = 2.5; // Fair countdown before AI auto-serves
+  private serveCountdown = 2.5; // Opponent-only serve delay
   private readyPoseTimer = 0;
+  private physicsAccumulator = 0;
   private previousRacketPosition = new THREE.Vector3(0, 1.5, -3.5);
   private racketVelocity = new THREE.Vector3();
 
@@ -78,10 +80,14 @@ export class BadmintonScene implements IGameScene {
   private netHitTimer = 0;
   private netHitBanner?: HTMLElement;
 
-  // Shuttle trail system
-  private readonly TRAIL_LENGTH = 14;
+  // Shuttle trail system & depth shadow
+  private readonly TRAIL_LENGTH = 12;
   private shuttleTrail: THREE.Vector3[] = [];
   private shuttleTrailMeshes: THREE.Mesh[] = [];
+  private shuttleHaloMat!: THREE.MeshBasicMaterial;
+  private shuttleHaloMesh!: THREE.Mesh;
+  private shuttleFloorShadowMesh!: THREE.Mesh;
+  private shuttleFloorShadowMat!: THREE.MeshBasicMaterial;
 
   // Multi-layered visual impact feedback & procedural camera trauma
   private impactGroup!: THREE.Group;
@@ -147,6 +153,7 @@ export class BadmintonScene implements IGameScene {
   private serveBanner?: HTMLElement;
   private serveCooldownTimer = 0;
   private isServeArmed = false;
+  private serveArmTimer = 0;
 
   // Score
   private targetScore = 11;
@@ -213,6 +220,8 @@ export class BadmintonScene implements IGameScene {
     this.renderer.setSize(width, height);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.autoUpdate = false;
+    this.renderer.shadowMap.needsUpdate = true;
     container.appendChild(this.renderer.domElement);
 
     // Arena Lighting
@@ -251,8 +260,9 @@ export class BadmintonScene implements IGameScene {
     // Serve guidance banner
     this.buildServeBanner();
 
-    // Shuttlecock + trail
+    // Shuttlecock + trail + depth shadow
     this.buildShuttlecock();
+    this.buildShuttleFloorShadow();
     this.buildShuttleTrail();
     this.buildServeTrajectoryArc();
     this.buildImpactFeedback();
@@ -506,26 +516,23 @@ export class BadmintonScene implements IGameScene {
     this.serveLandingReticle.visible = true;
 
     // Calculate dynamic serve launch kinematics matching executePlayerServe()
-    const sm = this.speedMultiplier();
-    const distToNet = Math.max(0.6, Math.abs(origin.z));
-    const ALPHA_DRAG = 1.38;
-    const speedZ = THREE.MathUtils.clamp(16.0 * Math.max(0.75, sm) * ALPHA_DRAG, 16.0, 20.0);
-    const estTimeNet = (distToNet / (speedZ * 0.58)) * 1.02;
+    const isCasual = this.currentDifficulty === 'casual';
+    const isPro = this.currentDifficulty === 'pro';
+    const speedZ = isCasual ? 7.0 : (isPro ? 10.5 : 13.5);
 
     const swingX = this.racketVelocity.x;
     const avatarX = this.playerAvatar ? this.playerAvatar.group.position.x : 0;
     const contactOffset = (origin.x - avatarX) / 0.35;
-    const serveVX = THREE.MathUtils.clamp((swingX * 0.65) + (contactOffset * 1.8), -5.5, 5.5);
+    const serveVX = THREE.MathUtils.clamp((swingX * 0.45) + (contactOffset * 1.2), -3.5, 3.5);
 
     const targetZ = 3.6; // center of opponent service court
-    const totalTimeEst = estTimeNet * 1.95;
     const dynamicTargetX = THREE.MathUtils.clamp(
-      origin.x + (serveVX / (speedZ * 0.58)) * (targetZ - origin.z),
+      origin.x + (serveVX / (speedZ * 0.75)) * (targetZ - origin.z),
       -this.courtWidth * 0.46,
       this.courtWidth * 0.46
     );
 
-    const targetNetY = 1.70; // Clearance over tape
+    const targetNetY = isCasual ? 3.3 : 2.5; // Lofty high-clear arc over tape
     const pointsCount = 28;
     const posAttr = this.serveAimLine.geometry.attributes.position as THREE.BufferAttribute;
 
@@ -617,7 +624,7 @@ export class BadmintonScene implements IGameScene {
     const distZ = strikeZ - this.shuttlePos.z;
     const timeToArrival = distZ / this.shuttleVel.z; // distZ is negative, shuttleVel.z is negative -> positive time
 
-    if (timeToArrival > 0 && timeToArrival < 2.2) {
+    if (timeToArrival > 0 && timeToArrival < 2.5) {
       this.impactReticleGroup.visible = true;
 
       // Ballistic arrival point projection
@@ -632,12 +639,16 @@ export class BadmintonScene implements IGameScene {
       this.impactReticleGroup.lookAt(this.camera.position);
 
       // Outer timing ring contracts smoothly down to match the inner ring (scale ~0.24)
-      const tNorm = Math.max(0, Math.min(1, timeToArrival / 0.80));
+      const pacingProfile = PACING_PROFILES[
+        this.currentDifficulty === 'legend' ? 'pro' : this.currentDifficulty === 'pro' ? 'normal' : 'casual'
+      ];
+      const tNorm = Math.max(0, Math.min(1, timeToArrival / pacingProfile.targetFlightTime));
       const ringScale = THREE.MathUtils.lerp(0.24, 1.0, tNorm);
       this.impactOuterRingMesh.scale.set(ringScale, ringScale, 1);
 
-      // Dynamic color: Bright neon-green when inside optimal strike window (t <= 0.20s) with SWING NOW cue
-      if (timeToArrival <= 0.20) {
+      // Peripheral timing cue fires when inside the profile's hit time window — zero text over court
+      const swingNowThreshold = pacingProfile.hitTimeWindow / 1000; // 0.26s casual, 0.12s pro
+      if (timeToArrival <= swingNowThreshold) {
         this.impactOuterRingMat.color.setHex(0x39ff14);
         const pulseAlpha = 0.75 + Math.sin(performance.now() * 0.03) * 0.25;
         this.impactOuterRingMat.opacity = pulseAlpha;
@@ -646,13 +657,7 @@ export class BadmintonScene implements IGameScene {
           this.impactInnerRingMat.opacity = pulseAlpha;
         }
         if (this.swingNowCueEl) {
-          this.swingNowCueEl.style.display = 'block';
-          // Project reticle center to 2D screen coordinates for HUD text positioning
-          const screenPos = this.impactReticleGroup.position.clone().project(this.camera);
-          const px = (screenPos.x * 0.5 + 0.5) * window.innerWidth;
-          const py = (-(screenPos.y * 0.5) + 0.5) * window.innerHeight;
-          this.swingNowCueEl.style.left = `${px}px`;
-          this.swingNowCueEl.style.top = `${py - 54}px`;
+          this.swingNowCueEl.classList.add('active');
         }
       } else {
         this.impactOuterRingMat.color.setHex(0xf59e0b);
@@ -661,11 +666,13 @@ export class BadmintonScene implements IGameScene {
           this.impactInnerRingMat.color.setHex(0x00f2fe);
           this.impactInnerRingMat.opacity = 0.45;
         }
-        if (this.swingNowCueEl) this.swingNowCueEl.style.display = 'none';
+        if (this.swingNowCueEl) {
+          this.swingNowCueEl.classList.remove('active');
+        }
       }
     } else {
       this.impactReticleGroup.visible = false;
-      if (this.swingNowCueEl) this.swingNowCueEl.style.display = 'none';
+      if (this.swingNowCueEl) this.swingNowCueEl.classList.remove('active');
     }
   }
 
@@ -959,34 +966,27 @@ export class BadmintonScene implements IGameScene {
 
   private triggerSwing(isUserInitiated = false): void {
     if (this.rallyState === 'READY_TO_SERVE' && this.scoreState.currentServer === 1) {
-      if (this.serveCooldownTimer > 0) return;
-      this.isServeArmed = true;
-      const strikePos = this.shuttlePos.clone();
-      this.playerAvatar.poseArmsToTargets(strikePos, this.trackedSupportHandPos, 'right');
-      this.playerAvatar.poseArmsToTargets(
-        strikePos.clone().add(strikePos.clone().sub(this.playerAvatar.getRacketContactPoint())),
-        this.trackedSupportHandPos,
-        'right'
-      );
-      this.executePlayerServe(this.playerAvatar.getRacketHeadWorldPosition());
+      const racketHeadPos = this.playerAvatar.getRacketHeadWorldPosition();
+      if (this.isServeStrikeRegistered(isUserInitiated, Math.max(this.mouseSpeed, this.racketVelocity.length()))) {
+        this.executePlayerServe(racketHeadPos);
+      }
       return;
     }
 
     if (this.rallyState === 'IN_PLAY' && this.lastHitter !== 'player') {
-      this.swingIntentTimer = 0.40; // 400ms generous swing intent buffer
-      const inPlayerHalf = this.shuttlePos.z <= -0.8 && this.shuttlePos.z > -7.2 && this.shuttleVel.z < 0;
+      this.swingIntentTimer = 0.50; // 500ms generous swing intent buffer
+      const inPlayerHalf = this.shuttlePos.z <= -2.8 && this.shuttlePos.z > -7.2 && this.shuttleVel.z < 0;
       if (inPlayerHalf) {
         const racketHeadPos = this.playerAvatar.getRacketHeadWorldPosition();
         const sweptDist = this.distanceToSegment(racketHeadPos, this.prevShuttlePos, this.shuttlePos);
         const dist3D = racketHeadPos.distanceTo(this.shuttlePos);
-        const isInsideHitVolume = Math.min(dist3D, sweptDist) <= 1.45;
+        const effectiveDist = Math.min(dist3D, sweptDist);
 
         const racketNDC = racketHeadPos.clone().project(this.camera);
         const shuttleNDC = this.shuttlePos.clone().project(this.camera);
         const screenDist = Math.hypot(shuttleNDC.x - racketNDC.x, shuttleNDC.y - racketNDC.y);
-        const isScreenOverlap = screenDist < 0.40;
 
-        if (isInsideHitVolume || isScreenOverlap) {
+        if (effectiveDist <= 1.10 || screenDist < 0.28) {
           this.hitStopTimer = 0.016;
           this.executePlayerHit(
             racketHeadPos,
@@ -1006,13 +1006,6 @@ export class BadmintonScene implements IGameScene {
     if (this.serveCooldownTimer > 0) {
       return false;
     }
-    if (isUserInitiated) {
-      return true;
-    }
-    if (!this.isServeArmed) {
-      return false;
-    }
-
     const racketHeadPos = this.playerAvatar.getRacketHeadWorldPosition();
     const dist3D = racketHeadPos.distanceTo(this.shuttlePos);
     const previousHeadPos = racketHeadPos.clone().sub(this.racketVelocity.clone().multiplyScalar(0.016));
@@ -1022,13 +1015,24 @@ export class BadmintonScene implements IGameScene {
     const racketNDC = racketHeadPos.clone().project(this.camera);
     const shuttleNDC = this.shuttlePos.clone().project(this.camera);
     const screenDist = Math.hypot(racketNDC.x - shuttleNDC.x, racketNDC.y - shuttleNDC.y);
-    const depthDiff = Math.abs(racketHeadPos.z - this.shuttlePos.z);
-    const isScreenOverlap = screenDist < 0.32 && depthDiff < 0.95;
 
     const totalSwingSpeed = Math.max(this.racketVelocity.length(), trackedSwingSpeed);
-    const hasSwingStroke = totalSwingSpeed > 0.75;
 
-    return (effectiveDist <= 0.65 || isScreenOverlap) && hasSwingStroke;
+    // 1. Strict non-overlapping contact radius: 0.22m (22cm) or screenDist < 0.12
+    const isInsideVolume = effectiveDist <= 0.22;
+    const isScreenOverlap = screenDist < 0.12;
+
+    // 2. Stroke velocity & direction gate: > 0.85 m/s directed toward shuttle/net
+    // (vz > 0.3 m/s forward or |vx| > 0.4 m/s lateral swing)
+    const hasDirectionalStroke = this.racketVelocity.z > 0.3 || Math.abs(this.racketVelocity.x) > 0.4 || isUserInitiated;
+    const isDeliberateSwing = totalSwingSpeed > 0.85 && hasDirectionalStroke;
+
+    if (isUserInitiated) {
+      this.isServeArmed = true;
+      return true;
+    }
+
+    return this.isServeArmed && (isInsideVolume || isScreenOverlap) && isDeliberateSwing;
   }
 
   private distanceToSegment(point: THREE.Vector3, start: THREE.Vector3, end: THREE.Vector3): number {
@@ -1146,6 +1150,7 @@ export class BadmintonScene implements IGameScene {
 
   private buildShuttlecock(): void {
     this.shuttleGroup = new THREE.Group();
+    this.shuttleGroup.scale.set(1.25, 1.25, 1.25);
 
     // Cork hemisphere positioned at +Y so cork points in +Y flight direction
     const corkGeo = new THREE.SphereGeometry(0.038, 16, 16, 0, Math.PI * 2, 0, Math.PI / 2);
@@ -1165,15 +1170,31 @@ export class BadmintonScene implements IGameScene {
     feathers.rotation.x = Math.PI; // Flare skirt backwards
     this.shuttleGroup.add(feathers);
 
-    // Bright golden glow halo for tracking visibility
+    // Bright glow halo for tracking visibility and serve arming feedback
     const haloGeo = new THREE.SphereGeometry(0.072, 8, 8);
-    const haloMat = new THREE.MeshBasicMaterial({
+    this.shuttleHaloMat = new THREE.MeshBasicMaterial({
       color: 0xfbbf24, wireframe: true, transparent: true, opacity: 0.55
     });
-    this.shuttleGroup.add(new THREE.Mesh(haloGeo, haloMat));
+    this.shuttleHaloMesh = new THREE.Mesh(haloGeo, this.shuttleHaloMat);
+    this.shuttleGroup.add(this.shuttleHaloMesh);
 
     this.shuttleGroup.castShadow = true;
     this.scene.add(this.shuttleGroup);
+  }
+
+  private buildShuttleFloorShadow(): void {
+    const shadowGeo = new THREE.CircleGeometry(0.20, 24);
+    this.shuttleFloorShadowMat = new THREE.MeshBasicMaterial({
+      color: 0x070d18,
+      transparent: true,
+      opacity: 0.65,
+      depthWrite: false
+    });
+    this.shuttleFloorShadowMesh = new THREE.Mesh(shadowGeo, this.shuttleFloorShadowMat);
+    this.shuttleFloorShadowMesh.rotation.x = -Math.PI / 2;
+    this.shuttleFloorShadowMesh.position.set(0, 0.02, 0);
+    this.shuttleFloorShadowMesh.visible = false;
+    this.scene.add(this.shuttleFloorShadowMesh);
   }
 
   // ─── Chalk Floor Decal System & Line Calling ─────────────────────────────────
@@ -1243,15 +1264,19 @@ export class BadmintonScene implements IGameScene {
   }
 
   private buildShuttleTrail(): void {
-    // Neon cyan-to-gold motion trail: 14 ghost spheres
+    // High-contrast aerodynamic cyan-yellow glow ribbon: 12 points
+    const colorCyan = new THREE.Color(0x00f5ff);
+    const colorYellow = new THREE.Color(0xffee00);
+
     for (let i = 0; i < this.TRAIL_LENGTH; i++) {
       const t = i / this.TRAIL_LENGTH;
-      const r = 0.038 * (1 - t * 0.8);
+      const r = 0.042 * (1 - t * 0.65);
       const trailGeo = new THREE.SphereGeometry(r, 8, 8);
+      const trailColor = new THREE.Color().lerpColors(colorCyan, colorYellow, t);
       const trailMat = new THREE.MeshBasicMaterial({
-        color: new THREE.Color().lerpColors(new THREE.Color(0xffffff), new THREE.Color(0xfbbf24), t),
+        color: trailColor,
         transparent: true,
-        opacity: 0
+        opacity: (1 - t) * 0.60
       });
       const trailMesh = new THREE.Mesh(trailGeo, trailMat);
       trailMesh.visible = false;
@@ -1328,10 +1353,8 @@ export class BadmintonScene implements IGameScene {
     this.container.appendChild(this.lineCallBadgeEl);
 
     this.swingNowCueEl = document.createElement('div');
-    this.swingNowCueEl.className = 'bm-swing-now-cue';
-    this.swingNowCueEl.id = 'bm-swing-now-cue';
-    this.swingNowCueEl.innerHTML = '⚡ SWING NOW!';
-    this.swingNowCueEl.style.display = 'none';
+    this.swingNowCueEl.className = 'bm-peripheral-timing-cue';
+    this.swingNowCueEl.id = 'bm-peripheral-timing-cue';
     this.container.appendChild(this.swingNowCueEl);
   }
 
@@ -1383,11 +1406,6 @@ export class BadmintonScene implements IGameScene {
     // Arena ambient light pulse on each hit (bright flash, decays in update)
     this.ambientLightPulse = isSmash ? 1.0 : 0.65;
 
-    // Atmospheric slow-motion on dramatic low saves (shuttle near floor on player side)
-    if (this.rallyTensionLevel > 0.65 && this.shuttlePos.y < 0.65 && this.shuttlePos.z < 0) {
-      this.timeScaleTarget = 0.28;
-    }
-
     // Pre-hit swing whoosh — plays at hit frame with swing speed proportional to shot type
     const whooshVel = isSmash ? 9.5 : (type === 'clear' || type === 'drive' ? 5.5 : 2.5);
     this.audio.badmintonWhoosh(whooshVel);
@@ -1427,7 +1445,7 @@ export class BadmintonScene implements IGameScene {
     if (type === 'smash') badgeText = `💥 POWER SMASH ${speedKmh.toFixed(0)} KM/H`;
     else if (type === 'clear') badgeText = `⚡ OVERHEAD CLEAR`;
     else if (type === 'drop') badgeText = `🎯 TIGHT DROP`;
-    else if (type === 'serve') badgeText = `🏸 SWEET SPOT SERVE`;
+    else if (type === 'serve') badgeText = `🏸 SWEET SPOT SERVE ${speedKmh.toFixed(0)} KM/H`;
     else badgeText = `⚡ CLEAN DRIVE ${speedKmh.toFixed(0)} KM/H`;
     this.showHitQualityBadge(badgeText, isSmash);
 
@@ -1594,13 +1612,8 @@ export class BadmintonScene implements IGameScene {
   // ─── Section 4: Rally Tension FX ────────────────────────────────────────────────
 
   private updateTensionFX(dt: number): void {
-    // Slow-motion: lerp timeScale toward target, then snap back to 1.0
-    if (this.timeScaleTarget < 1.0) {
-      this.timeScale = THREE.MathUtils.lerp(this.timeScale, this.timeScaleTarget, dt * 12);
-      // Hold slow-mo for 0.55s then release
-      this.timeScaleTarget = THREE.MathUtils.lerp(this.timeScaleTarget, 1.0, dt * 1.8);
-      if (this.timeScaleTarget > 0.92) { this.timeScaleTarget = 1.0; this.timeScale = 1.0; }
-    }
+    this.timeScale = 1.0;
+    this.timeScaleTarget = 1.0;
 
     // Ambient light pulse: bright flash on each hit, decays in ~0.8s
     if (this.ambientLightPulse > 0 && this.ambientLight) {
@@ -1629,6 +1642,16 @@ export class BadmintonScene implements IGameScene {
       THREE.MathUtils.clamp(1.0 + (-landmark.y - 0.55) * 1.8, 0.45, 3.6),
       THREE.MathUtils.clamp(zBase + landmark.z * 1.5, -6.2, -2.4)
     );
+  }
+
+  private trackRacketTarget(target: THREE.Vector3, frameDt: number): void {
+    if (this.activeRacketPos.distanceTo(target) > 0.25) {
+      this.activeRacketPos.copy(target);
+      return;
+    }
+
+    const alpha = 1.0 - Math.exp(-24.0 * Math.min(frameDt, 0.1));
+    this.activeRacketPos.lerp(target, alpha);
   }
 
   private buildNetHitBanner(): void {
@@ -1670,6 +1693,7 @@ export class BadmintonScene implements IGameScene {
     this.serveCountdown = 2.5;
     this.serveCooldownTimer = 0.6; // 0.6s grace period to prevent immediate frame-1 serve
     this.isServeArmed = false;
+    this.serveArmTimer = 0;
 
     if (server === 1) {
       this.isShuttleHeld = true;
@@ -1694,6 +1718,14 @@ export class BadmintonScene implements IGameScene {
     this.previousRacketPosition.copy(this.playerAvatar.getRacketWorldPosition());
     this.racketVelocity.set(0, 0, 0);
     this.readyPoseTimer = 0;
+    if (this.shuttleFloorShadowMesh) {
+      this.shuttleFloorShadowMesh.visible = false;
+    }
+    if (this.shuttleHaloMat && this.shuttleHaloMesh) {
+      this.shuttleHaloMat.color.setHex(0xf59e0b);
+      this.shuttleHaloMesh.scale.set(1.0, 1.0, 1.0);
+      this.shuttleHaloMat.opacity = 0.60;
+    }
   }
 
   private executePlayerServe(contactPoint = this.playerAvatar.getRacketContactPoint()): void {
@@ -1709,30 +1741,23 @@ export class BadmintonScene implements IGameScene {
     this.shuttleTrail = []; // Clear trail on new serve
     window.dispatchEvent(new CustomEvent('camarena-holding-shuttle', { detail: { isHolding: false } }));
 
-    const sm = this.speedMultiplier();
     // Launch directly from current dynamic shuttlecock position
     const origin = contactPoint.clone();
     this.shuttlePos.copy(origin);
     this.shuttleGroup.position.copy(origin);
-    const distToNet = Math.max(0.6, Math.abs(origin.z));
-    const ALPHA_DRAG = 1.38;
-    const speedZ = THREE.MathUtils.clamp(16.0 * Math.max(0.75, sm) * ALPHA_DRAG, 16.0, 20.0);
-    const estTimeNet = (distToNet / (speedZ * 0.58)) * 1.02;
 
-    const targetNetY = 2.10;
-    const reqVy = Math.max(
-      0,
-      (targetNetY - origin.y) / estTimeNet + 0.5 * 9.8 * estTimeNet
-    );
+    const isCasual = this.currentDifficulty === 'casual';
+    const isPro = this.currentDifficulty === 'pro';
+    // Casual serve: gentle lofty high-clear arc (vz = +7.0 m/s, vy = +7.2 m/s, ~1.65s hang time)
+    const speedZ = isCasual ? 7.0 : (isPro ? 10.5 : 13.5);
+    const launchVY = isCasual ? 7.2 : (isPro ? 6.5 : 5.8);
+
     const swingX = this.racketVelocity.x;
     const contactOffset = (origin.x - this.playerAvatar.group.position.x) / 0.35;
-    const serveVX = THREE.MathUtils.clamp((swingX * 0.65) + (contactOffset * 1.8), -5.5, 5.5);
+    const serveVX = THREE.MathUtils.clamp((swingX * 0.45) + (contactOffset * 1.2), -3.5, 3.5);
 
-    // Apply crisp forward launch velocity (vz >= 17.5 m/s, vy >= 6.2 m/s with net clearance)
-    const launchVZ = Math.max(17.5, speedZ);
-    const launchVY = Math.max(6.2, reqVy);
-    this.shuttleVel.set(serveVX, launchVY, launchVZ);
-    this.enforceNetClearance(origin, this.shuttleVel, 2.10);
+    this.shuttleVel.set(serveVX, launchVY, speedZ);
+    this.enforceNetClearance(origin, this.shuttleVel, 1.85);
     this.readyPoseTimer = 0;
     this.prevShuttlePos.copy(this.shuttlePos);
 
@@ -1741,7 +1766,14 @@ export class BadmintonScene implements IGameScene {
     this.shuttlePrevQuat.copy(this.shuttleGroup.quaternion);
     this.shuttleTargetQuat.setFromUnitVectors(new THREE.Vector3(0, 1, 0), this.shuttleVel.clone().normalize());
 
-    this.triggerImpactFeedback(origin, 'serve', 65);
+    // Calculate actual serve speed in km/h for the HUD badge (speedZ = 7.0 m/s -> ~25.2 km/h -> 25 km/h)
+    const speedKmh = Math.round(speedZ * 3.6);
+    this.triggerImpactFeedback(origin, 'serve', speedKmh);
+    if (this.shuttleHaloMat && this.shuttleHaloMesh) {
+      this.shuttleHaloMat.color.setHex(0xfbbf24);
+      this.shuttleHaloMesh.scale.set(1.0, 1.0, 1.0);
+      this.shuttleHaloMat.opacity = 0.55;
+    }
     this.audio.badmintonHit(60);
     this.notifyScore();
   }
@@ -1749,21 +1781,18 @@ export class BadmintonScene implements IGameScene {
   private enforceNetClearance(
     origin: THREE.Vector3,
     velocity: THREE.Vector3,
-    minimumHeight: number
+    minimumHeight = 1.85
   ): void {
     const forwardSpeed = Math.abs(velocity.z);
     if (forwardSpeed < 0.1) return;
 
-    for (let attempt = 0; attempt < 4; attempt++) {
-      const timeToNet = Math.max(0.08, Math.abs(origin.z) / (forwardSpeed * 0.58));
-      const predictedHeight = origin.y + velocity.y * timeToNet - 0.5 * 9.8 * timeToNet * timeToNet;
-      if (predictedHeight >= minimumHeight) return;
-
-      velocity.z *= 1.08;
-      const adjustedTime = Math.max(0.08, Math.abs(origin.z) / (Math.abs(velocity.z) * 0.58));
+    const timeToNet = Math.max(0.1, Math.abs(origin.z) / (forwardSpeed * 0.75));
+    const predictedHeight = origin.y + velocity.y * timeToNet - 0.5 * 9.8 * timeToNet * timeToNet;
+    if (predictedHeight < minimumHeight) {
+      // Add required upward lift so the shuttle cleanly clears the net tape without inflating forward speed
       velocity.y = Math.max(
         velocity.y,
-        (minimumHeight - origin.y + 0.5 * 9.8 * adjustedTime * adjustedTime) / adjustedTime + 0.45
+        (minimumHeight - origin.y + 0.5 * 9.8 * timeToNet * timeToNet) / timeToNet + 0.25
       );
     }
   }
@@ -1776,79 +1805,53 @@ export class BadmintonScene implements IGameScene {
     this.hideServeTrajectory();
     this.shuttleTrail = []; // Clear trail on new hit
 
-    const sm = this.speedMultiplier();
     const origin = this.shuttlePos.clone();
-    const distToNet = Math.max(0.6, Math.abs(origin.z));
-
-    // Drag-compensated ballistic solver constant.
-    // Without this, the solver underestimates transit time, sets vy too low, and the
-    // shuttle clips the net tape even when aimed at targetNetY well above 1.55m.
-    const ALPHA_DRAG = 1.38;
-
-    // Determine shot type using Contact Height Y and Racket Swing Velocity ||v_swing||
-    let shotType: 'smash' | 'drive' | 'clear' | 'drop' = 'drive';
-    let speedZ: number;
-    let targetNetY: number;
-    let speedKmh = 80;
-
+    const isCasual = this.currentDifficulty === 'casual';
+    const isPro = this.currentDifficulty === 'pro';
     const contactY = origin.y;
     const isAimedHigh = this.mouseRacketTarget.y > 2.2;
 
-    if (contactY > 1.9 && vSwing > 2.8) {
-      // 1. POWER SMASH: Contact Y > 1.9m, v_swing > 2.8 m/s
-      // Baseline smashes MUST clear net (y_net >= 1.68m). Only steep dive if struck very close
-      // to net (z > -2.5m) or at extreme height (Y > 2.2m).
+    let shotType: 'smash' | 'drive' | 'clear' | 'drop' = 'drive';
+    let speedZ: number;
+    let reqVy: number;
+    let speedKmh = 65;
+
+    if (contactY > 1.9 && vSwing > 2.8 && !isCasual) {
+      // 1. POWER SMASH (pro/legend only)
       shotType = 'smash';
-      speedZ = 24.5 * Math.max(0.85, sm);
-      const isNetRush = origin.z > -2.5 || contactY > 2.2;
-      targetNetY = 1.95;
-      speedKmh = 125 + Math.random() * 25;
+      speedZ = isPro ? 16.0 : 20.0;
+      reqVy = 3.5;
+      speedKmh = 120 + Math.random() * 20;
       this.audio.badmintonSmash();
-    } else if (contactY > 1.7 && (isUpward || isAimedHigh || vSwing > 1.8)) {
-      // 2. OVERHEAD CLEAR / LOB: Contact Y > 1.7m with upward swing
-      // High ballistic arc y_net >= 3.6m — well above the net for a deep defensive lob
+    } else if (contactY > 1.6 || isUpward || isAimedHigh || isCasual) {
+      // 2. OVERHEAD CLEAR / LOB (default in casual for lofty ~1.40s readable arc)
       shotType = 'clear';
-      speedZ = 13.5 * Math.max(0.78, sm);
-      targetNetY = Math.max(3.5, 4.0 + Math.random() * 0.8);
-      speedKmh = 76 + Math.random() * 12;
+      speedZ = isCasual ? 8.5 : (isPro ? 10.5 : 13.5);
+      reqVy = isCasual ? 7.8 : (isPro ? 6.5 : 5.8);
+      speedKmh = 60 + Math.random() * 10;
       this.audio.badmintonHit(65);
     } else if (vSwing < 1.2 || contactY < 1.15) {
-      // 3. DROP SHOT: Low swing speed (v_swing < 1.2 m/s)
-      // Soft arc: y_net must still clear tape by at least 10cm (>= 1.65m), then drops steeply
+      // 3. DROP SHOT
       shotType = 'drop';
-      speedZ = 8.5 * Math.max(0.75, sm);
-      targetNetY = 1.95;
-      speedKmh = 46 + Math.random() * 10;
+      speedZ = isCasual ? 6.5 : (isPro ? 7.5 : 8.5);
+      reqVy = isCasual ? 4.2 : 4.0;
+      speedKmh = 45 + Math.random() * 8;
       this.audio.badmintonHit(45);
     } else {
-      // 4. FLAT DRIVE: Solid mid-height drive over net, y_net >= 1.80m (25cm safe clearance)
+      // 4. FLAT DRIVE
       shotType = 'drive';
-      speedZ = 16.5 * Math.max(0.78, sm);
-      targetNetY = 1.95;
-      speedKmh = 88 + Math.random() * 16;
+      speedZ = isCasual ? 11.0 : (isPro ? 13.0 : 16.0);
+      reqVy = isCasual ? 5.2 : 4.8;
+      speedKmh = 80 + Math.random() * 12;
       this.audio.badmintonHit(65);
     }
 
-    // Drag-compensated ballistic net clearance computation:
-    // estTimeNet uses (speedZ / ALPHA_DRAG) as the effective forward speed after drag,
-    // giving a longer, more accurate transit time. reqVy is recalculated from this.
-    speedZ *= ALPHA_DRAG;
-    const estTimeNet = (distToNet / (speedZ * 0.58)) * 1.02;
-    const reqVy = Math.max(
-      0,
-      (targetNetY - origin.y) / estTimeNet + 0.5 * 9.8 * estTimeNet
-    );
-
     const swingX = this.racketVelocity.x;
     const contactOffset = (origin.x - this.playerAvatar.group.position.x) / 0.35;
-    const returnX = THREE.MathUtils.clamp((swingX * 0.65) + (contactOffset * 1.8), -5.5, 5.5);
+    const returnX = THREE.MathUtils.clamp((swingX * 0.45) + (contactOffset * 1.2), -3.5, 3.5);
 
     this.shuttleVel.set(returnX, reqVy, speedZ);
-    this.enforceNetClearance(
-      origin,
-      this.shuttleVel,
-      shotType === 'clear' ? 3.5 : 1.95
-    );
+    this.enforceNetClearance(origin, this.shuttleVel, shotType === 'clear' ? 2.2 : 1.85);
     this.prevShuttlePos.copy(this.shuttlePos);
     this.rallyState = 'IN_PLAY';
     this.isShuttleInPlay = true;
@@ -1899,13 +1902,14 @@ export class BadmintonScene implements IGameScene {
   public update(deltaTime: number, motionFrame: MotionFrame | null): void {
     if (!this.isRunning) return;
 
-    // Section 4: Apply slow-motion time scale (1.0 normal, 0.28 for dramatic save slow-mo)
-    const dt = deltaTime * this.timeScale;
+    const frameDt = Math.min(Math.max(deltaTime, 0), 0.1);
+    this.timeScale = 1.0;
+    this.timeScaleTarget = 1.0;
     let vSwing = this.mouseSpeed;
     let isUpwardSwing = this.mouseRacketTarget.y > 2.2;
 
     if (motionFrame && motionFrame.worldLandmarks) {
-      this.playerAvatar.update(motionFrame.worldLandmarks, motionFrame.metrics.dominantArm);
+      this.playerAvatar.update(motionFrame.worldLandmarks, motionFrame.metrics.dominantArm, frameDt);
 
       // Use visible shoulders for lateral footwork; hips and ankles are often
       // outside a desktop webcam's frame and should not lock the avatar.
@@ -1918,10 +1922,6 @@ export class BadmintonScene implements IGameScene {
       this.playerAvatar.group.position.z = THREE.MathUtils.lerp(this.playerAvatar.group.position.z, targetAvatarZ, Math.min(1, deltaTime * 8));
 
       const domWristIdx = 16;
-      const suppWristIdx = 15;
-
-      const rawDom = motionFrame.rawLandmarks?.[domWristIdx];
-      const rawSupp = motionFrame.rawLandmarks?.[suppWristIdx];
 
       // Calculate instantaneous wrist velocity for shot classification
       const wristVel = motionFrame.velocities?.[domWristIdx] || motionFrame.metrics.rightWristVelocity;
@@ -1930,52 +1930,18 @@ export class BadmintonScene implements IGameScene {
         isUpwardSwing = wristVel.y > 0.45;
       }
 
-      // Screen-space near-field dominant hand target on strike plane
-      let dominantTarget: THREE.Vector3;
-      if (rawDom) {
-        dominantTarget = Avatar3D.mapScreenToStrikePlane(
-          this.camera,
-          rawDom.x,
-          rawDom.y,
-          rawDom.z,
-          true,
-          0.95,
-            0.15
-        );
-        this.activeRacketPos.lerp(dominantTarget, Math.min(1, deltaTime * 25));
-      } else {
-        const rawWrist = motionFrame.worldLandmarks[domWristIdx];
-        if (rawWrist) {
-          const trackedRacketPos = this.getTrackedHandPosition(rawWrist);
-          this.activeRacketPos.lerp(trackedRacketPos, Math.min(1, deltaTime * 20));
-        }
-        dominantTarget = this.activeRacketPos.clone();
-      }
+      // Avatar3D.update has already placed the racket directly on filtered
+      // MediaPipe landmark 16. Do not replace that pose with a camera-plane
+      // target: doing so makes the racket appear fixed while the real hand moves.
+      const dominantTarget = this.playerAvatar.getHandWorldPosition('right');
+      this.activeRacketPos.copy(dominantTarget);
 
       if (this.rallyState === 'READY_TO_SERVE' && this.scoreState.currentServer === 1) {
-        // Pre-serve two-hand stance:
-        // Support hand cradles shuttlecock in lower-left foreground
-        let supportTarget: THREE.Vector3;
-        if (rawSupp) {
-          supportTarget = Avatar3D.mapScreenToStrikePlane(
-            this.camera,
-            rawSupp.x,
-            rawSupp.y,
-            rawSupp.z,
-            true,
-            0.88,
-            0.0
-          );
-        } else {
-          supportTarget = this.playerAvatar.getSupportHandWorldPosition();
-        }
-
-        this.playerAvatar.poseArmsToTargets(dominantTarget, supportTarget, 'right');
+        // Both hands remain driven by their live MediaPipe landmarks.
         const sHand = this.playerAvatar.getSupportHandWorldPosition();
         this.trackedSupportHandPos.copy(sHand);
       } else {
-        // Rally: dominant arm reaches towards strike target
-        this.playerAvatar.poseArmsToTargets(dominantTarget, undefined, 'right');
+        // Rally: dominant arm remains driven by the live right-wrist landmark.
         const sHand = this.playerAvatar.getSupportHandWorldPosition();
         this.trackedSupportHandPos.copy(sHand);
       }
@@ -1988,8 +1954,7 @@ export class BadmintonScene implements IGameScene {
       vSwing = this.mouseSpeed;
       isUpwardSwing = this.mouseRacketTarget.y > 2.2;
 
-      this.activeRacketPos.x = THREE.MathUtils.lerp(this.activeRacketPos.x, this.mouseRacketTarget.x, 0.35);
-      this.activeRacketPos.y = THREE.MathUtils.lerp(this.activeRacketPos.y, this.mouseRacketTarget.y, 0.35);
+      this.trackRacketTarget(this.mouseRacketTarget, frameDt);
 
       const mouseNormX = THREE.MathUtils.clamp(this.mouseRacketTarget.x / (this.courtWidth / 2 + 0.5), -1, 1);
       const mouseNormY = THREE.MathUtils.clamp(((this.mouseRacketTarget.y - 1.0) / 2.2) * 2.0 - 1.0, -1, 1);
@@ -2013,19 +1978,15 @@ export class BadmintonScene implements IGameScene {
 
     this.playerAvatar.keepRacketInViewport(this.camera, 0.82);
     const racketPosition = this.playerAvatar.getRacketWorldPosition();
-    const safeDelta = Math.max(0.008, Math.min(deltaTime, 0.05));
+    const safeDelta = Math.max(0.008, frameDt);
     this.racketVelocity.copy(racketPosition).sub(this.previousRacketPosition).divideScalar(safeDelta);
     this.previousRacketPosition.copy(racketPosition);
-    if (this.rallyState === 'READY_TO_SERVE' && this.scoreState.currentServer === 1) {
-      this.readyPoseTimer += deltaTime;
-    } else {
-      this.readyPoseTimer = 0;
-    }
+    this.readyPoseTimer = 0;
 
-    // 1. Swing Intent Buffer (tracks if player swung within the last 160ms)
+    // 1. Swing Intent Buffer: Keep swing intent alive for generous window (450ms)
     const effectiveSwingSpeed = Math.max(vSwing, this.racketVelocity.length());
-    if (effectiveSwingSpeed > 0.50 || isUpwardSwing) {
-      this.swingIntentTimer = 0.16; // 160ms intent window
+    if (effectiveSwingSpeed > 0.40 || isUpwardSwing) {
+      this.swingIntentTimer = 0.45; // 450ms intent window
     } else {
       this.swingIntentTimer = Math.max(0, this.swingIntentTimer - deltaTime);
     }
@@ -2033,27 +1994,42 @@ export class BadmintonScene implements IGameScene {
 
     // 2. Arcade Swept Hit Cylinder Collision Detection (player side)
     if (this.rallyState === 'IN_PLAY' && this.lastHitter !== 'player') {
-      const inPlayerZone = this.shuttlePos.z <= -0.8 && this.shuttlePos.z > -7.2 && this.shuttleVel.z < 0;
+      const inPlayerZone = this.shuttlePos.z <= -0.6 && this.shuttlePos.z > -7.2 && this.shuttleVel.z < 0;
       if (inPlayerZone) {
         const racketHeadPos = this.playerAvatar.getRacketHeadWorldPosition();
-        
+
         // 1. Swept Segment vs. Racket Head Center: segment between prevShuttlePos and shuttlePos
         const sweptDist = this.distanceToSegment(racketHeadPos, this.prevShuttlePos, this.shuttlePos);
         const dist3D = racketHeadPos.distanceTo(this.shuttlePos);
         const effectiveDist = Math.min(dist3D, sweptDist);
-        const isInsideHitVolume = effectiveDist <= 1.35; // 1.35m generous volume
 
         // 2. Screen-Space Visual Fallback
         const racketNDC = racketHeadPos.clone().project(this.camera);
         const shuttleNDC = this.shuttlePos.clone().project(this.camera);
         const screenDist = Math.hypot(shuttleNDC.x - racketNDC.x, shuttleNDC.y - racketNDC.y);
-        const isScreenOverlap = screenDist < 0.35;
 
-        // Active swing, swing intent, or close proximity (<0.70m block) triggers return
-        const hasSwingMotion = this.racketVelocity.length() > 0.30 || this.swingIntentTimer > 0;
-        const isCloseProximity = effectiveDist <= 0.70;
+        // Calculate time to arrival at the player's racket Z plane
+        const strikeZ = racketHeadPos.z;
+        const timeToArrival = this.shuttleVel.z < -0.1
+          ? (strikeZ - this.shuttlePos.z) / this.shuttleVel.z
+          : Number.POSITIVE_INFINITY;
 
-        if ((isInsideHitVolume || isScreenOverlap) && (hasSwingMotion || isCloseProximity)) {
+        const pacingProfile = PACING_PROFILES[
+          this.currentDifficulty === 'legend' ? 'pro' : this.currentDifficulty === 'pro' ? 'normal' : 'casual'
+        ];
+        const hitWindow = pacingProfile.hitTimeWindow / 1000; // e.g. 0.36s casual
+
+        // Balanced arcade cylinder (1.10m), screen overlap < 0.28, in player's court depth (z <= -2.8m)
+        const isInsideHitVolume = effectiveDist <= 1.10;
+        const isScreenOverlap = screenDist < 0.28;
+        const isInPlayerZone = this.shuttlePos.z <= -2.8;
+
+        // Arrival window [-0.15s, +0.25s]
+        const isWithinTemporalWindow = timeToArrival >= -0.15 && timeToArrival <= 0.25;
+        const hasSwingMotion = effectiveSwingSpeed > 0.45 || hasSwingIntent;
+        const isProximityBlock = effectiveDist <= 0.50 && effectiveSwingSpeed > 0.25;
+
+        if (isInPlayerZone && (((isWithinTemporalWindow && (isInsideHitVolume || isScreenOverlap)) && hasSwingMotion) || isProximityBlock)) {
           // Snap shuttlecock to racket head for 1 frame (hit-stop), play sound/sparks, and launch return
           this.hitStopTimer = 0.016; // 1-frame hit-stop pause
           this.executePlayerHit(racketHeadPos, Math.max(vSwing, 2.4), isUpwardSwing);
@@ -2082,20 +2058,41 @@ export class BadmintonScene implements IGameScene {
           // Update holographic serve trajectory arc in real-time
           this.updateServeTrajectory(this.shuttlePos);
 
-          // Cock Racket Arming Requirement:
-          // If the racket head is drawn back (>0.35m from held shuttlecock) or after brief ready pose, arm the serve
+          // Physical Cocking / Arming Requirement:
+          // Must draw the racket head back >= 0.42m from the held shuttlecock for at least 0.15s
           const racketHeadPos = this.playerAvatar.getRacketHeadWorldPosition();
           const distRacketToShuttle = racketHeadPos.distanceTo(this.shuttlePos);
 
           if (!this.isServeArmed) {
-            if (distRacketToShuttle > 0.35 || this.readyPoseTimer > 0.75) {
-              this.isServeArmed = true;
-              this.showServeBanner('⚡ READY! SWING TO SERVE', 'ready');
+            if (distRacketToShuttle >= 0.42) {
+              this.serveArmTimer += deltaTime;
+              if (this.serveArmTimer >= 0.15) {
+                this.isServeArmed = true;
+                this.showServeBanner('⚡ READY! SWING TO SERVE', 'ready');
+              } else {
+                this.showServeBanner('🏸 DRAW RACKET BACK TO ARM SERVE', 'amber');
+              }
             } else {
+              this.serveArmTimer = 0;
               this.showServeBanner('🏸 DRAW RACKET BACK TO ARM SERVE', 'amber');
             }
           } else {
             this.showServeBanner('⚡ READY! SWING TO SERVE', 'ready');
+          }
+
+          // Visual Arming Indicator on held shuttlecock:
+          // Amber/yellow glow when !isServeArmed; Bright neon green pulse when isServeArmed
+          if (this.shuttleHaloMat && this.shuttleHaloMesh) {
+            if (this.isServeArmed) {
+              this.shuttleHaloMat.color.setHex(0x39ff14);
+              const pulse = 1.0 + Math.sin(performance.now() * 0.012) * 0.22;
+              this.shuttleHaloMesh.scale.set(pulse, pulse, pulse);
+              this.shuttleHaloMat.opacity = 0.85;
+            } else {
+              this.shuttleHaloMat.color.setHex(0xf59e0b);
+              this.shuttleHaloMesh.scale.set(1.0, 1.0, 1.0);
+              this.shuttleHaloMat.opacity = 0.60;
+            }
           }
 
           // Deliberate stroke execution or webcam swing
@@ -2114,49 +2111,51 @@ export class BadmintonScene implements IGameScene {
           this.hideServeBanner();
 
           const origin = this.shuttlePos.clone();
-          // High-arc readable serve carrying all the way to player baseline (z ≈ -3.5m, y ≈ 1.6m)
-          // vz = -18.5 to -20.0 m/s, vy = +7.5 to +8.2 m/s, clears net by >= 1.2m
-          const speedZ = 18.5 + Math.random() * 1.5;
-          const reqVy = 7.5 + Math.random() * 0.7;
+          // High-arc readable serve using active difficulty pacing profile.
+          // Casual: vz = -9.1 m/s, vy = +8.0 m/s -> ~1.55s hang-time to player baseline.
+          const servePacing = PACING_PROFILES[
+            this.currentDifficulty === 'legend' ? 'pro'
+            : this.currentDifficulty === 'pro' ? 'normal'
+            : 'casual'
+          ];
+          const isCasual = this.currentDifficulty === 'casual';
+          const speedZ = isCasual ? 9.1 : (Math.abs(servePacing.opponentSpeedZ) + (Math.random() - 0.5) * 0.4);
+          const reqVy  = isCasual ? 8.0 : (servePacing.opponentLiftY + (Math.random() - 0.5) * 0.4);
           const targetX = (Math.random() - 0.5) * 2.0;
 
           this.shuttleVel.set(targetX * 0.4, reqVy, -speedZ);
-          this.enforceNetClearance(origin, this.shuttleVel, 2.75);
+          this.enforceNetClearance(origin, this.shuttleVel, 1.85);
           this.prevShuttlePos.copy(this.shuttlePos);
-          this.triggerImpactFeedback(origin, 'serve', 55);
+          this.triggerImpactFeedback(origin, 'serve', Math.round(speedZ * 3.6));
           this.audio.badmintonHit(50);
         }
       }
     }
 
     // 4. Shuttlecock Aerodynamics & Flight Physics
+    const FIXED_DT = 1 / 60;
     if (this.rallyState === 'IN_PLAY') {
-      let dt = deltaTime;
+      this.physicsAccumulator = Math.min(this.physicsAccumulator + frameDt, 0.1);
+    } else {
+      this.physicsAccumulator = 0;
+    }
+
+    while (this.rallyState === 'IN_PLAY' && this.physicsAccumulator >= FIXED_DT) {
+      const dt = FIXED_DT;
       if (this.hitStopTimer > 0) {
-        this.hitStopTimer -= deltaTime;
-        dt = 0; // Freeze flight integration during hit-stop micro-pause
-      } else {
-        // Safeguard 1: When hitStopTimer expires, strictly clamp delta time
-        // to prevent simulation clock from executing a large catch-up time step
-        dt = Math.min(deltaTime, 0.016);
+        this.hitStopTimer = Math.max(0, this.hitStopTimer - FIXED_DT);
       }
 
-      if (dt > 0) {
+      if (this.hitStopTimer <= 0) {
         const speed = this.shuttleVel.length();
 
-        // Calibrated quadratic aerodynamic drag: k = 0.150 m^-1 (reduced from 0.198)
-        // Anisotropic drag: vertical drag is halved while ascending (vy > 0) so initial upward lift
-        // is not immediately wiped out in the first 0.2s of flight (matches real shuttlecock physics).
-        const dragCoeff = 0.150;
-        const dragDir = this.shuttleVel.clone().normalize();
-        // Reduce vertical drag component while shuttle is still climbing
-        if (this.shuttleVel.y > 0) {
-          dragDir.y *= 0.48;
-          dragDir.normalize();
-        }
-        const dragMag = dragCoeff * speed * speed;
-        const dragVec = dragDir.multiplyScalar(-dragMag * dt);
-        this.shuttleVel.add(dragVec);
+        // Calibrated aerodynamic quadratic drag: k = 0.080 m^-1
+        // Matches real feather shuttlecock flight: ~1.40s lofty arc, clear float at apex, lands at player baseline
+        const dragCoeff = 0.080;
+        const dragMag = dragCoeff * speed;
+        this.shuttleVel.x -= dragMag * this.shuttleVel.x * dt;
+        this.shuttleVel.y -= dragMag * this.shuttleVel.y * dt;
+        this.shuttleVel.z -= dragMag * this.shuttleVel.z * dt;
 
         // Gravity
         this.shuttleVel.y -= 9.8 * dt;
@@ -2206,9 +2205,13 @@ export class BadmintonScene implements IGameScene {
         this.prevShuttlePos.copy(this.shuttlePos);
       }
 
+      this.physicsAccumulator -= FIXED_DT;
+    }
+
+    if (this.rallyState === 'IN_PLAY') {
       // Net ripple animation
       if (this.netHitTimer > 0) {
-        this.netHitTimer -= deltaTime;
+        this.netHitTimer -= frameDt;
         const pulse = Math.abs(Math.sin(this.netHitTimer * 30));
         (this.netMesh.material as THREE.MeshStandardMaterial).emissive.setHex(0xff2222);
         (this.netMesh.material as THREE.MeshStandardMaterial).emissiveIntensity = pulse * 1.4;
@@ -2216,7 +2219,7 @@ export class BadmintonScene implements IGameScene {
         (this.netMesh.material as THREE.MeshStandardMaterial).emissiveIntensity = 0;
       }
 
-      // Shuttle trail update — Section 4: scale glow & size by rally tension level
+      // Shuttle trail update — Aerodynamic cyan-yellow glow
       this.shuttleTrail.unshift(this.shuttlePos.clone());
       if (this.shuttleTrail.length > this.TRAIL_LENGTH) this.shuttleTrail.pop();
       for (let i = 0; i < this.TRAIL_LENGTH; i++) {
@@ -2225,20 +2228,38 @@ export class BadmintonScene implements IGameScene {
         if (this.shuttleTrail[i]) {
           tm.visible = true;
           tm.position.copy(this.shuttleTrail[i]);
-          // Tension amplifies trail glow opacity (+90% max) and dot scale (+45% max)
-          const tensionOpacity = (1 - i / this.TRAIL_LENGTH) * 0.58 * (1 + this.rallyTensionLevel * 0.90);
-          (tm.material as THREE.MeshBasicMaterial).opacity = Math.min(0.95, tensionOpacity);
-          const tensionScale = 1.0 + this.rallyTensionLevel * 0.45 * (1 - i / this.TRAIL_LENGTH);
+          const baseOpacity = (1 - i / this.TRAIL_LENGTH) * 0.60;
+          (tm.material as THREE.MeshBasicMaterial).opacity = Math.min(0.90, baseOpacity * (1 + this.rallyTensionLevel * 0.4));
+          const tensionScale = 1.0 + this.rallyTensionLevel * 0.35 * (1 - i / this.TRAIL_LENGTH);
           tm.scale.setScalar(tensionScale);
         } else {
           tm.visible = false;
         }
       }
 
+      // Dynamic Floor Shadow Blob pinned to court floor (y = 0.02m)
+      if (this.shuttleFloorShadowMesh && this.shuttleFloorShadowMat) {
+        if (this.rallyState === 'IN_PLAY' || this.isShuttleInPlay) {
+          this.shuttleFloorShadowMesh.visible = true;
+          const yShuttle = Math.max(0, this.shuttlePos.y);
+          this.shuttleFloorShadowMesh.position.set(this.shuttlePos.x, 0.02, this.shuttlePos.z);
+          const s = THREE.MathUtils.clamp(1.0 - yShuttle * 0.12, 0.4, 1.2);
+          this.shuttleFloorShadowMesh.scale.set(s, s, 1);
+          this.shuttleFloorShadowMat.opacity = THREE.MathUtils.clamp(0.85 - yShuttle * 0.14, 0.25, 0.75);
+        } else {
+          this.shuttleFloorShadowMesh.visible = false;
+        }
+      }
+
       // Ground/Floor Impact with Visual Chalk Decal & Singles Line Calling
       // Guard: Floor drop is strictly evaluated when shuttlecock touches court floor (y <= 0.05m).
-      // Under no circumstances can Floor Drop trigger if the shuttlecock is still above y = 0.35m.
+      // Floor drop guard: Under no circumstances may an incoming opponent shot hit the floor before reaching z <= -3.8m
       if (this.shuttlePos.y <= 0.05) {
+        if (this.shuttleVel.z < 0 && this.shuttlePos.z > -3.8 && this.lastHitter === 'opponent') {
+          this.shuttlePos.y = 0.85;
+          this.shuttleVel.y = Math.max(1.5, this.shuttleVel.y);
+          return;
+        }
         this.shuttlePos.y = 0.05;
         this.isShuttleInPlay = false;
 
@@ -2283,7 +2304,7 @@ export class BadmintonScene implements IGameScene {
         };
 
         const aiResult = this.opponentAI.update(
-          deltaTime,
+          frameDt,
           this.shuttlePos,
           this.shuttleVel,
           courtBounds,
@@ -2298,7 +2319,7 @@ export class BadmintonScene implements IGameScene {
           this.enforceNetClearance(
             this.shuttlePos,
             this.shuttleVel,
-            2.75 // Clear net by at least 1.2m (1.55m net + 1.20m margin = 2.75m minimum clearance)
+            1.85 // 30cm clearance over 1.55m net tape
           );
           this.prevShuttlePos.copy(this.shuttlePos);
           this.lastHitter = 'opponent';
@@ -2500,10 +2521,13 @@ export class BadmintonScene implements IGameScene {
     if (this.fpSupportArmGroup) {
       this.scene.remove(this.fpSupportArmGroup);
     }
-    // Remove shuttle trail meshes
+    // Remove shuttle trail meshes & floor shadow
     for (const tm of this.shuttleTrailMeshes) this.scene.remove(tm);
     this.shuttleTrailMeshes = [];
     this.shuttleTrail = [];
+    if (this.shuttleFloorShadowMesh) {
+      this.scene.remove(this.shuttleFloorShadowMesh);
+    }
     if (this.pointerMoveHandler) {
       this.container.removeEventListener('mousemove', this.pointerMoveHandler);
     }

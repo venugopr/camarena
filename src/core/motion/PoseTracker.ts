@@ -23,6 +23,9 @@ export class PoseTracker {
   private actionStateMachine = new ActionStateMachine();
 
   private isRunning = false;
+  private isProcessingFrame = false;
+  private processingCanvas: HTMLCanvasElement | null = null;
+  private processingCtx: CanvasRenderingContext2D | null = null;
   private trackingMode: TrackingMode = 'synthetic';
   private syntheticAnimTime = 0;
   private syntheticAction: 'idle' | 'forehand' | 'smash' | 'backhand' | 'lunge' = 'idle';
@@ -152,7 +155,7 @@ export class PoseTracker {
     });
 
     this.poseInstance.setOptions({
-      modelComplexity: 1,
+      modelComplexity: 0,
       smoothLandmarks: true,
       enableSegmentation: false,
       smoothSegmentation: false,
@@ -161,7 +164,7 @@ export class PoseTracker {
     });
 
     this.poseInstance.onResults((results: any) => this.handlePoseResults(results));
-    this.notifyStatus('MediaPipe Pose Model loaded successfully.');
+    this.notifyStatus('MediaPipe Pose Model loaded successfully (Lite complexity 0).');
   }
 
   public async startWebcam(): Promise<boolean> {
@@ -174,8 +177,8 @@ export class PoseTracker {
       this.notifyStatus('Requesting webcam access...');
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
+          width: { ideal: 640, max: 640 },
+          height: { ideal: 480, max: 480 },
           facingMode: 'user'
         },
         audio: false
@@ -186,6 +189,14 @@ export class PoseTracker {
         await this.videoElement.play();
       }
 
+      // Initialize dedicated 640x480 processing canvas to guarantee standard resolution for MediaPipe
+      if (!this.processingCanvas) {
+        this.processingCanvas = document.createElement('canvas');
+        this.processingCanvas.width = 640;
+        this.processingCanvas.height = 480;
+        this.processingCtx = this.processingCanvas.getContext('2d', { willReadFrequently: true });
+      }
+
       this.trackingMode = 'webcam';
       this.notifyStatus('Webcam connected! Full-body 3D tracking active.');
 
@@ -193,11 +204,25 @@ export class PoseTracker {
       const processVideo = async () => {
         if (!this.isRunning || this.trackingMode !== 'webcam') return;
 
-        if (this.videoElement && this.videoElement.readyState >= 2 && this.poseInstance) {
+        // Prevent inference queue buildup: drop or skip incoming frames if the previous send({ image }) call has not resolved
+        if (!this.isProcessingFrame && this.videoElement && this.videoElement.readyState >= 2 && this.poseInstance) {
+          this.isProcessingFrame = true;
           try {
-            await this.poseInstance.send({ image: this.videoElement });
+            if (this.processingCanvas && this.processingCtx && this.videoElement.videoWidth > 0) {
+              this.processingCtx.drawImage(
+                this.videoElement,
+                0, 0,
+                this.processingCanvas.width,
+                this.processingCanvas.height
+              );
+              await this.poseInstance.send({ image: this.processingCanvas });
+            } else {
+              await this.poseInstance.send({ image: this.videoElement });
+            }
           } catch (e) {
             // Ignore temporary frame send errors
+          } finally {
+            this.isProcessingFrame = false;
           }
         }
 

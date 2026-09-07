@@ -590,7 +590,11 @@ export class Avatar3D {
   /**
    * Update 3D avatar joint and bone positions from tracked world landmarks
    */
-  public update(landmarks: Landmark3D[], dominantArm: 'right' | 'left' = 'right'): void {
+  public update(
+    landmarks: Landmark3D[],
+    dominantArm: 'right' | 'left' = 'right',
+    frameDt = 1 / 60
+  ): void {
     if (!landmarks || landmarks.length < 33) return;
 
     // Invert Y and adjust scale for Three.js coordinate system (Y is up, Z is depth)
@@ -599,9 +603,19 @@ export class Avatar3D {
     };
 
     // Keep equipment roles tied to landmark identity, never screen position.
+    const trackJoint = (current: THREE.Vector3, target: THREE.Vector3): void => {
+      if (current.distanceTo(target) > 0.25) {
+        current.copy(target);
+        return;
+      }
+
+      const alpha = 1.0 - Math.exp(-24.0 * Math.min(frameDt, 0.1));
+      current.lerp(target, alpha);
+    };
+
     for (let i = 0; i < 33; i++) {
       const pos = toThree(landmarks[i]);
-      this.joints[i].position.lerp(pos, this.jointSmoothing);
+      trackJoint(this.joints[i].position, pos);
     }
 
     const deadReckonWrist = (

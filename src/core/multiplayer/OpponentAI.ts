@@ -8,6 +8,20 @@ export interface OpponentConfig {
   smashChance: number;  // 0 - 1
 }
 
+export interface GamePacingProfile {
+  modeName: 'casual' | 'normal' | 'pro';
+  opponentSpeedZ: number;
+  opponentLiftY: number;
+  targetFlightTime: number;
+  hitTimeWindow: number;
+}
+
+export const PACING_PROFILES: Record<string, GamePacingProfile> = {
+  casual: { modeName: 'casual', opponentSpeedZ: -9.1, opponentLiftY: 8.0, targetFlightTime: 1.55, hitTimeWindow: 380 },
+  normal: { modeName: 'normal', opponentSpeedZ: -10.5, opponentLiftY: 6.5, targetFlightTime: 1.07, hitTimeWindow: 240 },
+  pro: { modeName: 'pro', opponentSpeedZ: -14.5, opponentLiftY: 5.0, targetFlightTime: 0.77, hitTimeWindow: 160 }
+};
+
 export class OpponentAI {
   private config: OpponentConfig;
   public position: Vector3D;
@@ -17,16 +31,19 @@ export class OpponentAI {
   private homePosition: Vector3D;
   private reactionTimer = 0;
   private targetPosition: Vector3D;
+  private pacingProfile: GamePacingProfile;
 
   constructor(difficulty: DifficultyLevel = 'casual', homePos: Vector3D = { x: 0, y: 0.9, z: 5 }) {
     this.homePosition = { ...homePos };
     this.position = { ...homePos };
     this.targetPosition = { ...homePos };
     this.config = this.getDifficultyConfig(difficulty);
+    this.pacingProfile = PACING_PROFILES[difficulty === 'legend' ? 'pro' : difficulty === 'pro' ? 'normal' : 'casual'];
   }
 
   public setDifficulty(diff: DifficultyLevel): void {
     this.config = this.getDifficultyConfig(diff);
+    this.pacingProfile = PACING_PROFILES[diff === 'legend' ? 'pro' : diff === 'pro' ? 'normal' : 'casual'];
   }
 
   private getDifficultyConfig(diff: DifficultyLevel): OpponentConfig {
@@ -154,39 +171,48 @@ export class OpponentAI {
       // Disable front-court drop shots until a rally count of at least 6 is achieved
       const isDrop = !isSmash && rallyCount >= 6 && roll < 0.20;
 
-      // 1. Target Depth: Set target landing strictly to the player's strike baseline:
-      // z_target in [-3.7m, -3.4m]
-      // y_arrival in [1.4m, 1.9m] (chest to eye level)
-      // x_target in [-1.8m, 1.8m]
-      const targetZ = -3.4 - Math.random() * 0.3; // [-3.7, -3.4]
+      // 1. Target Depth: Set target landing deep near player's baseline:
+      // z_target in [-4.7m, -4.3m] so the shuttlecock crosses player's strike plane (Z = -3.5m) at chest height
+      const targetZ = this.config.difficulty === 'casual'
+        ? -4.5 - (Math.random() - 0.5) * 0.4
+        : -3.8 - Math.random() * 0.4;
       const rawTargetX = (Math.random() - 0.5) * 3.6 * this.config.accuracy; // [-1.8, 1.8]
       const targetX = Math.max(-1.8, Math.min(1.8, rawTargetX));
 
       let speedZ: number;
       let reqVy: number;
 
-      if (isSmash && this.config.difficulty !== 'casual') {
+      if (this.config.difficulty === 'casual') {
+        // Casual returns pass through player strike plane (Z = -3.5m) at chest height (Y = 1.3m - 1.7m)
+        this.lastShotType = 'clear';
+        speedZ = 9.1; // 8.8 m/s to 9.4 m/s
+        reqVy = 8.0;  // 7.8 m/s to 8.2 m/s (apex y ≈ 3.8m)
+      } else if (isSmash) {
         this.lastShotType = 'smash';
-        speedZ = 19.5 + Math.random() * 1.5;
-        reqVy = 6.2 + Math.random() * 0.8;
+        speedZ = Math.abs(PACING_PROFILES.pro.opponentSpeedZ) + Math.random() * 1.0;
+        reqVy = 4.8 + Math.random() * 0.6;
       } else if (isDrop) {
         this.lastShotType = 'drop';
-        // Controlled deep drop (only after rallyCount >= 6)
-        speedZ = 13.5 + Math.random() * 1.2;
-        reqVy = 5.8 + Math.random() * 0.6;
+        // Controlled front-court drop shot
+        speedZ = 6.5 + Math.random() * 0.8;
+        reqVy = 4.2 + Math.random() * 0.4;
       } else {
-        // High-Arc Defensive Returns for Sustained Rallies:
-        // Drag-compensated flight velocity:
-        // v_z = -18.0 m/s to -20.5 m/s
-        // v_y = +6.8 m/s to +8.2 m/s
-        // Apex reaches y ≈ 3.8m - 4.5m, clears net by >= 1.2m, taking 1.2s - 1.4s transit time
-        this.lastShotType = roll < 0.65 ? 'clear' : 'drive';
-        speedZ = 18.0 + Math.random() * 2.5; // [18.0, 20.5]
-        reqVy = 6.8 + Math.random() * 1.4;   // [6.8, 8.2]
+        // Normal/pro returns
+        const isClear = roll < 0.70;
+        this.lastShotType = isClear ? 'clear' : 'drive';
+        if (isClear) {
+          speedZ = Math.abs(this.pacingProfile.opponentSpeedZ) + (Math.random() - 0.5) * 0.4;
+          reqVy = this.pacingProfile.opponentLiftY + (Math.random() - 0.5) * 0.4;
+        } else {
+          speedZ = Math.min(12.5, Math.abs(this.pacingProfile.opponentSpeedZ) * 1.25);
+          reqVy = 5.2 + (Math.random() - 0.5) * 0.4;
+        }
       }
 
-      // Transit time for horizontal targeting (1.2s - 1.4s)
-      const estTransitTime = 1.20 + Math.random() * 0.20;
+      // Transit time to player strike plane (strictly 1.45s - 1.65s in casual, 1.20s - 1.40s otherwise)
+      const estTransitTime = this.config.difficulty === 'casual'
+        ? 1.45 + Math.random() * 0.20
+        : 1.20 + Math.random() * 0.20;
       const vx = (targetX - projectilePos.x) / (estTransitTime * 0.75);
 
       hitVel = {
