@@ -39,8 +39,14 @@ export class SandboxScene implements IGameScene {
     rallyCount: 0,
     isGameOver: false,
     winner: null,
-    lastPointWinner: null
+    lastPointWinner: null,
+    targetScore: 10,
+    winByTwo: false,
+    lastPointReason: undefined,
+    matchPointText: undefined,
+    gameModeTitle: 'Motion Mirror Sandbox'
   };
+
 
   private scoreCallbacks: ((score: GameScoreState) => void)[] = [];
   private isRunning = false;
@@ -226,7 +232,12 @@ export class SandboxScene implements IGameScene {
       rallyCount: 0,
       isGameOver: false,
       winner: null,
-      lastPointWinner: null
+      lastPointWinner: null,
+      targetScore: 10,
+      winByTwo: false,
+      lastPointReason: undefined,
+      matchPointText: undefined,
+      gameModeTitle: 'Motion Mirror Sandbox'
     };
     for (const t of this.targets) {
       t.isHit = false;
@@ -234,6 +245,7 @@ export class SandboxScene implements IGameScene {
     }
     this.notifyScore();
   }
+
 
   public update(deltaTime: number, motionFrame: MotionFrame | null): void {
     if (!this.isRunning) return;

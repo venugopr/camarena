@@ -79,6 +79,19 @@ export class VectorNormalizer {
   private neutralAnkleWidth: number | null = null;
 
   /**
+   * Converts the visible shoulder midpoint into a mirrored normalized lateral coordinate.
+   * Screen-space shoulders remain usable when the lower body is outside the camera frame.
+   */
+  public getMirroredShoulderX(landmarks: Landmark3D[]): number {
+    const leftShoulder = landmarks[PoseLandmark.LEFT_SHOULDER];
+    const rightShoulder = landmarks[PoseLandmark.RIGHT_SHOULDER];
+    if (!leftShoulder || !rightShoulder) return 0;
+
+    const shoulderMidX = (leftShoulder.x + rightShoulder.x) * 0.5;
+    return (0.5 - shoulderMidX) * 2.8;
+  }
+
+  /**
    * Constructs the local coordinate basis for the player's torso
    */
   public computeLocalBasis(landmarks: Landmark3D[]): LocalBodyBasis {
@@ -202,8 +215,9 @@ export class VectorNormalizer {
     const rightWristSpeedKmh = rightSpeedMps * 3.6;
     const leftWristSpeedKmh = leftSpeedMps * 3.6;
 
-    // Dominant arm determination (highest current dynamic energy)
-    const dominantArm = rightSpeedMps >= leftSpeedMps ? 'right' : 'left';
+    // CamArena badminton binds the racket to MediaPipe's right arm. Do not
+    // infer equipment ownership from transient wrist speed or screen position.
+    const dominantArm = 'right' as const;
 
     // Lower body kinematics: lunge and weight shift
     const currentHipHeight = basis.origin.y;

@@ -35,6 +35,9 @@ export class PoseTracker {
   private frameListeners: ((frame: MotionFrame) => void)[] = [];
   private actionListeners: ((event: ActionEvent) => void)[] = [];
   private statusListeners: ((status: string, isError?: boolean) => void)[] = [];
+  private gesturePauseListeners: (() => void)[] = [];
+  private handRaiseDuration = 0;
+  private lastGesturePauseTime = 0;
 
   constructor() {
     this.actionStateMachine.onAction((evt) => {
@@ -43,6 +46,20 @@ export class PoseTracker {
       }
     });
   }
+
+  public onGesturePause(cb: () => void): () => void {
+    this.gesturePauseListeners.push(cb);
+    return () => {
+      this.gesturePauseListeners = this.gesturePauseListeners.filter(l => l !== cb);
+    };
+  }
+
+  public triggerGesturePause(): void {
+    for (const listener of this.gesturePauseListeners) {
+      listener();
+    }
+  }
+
 
   public onFrame(cb: (frame: MotionFrame) => void): () => void {
     this.frameListeners.push(cb);
@@ -263,6 +280,31 @@ export class PoseTracker {
       this.fpsTimer = timestamp;
     }
 
+    // Check for the "Raise Both Hands to Pause" gesture:
+    // Require both wrists above head level so normal play gestures do not pause the game.
+    const nose2D = raw2D[PoseLandmark.NOSE];
+    const rWrist2D = raw2D[PoseLandmark.RIGHT_WRIST];
+    const lWrist2D = raw2D[PoseLandmark.LEFT_WRIST];
+
+    const isHandRaised = Boolean(
+      rWrist2D && lWrist2D && nose2D &&
+      (rWrist2D.visibility ?? 1) > 0.4 &&
+      (lWrist2D.visibility ?? 1) > 0.4 &&
+      rWrist2D.y < nose2D.y - 0.12 &&
+      lWrist2D.y < nose2D.y - 0.12
+    );
+
+    if (isHandRaised) {
+      this.handRaiseDuration += dt;
+      if (this.handRaiseDuration >= 0.6 && timestamp - this.lastGesturePauseTime > 2500) {
+        this.lastGesturePauseTime = timestamp;
+        this.handRaiseDuration = 0;
+        this.triggerGesturePause();
+      }
+    } else {
+      this.handRaiseDuration = Math.max(0, this.handRaiseDuration - dt * 2.0);
+    }
+
     const frame: MotionFrame = {
       timestamp,
       deltaTime: dt,
@@ -275,6 +317,7 @@ export class PoseTracker {
       activeAction,
       lastActionEvent: lastEvent
     };
+
 
     for (const listener of this.frameListeners) {
       listener(frame);

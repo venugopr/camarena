@@ -15,6 +15,11 @@ export interface GameScoreState {
   isGameOver: boolean;
   winner: 1 | 2 | null;
   lastPointWinner: 1 | 2 | null;
+  targetScore: number;
+  winByTwo: boolean;
+  lastPointReason?: string;
+  matchPointText?: string;
+  gameModeTitle?: string;
 }
 
 export interface IGameScene {
@@ -24,13 +29,14 @@ export interface IGameScene {
   init(
     container: HTMLElement,
     audio: SoundSynthesizer,
-    config?: { opponentMode: OpponentMode; difficulty: DifficultyLevel }
+    config?: { opponentMode: OpponentMode; difficulty: DifficultyLevel; targetScore?: number }
   ): Promise<void> | void;
 
   start(): void;
   pause(): void;
   resume(): void;
   reset(): void;
+  setTargetScore?(score: number): void;
 
   update(deltaTime: number, motionFrame: MotionFrame | null): void;
   onAction(event: ActionEvent): void;
@@ -41,3 +47,4 @@ export interface IGameScene {
 
   destroy(): void;
 }
+

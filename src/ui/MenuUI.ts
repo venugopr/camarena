@@ -44,6 +44,17 @@ export class MenuUI {
     brand.appendChild(title);
     nav.appendChild(brand);
 
+    // 1b. Main Menu Launcher Button
+    const mainMenuBtn = document.createElement('button');
+    mainMenuBtn.className = 'icon-btn menu-launcher-btn';
+    mainMenuBtn.id = 'btn-nav-main-menu';
+    mainMenuBtn.innerHTML = '<span>🏠</span><span>Main Menu</span>';
+    mainMenuBtn.title = 'Open Game & Sport Selection Menu';
+    mainMenuBtn.onclick = () => {
+      window.dispatchEvent(new CustomEvent('open-main-menu'));
+    };
+    nav.appendChild(mainMenuBtn);
+
     // 2. Game Mode Tabs
     const tabs = document.createElement('div');
     tabs.className = 'game-tabs';
@@ -70,7 +81,7 @@ export class MenuUI {
     const controls = document.createElement('div');
     controls.className = 'nav-controls';
 
-    // Opponent Mode Selector
+    // Opponent Mode Selector (PvS, PvP, Practice)
     const oppSelect = document.createElement('select');
     oppSelect.className = 'control-select';
     oppSelect.innerHTML = `
@@ -83,6 +94,19 @@ export class MenuUI {
       this.sceneManager.setOpponentMode(mode);
     };
     controls.appendChild(oppSelect);
+
+    // Match Length / Target Score Selector
+    const targetSelect = document.createElement('select');
+    targetSelect.className = 'control-select';
+    targetSelect.innerHTML = `
+      <option value="11">Target: 11 Pts (Quick Match)</option>
+      <option value="21">Target: 21 Pts (Official BWF/ITTF)</option>
+    `;
+    targetSelect.onchange = (e) => {
+      const target = parseInt((e.target as HTMLSelectElement).value, 10);
+      this.sceneManager.setTargetScore(target);
+    };
+    controls.appendChild(targetSelect);
 
     // AI Difficulty Selector
     const diffSelect = document.createElement('select');
@@ -97,6 +121,37 @@ export class MenuUI {
       this.sceneManager.setDifficulty(diff);
     };
     controls.appendChild(diffSelect);
+
+    // Dedicated Game Pause Button
+    const pauseBtn = document.createElement('button');
+    pauseBtn.className = 'icon-btn pause-nav-btn';
+    pauseBtn.id = 'btn-nav-pause';
+    pauseBtn.innerHTML = '<span>⏸</span><span>Pause [Esc]</span>';
+    pauseBtn.onclick = () => {
+      this.sceneManager.togglePause();
+    };
+    this.sceneManager.onPauseChange((isPaused) => {
+      if (isPaused) {
+        pauseBtn.innerHTML = '<span>▶</span><span>Resume [Esc]</span>';
+        pauseBtn.classList.add('paused-active');
+      } else {
+        pauseBtn.innerHTML = '<span>⏸</span><span>Pause [Esc]</span>';
+        pauseBtn.classList.remove('paused-active');
+      }
+    });
+    controls.appendChild(pauseBtn);
+
+    // Rules Guide Trigger Button
+    const rulesNavBtn = document.createElement('button');
+    rulesNavBtn.className = 'icon-btn';
+    rulesNavBtn.innerHTML = '<span>📖</span><span>Rules</span>';
+    rulesNavBtn.onclick = () => {
+      const rulesModal = document.querySelector('.rules-overlay') as HTMLElement;
+      if (rulesModal) {
+        rulesModal.style.display = 'flex';
+      }
+    };
+    controls.appendChild(rulesNavBtn);
 
     // Camera / Simulator Switcher
     this.cameraBtn = document.createElement('button');
@@ -155,3 +210,4 @@ export class MenuUI {
     this.sceneManager.switchScene(gameId);
   }
 }
+
