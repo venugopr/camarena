@@ -39,3 +39,9 @@ lerna-debug.log*
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# Playwright Test Artifacts
+test-results/
+playwright-report/
+blob-report/
+
