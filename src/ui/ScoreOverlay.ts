@@ -12,10 +12,9 @@ export class ScoreOverlay {
   private rallyBadge!: HTMLElement;
   private serverDot!: HTMLElement;
   private serverText!: HTMLElement;
-  private rulesBanner!: HTMLElement;
   private matchPointBanner!: HTMLElement;
-  private pointToast!: HTMLElement;
-  private toastTimer: any = null;
+  private arcadeCalloutEl!: HTMLElement;
+  private calloutTimer: any = null;
 
   // Modals
   private pauseModalOverlay!: HTMLElement;
@@ -40,89 +39,89 @@ export class ScoreOverlay {
       if (this.victoryModalOverlay) this.victoryModalOverlay.style.display = 'none';
       if (this.rulesModalOverlay) this.rulesModalOverlay.style.display = 'none';
       if (this.matchPointBanner) this.matchPointBanner.style.display = 'none';
-      if (this.pointToast) this.pointToast.style.display = 'none';
+      if (this.arcadeCalloutEl) this.arcadeCalloutEl.style.display = 'none';
     }
   }
-
 
   private buildDOM(): void {
     // 1. Scoreboard Panel Container
     const scoreWrapper = document.createElement('div');
     scoreWrapper.className = 'score-wrapper';
 
+    // Broadcast Scoreboard Pill (<= 52px high)
     this.scoreHud = document.createElement('div');
-    this.scoreHud.className = 'score-hud glass-panel';
+    this.scoreHud.className = 'score-hud broadcast-pill glass-panel';
 
     // Player 1 (You)
     const p1 = document.createElement('div');
-    p1.className = 'team-score team-player';
-    const p1Label = document.createElement('span');
-    p1Label.className = 'team-label';
-    p1Label.textContent = 'PLAYER (YOU)';
+    p1.className = 'team-score-pill player';
+    p1.innerHTML = `<span class="pill-name">🏸 YOU</span>`;
     this.p1ScoreText = document.createElement('span');
-    this.p1ScoreText.className = 'team-points';
+    this.p1ScoreText.className = 'pill-pts';
     this.p1ScoreText.textContent = '0';
-    p1.appendChild(p1Label);
     p1.appendChild(this.p1ScoreText);
 
     // Center Divider & Rally
     const divider = document.createElement('div');
-    divider.className = 'score-divider';
-    this.serverDot = document.createElement('div');
-    this.serverDot.className = 'server-dot';
-    this.serverDot.title = 'Current Server';
-
+    divider.className = 'pill-divider';
+    
+    const serverWrap = document.createElement('div');
+    serverWrap.className = 'pill-server-badge';
+    this.serverDot = document.createElement('span');
+    this.serverDot.className = 'server-indicator-dot';
     this.serverText = document.createElement('span');
-    this.serverText.className = 'server-text';
-    this.serverText.textContent = 'YOU SERVE';
+    this.serverText.textContent = 'SERVE';
+    serverWrap.appendChild(this.serverDot);
+    serverWrap.appendChild(this.serverText);
 
     this.rallyBadge = document.createElement('span');
-    this.rallyBadge.className = 'rally-badge';
-    this.rallyBadge.textContent = 'RALLY: 0';
-    divider.appendChild(this.serverDot);
-    divider.appendChild(this.serverText);
+    this.rallyBadge.className = 'pill-rally';
+    this.rallyBadge.textContent = 'RALLY 0';
+
+    divider.appendChild(serverWrap);
     divider.appendChild(this.rallyBadge);
 
     // Player 2 / Opponent AI
     const p2 = document.createElement('div');
-    p2.className = 'team-score team-opponent';
-    const p2Label = document.createElement('span');
-    p2Label.className = 'team-label';
-    p2Label.textContent = 'OPPONENT';
+    p2.className = 'team-score-pill opponent';
     this.p2ScoreText = document.createElement('span');
-    this.p2ScoreText.className = 'team-points';
+    this.p2ScoreText.className = 'pill-pts';
     this.p2ScoreText.textContent = '0';
-    p2.appendChild(p2Label);
     p2.appendChild(this.p2ScoreText);
+    const p2Name = document.createElement('span');
+    p2Name.className = 'pill-name';
+    p2Name.textContent = 'BOT 🤖';
+    p2.appendChild(p2Name);
+
+    // Discrete Rules Button
+    const rulesBtn = document.createElement('button');
+    rulesBtn.className = 'pill-rules-btn';
+    rulesBtn.id = 'btn-open-rules';
+    rulesBtn.title = 'Scoring Rules & Match Guide';
+    rulesBtn.innerHTML = 'ℹ️';
+    rulesBtn.onclick = () => {
+      this.rulesModalOverlay.style.display = 'flex';
+    };
 
     this.scoreHud.appendChild(p1);
     this.scoreHud.appendChild(divider);
     this.scoreHud.appendChild(p2);
-
-    // Transparent Rules Banner (Always visible under scoreboard)
-    this.rulesBanner = document.createElement('div');
-    this.rulesBanner.className = 'rules-banner glass-panel';
-    this.rulesBanner.innerHTML = `
-      <span class="rules-badge">RULES</span>
-      <span class="rules-summary" id="rules-summary-text">FIRST TO 11 PTS • WIN BY 2 MARGIN • FLOOR DROP = POINT LOST</span>
-      <button class="rules-info-btn" id="btn-open-rules" title="Click to view detailed scoring & defeat rules">ℹ️ Rules Guide</button>
-    `;
+    this.scoreHud.appendChild(rulesBtn);
 
     // Match Point & Deuce Alert Banner
     this.matchPointBanner = document.createElement('div');
     this.matchPointBanner.className = 'match-point-banner';
     this.matchPointBanner.style.display = 'none';
 
-    // Point-Reason Toast
-    this.pointToast = document.createElement('div');
-    this.pointToast.className = 'point-toast';
-    this.pointToast.style.display = 'none';
+    // Punchy Sports Arcade Callout Banner (Top 14%)
+    this.arcadeCalloutEl = document.createElement('div');
+    this.arcadeCalloutEl.className = 'arcade-callout';
+    this.arcadeCalloutEl.style.display = 'none';
 
     scoreWrapper.appendChild(this.scoreHud);
     scoreWrapper.appendChild(this.matchPointBanner);
-    scoreWrapper.appendChild(this.pointToast);
-    scoreWrapper.appendChild(this.rulesBanner);
     this.container.appendChild(scoreWrapper);
+    this.container.appendChild(this.arcadeCalloutEl);
 
     // 2. Pause Menu Modal
     this.buildPauseModal();
@@ -132,14 +131,6 @@ export class ScoreOverlay {
 
     // 4. Detailed Rules Guide Modal
     this.buildRulesModal();
-
-    // Bind rules guide button
-    const rulesBtn = this.rulesBanner.querySelector('#btn-open-rules') as HTMLButtonElement;
-    if (rulesBtn) {
-      rulesBtn.onclick = () => {
-        this.rulesModalOverlay.style.display = 'flex';
-      };
-    }
   }
 
   private buildPauseModal(): void {
@@ -392,72 +383,77 @@ export class ScoreOverlay {
     this.sceneManager.onSceneChange((sceneId: string) => {
       if (sceneId === 'sandbox') {
         this.scoreHud.style.display = 'none';
-        this.rulesBanner.style.display = 'none';
       } else {
         this.scoreHud.style.display = 'flex';
-        this.rulesBanner.style.display = 'flex';
       }
       this.victoryModalOverlay.style.display = 'none';
       this.pauseModalOverlay.style.display = 'none';
       this.matchPointBanner.style.display = 'none';
-      this.pointToast.style.display = 'none';
-      this.updateRulesBannerText(sceneId);
+      if (this.arcadeCalloutEl) this.arcadeCalloutEl.style.display = 'none';
     });
   }
 
-  private updateRulesBannerText(sceneId: string): void {
-    const summaryText = document.getElementById('rules-summary-text');
-    if (!summaryText) return;
-    const target = this.sceneManager.getTargetScore();
+  private showArcadeCallout(winner: 1 | 2, reason: string): void {
+    if (this.calloutTimer) {
+      clearTimeout(this.calloutTimer);
+    }
 
-    if (sceneId === 'badminton') {
-      summaryText.textContent = `TARGET: FIRST TO ${target} PTS • WIN BY 2 • FLOOR DROP OR OUT = POINT LOST`;
-    } else if (sceneId === 'tabletennis') {
-      summaryText.textContent = `TARGET: FIRST TO ${target} PTS • WIN BY 2 • 2-PT SERVICE ROTATION • NET/OUT = POINT LOST`;
+    let text = 'POINT WON!';
+    let modeClass = 'point-won';
+
+    const r = reason.toLowerCase();
+    if (r.includes('out of bounds') || r.includes('sailed out')) {
+      text = 'OUT OF BOUNDS!';
+      modeClass = 'out';
+    } else if (r.includes('net fault') || r.includes('net')) {
+      text = 'NET FAULT!';
+      modeClass = 'net-fault';
+    } else if (r.includes('ace') || r.includes('service ace')) {
+      text = 'SERVICE ACE!';
+      modeClass = 'ace';
+    } else if (r.includes('floor drop')) {
+      text = winner === 1 ? 'POINT WON!' : 'FLOOR DROP!';
+      modeClass = winner === 1 ? 'point-won' : 'out';
+    } else if (winner === 1) {
+      text = 'POINT WON!';
+      modeClass = 'point-won';
     } else {
-      summaryText.textContent = 'FREE PRACTICE & BIOMECHANICAL MOTION MIRROR';
+      text = 'POINT OPPONENT';
+      modeClass = 'out';
     }
-  }
 
-  private showPointToast(winner: 1 | 2, reason: string): void {
-    if (this.toastTimer) {
-      clearTimeout(this.toastTimer);
-    }
-    const isPlayer = winner === 1;
-    this.pointToast.className = `point-toast ${isPlayer ? 'player-point' : 'opponent-point'}`;
-    this.pointToast.innerHTML = `
-      <span class="point-badge">${isPlayer ? '🟢 +1 PLAYER' : '🔴 +1 OPPONENT'}</span>
-      <span class="point-reason">${reason}</span>
-    `;
-    this.pointToast.style.display = 'flex';
+    this.arcadeCalloutEl.className = `arcade-callout ${modeClass}`;
+    this.arcadeCalloutEl.textContent = text;
+    this.arcadeCalloutEl.style.display = 'flex';
+    this.arcadeCalloutEl.style.opacity = '1';
 
-    this.toastTimer = setTimeout(() => {
-      this.pointToast.style.display = 'none';
-    }, 2800);
+    // Fade out smoothly after 1.2s
+    this.calloutTimer = setTimeout(() => {
+      this.arcadeCalloutEl.style.opacity = '0';
+      setTimeout(() => {
+        this.arcadeCalloutEl.style.display = 'none';
+        this.arcadeCalloutEl.style.opacity = '1';
+      }, 250);
+    }, 1200);
   }
 
   private updateScore(score: GameScoreState): void {
     this.p1ScoreText.textContent = `${score.player1Score}`;
     this.p2ScoreText.textContent = `${score.player2Score}`;
-    this.rallyBadge.textContent = `RALLY: ${score.rallyCount}`;
+    this.rallyBadge.textContent = `RALLY ${score.rallyCount}`;
 
-    // Position server indicator dot towards active server
+    // Server indicator badge
     if (score.currentServer === 1) {
-      this.serverDot.style.transform = 'translateX(-22px)';
-      this.serverText.textContent = 'YOU SERVE';
+      this.serverText.textContent = 'YOU';
       this.serverText.style.color = '#00f2fe';
     } else {
-      this.serverDot.style.transform = 'translateX(22px)';
-      this.serverText.textContent = 'AI SERVES';
+      this.serverText.textContent = 'AI';
       this.serverText.style.color = '#ff0055';
     }
 
-    // Rules banner target reflection
-    this.updateRulesBannerText(this.sceneManager.getActiveSceneId() || 'badminton');
-
-    // Show last point reason toast
+    // Show punchy arcade callout on score change
     if (score.lastPointReason && score.lastPointWinner) {
-      this.showPointToast(score.lastPointWinner, score.lastPointReason);
+      this.showArcadeCallout(score.lastPointWinner, score.lastPointReason);
     }
 
     // Match point / Deuce banner

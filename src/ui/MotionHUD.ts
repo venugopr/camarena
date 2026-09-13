@@ -117,22 +117,65 @@ export class MotionHUD {
     this.statusDot = document.createElement('span');
     this.statusDot.className = 'status-dot';
     this.statusText = document.createElement('span');
-    this.statusText.textContent = 'LIVE FEED 60FPS';
+    this.statusText.textContent = 'LIVE';
     statusBadge.appendChild(this.statusDot);
     statusBadge.appendChild(this.statusText);
+
+    const controlsGroup = document.createElement('div');
+    controlsGroup.className = 'pip-controls-group';
+
+    const stopProp = (e: Event) => {
+      e.stopPropagation();
+    };
 
     // Mirror mode expand button
     const mirrorBtn = document.createElement('button');
     mirrorBtn.className = 'pip-mirror-btn';
     mirrorBtn.id = 'btn-pip-mirror-toggle';
-    mirrorBtn.innerHTML = '<span>🪞</span><span>Mirror View</span>';
+    mirrorBtn.innerHTML = '<span>🪞</span>';
     mirrorBtn.title = 'Toggle between compact PiP and large high-visibility mirror';
-    mirrorBtn.onclick = () => {
+    mirrorBtn.addEventListener('mousedown', stopProp);
+    mirrorBtn.addEventListener('pointerdown', stopProp);
+    mirrorBtn.onclick = (e: MouseEvent) => {
+      e.stopPropagation();
+      e.preventDefault();
       this.toggleMirrorMode();
     };
 
+    // Minimize to pill button
+    const minBtn = document.createElement('button');
+    minBtn.className = 'pip-min-btn';
+    minBtn.id = 'btn-pip-minimize';
+    minBtn.innerHTML = '<span>—</span>';
+    minBtn.title = 'Minimize Camera PiP to floating pill';
+    minBtn.addEventListener('mousedown', stopProp);
+    minBtn.addEventListener('pointerdown', stopProp);
+    minBtn.onclick = (e: MouseEvent) => {
+      e.stopPropagation();
+      e.preventDefault();
+      this.togglePipMinimize();
+    };
+
+    controlsGroup.appendChild(mirrorBtn);
+    controlsGroup.appendChild(minBtn);
+
     pipHeader.appendChild(statusBadge);
-    pipHeader.appendChild(mirrorBtn);
+    pipHeader.appendChild(controlsGroup);
+
+    // Minimized icon element shown when pill is active
+    const minIcon = document.createElement('div');
+    minIcon.className = 'pip-minimized-icon';
+    minIcon.innerHTML = '<span>📹</span>';
+    minIcon.title = 'Click to restore Camera PiP';
+    minIcon.addEventListener('mousedown', stopProp);
+    minIcon.addEventListener('pointerdown', stopProp);
+    minIcon.onclick = (e: MouseEvent) => {
+      e.stopPropagation();
+      e.preventDefault();
+      if (this.isPipMinimized) {
+        this.togglePipMinimize();
+      }
+    };
 
     // Equipment & Posture & Depth badges on PIP
     this.equipmentBadge = document.createElement('div');
@@ -155,14 +198,30 @@ export class MotionHUD {
     this.pipContainer.appendChild(this.videoEl);
     this.pipContainer.appendChild(this.canvasEl);
     this.pipContainer.appendChild(pipHeader);
+    this.pipContainer.appendChild(minIcon);
     this.pipContainer.appendChild(this.equipmentBadge);
     this.pipContainer.appendChild(this.postureBadge);
     this.pipContainer.appendChild(depthBadge);
     this.pipContainer.appendChild(gestureHint);
 
+    // Prevent ANY click or pointer interaction on the PiP container from bubbling to Three.js canvas pointer handler
+    this.pipContainer.addEventListener('mousedown', stopProp);
+    this.pipContainer.addEventListener('pointerdown', stopProp);
+    this.pipContainer.addEventListener('mouseup', stopProp);
+    this.pipContainer.addEventListener('pointerup', stopProp);
+    this.pipContainer.addEventListener('touchstart', stopProp, { passive: true });
+
+    this.pipContainer.addEventListener('click', (e: MouseEvent) => {
+      e.stopPropagation();
+      e.preventDefault();
+      // If minimized, clicking anywhere on the 40x40px floating pill restores/expands the PiP
+      if (this.isPipMinimized) {
+        this.togglePipMinimize();
+      }
+    });
+
     pipHud.appendChild(this.pipContainer);
     this.container.appendChild(pipHud);
-
 
     // 2. Left Bottom Athletic Action & Telemetry Banner
     const actionBanner = document.createElement('div');
@@ -174,7 +233,7 @@ export class MotionHUD {
     const titleRow = document.createElement('div');
     titleRow.className = 'stroke-title';
     this.actionTitle = document.createElement('span');
-    this.actionTitle.textContent = 'READY STANCE';
+    this.actionTitle.innerHTML = '🏸 <span class="stroke-label">SPEED</span>';
     this.actionSpeed = document.createElement('span');
     this.actionSpeed.className = 'stroke-speed';
     this.actionSpeed.textContent = '0 KM/H';
@@ -199,7 +258,7 @@ export class MotionHUD {
     telemetryRow.appendChild(this.telemetryLunge);
     telemetryRow.appendChild(this.telemetryFps);
 
-    // Quick Action Test Bar (instant testing for user convenience)
+    // Quick Action Test Bar (visible only in debug mode via F3 or Shift+D)
     const testBar = document.createElement('div');
     testBar.className = 'test-actions-bar';
     const actions = [
@@ -213,7 +272,8 @@ export class MotionHUD {
       const btn = document.createElement('button');
       btn.className = 'test-action-btn';
       btn.textContent = a.label;
-      btn.onclick = () => {
+      btn.onclick = (e: MouseEvent) => {
+        e.stopPropagation();
         this.tracker.triggerSyntheticStroke(a.id);
       };
       testBar.appendChild(btn);
@@ -225,16 +285,25 @@ export class MotionHUD {
     actionBanner.appendChild(this.actionCard);
     actionBanner.appendChild(testBar);
 
+    // Debug toggle: F3 or Shift+D
+    window.addEventListener('keydown', (e: KeyboardEvent) => {
+      if ((e.target as HTMLElement)?.tagName === 'INPUT') return;
+      if (e.key === 'F3' || (e.key === 'D' && e.shiftKey)) {
+        actionBanner.classList.toggle('debug-active');
+      }
+    });
+
     this.container.appendChild(actionBanner);
   }
 
   private bindEvents(): void {
     this.tracker.onStatus((status, isError) => {
-      this.statusText.textContent = status.substring(0, 26);
       if (isError) {
+        this.statusText.textContent = 'ERROR';
         this.statusDot.style.background = '#ff0055';
         this.statusDot.style.boxShadow = '0 0 6px #ff0055';
       } else {
+        this.statusText.textContent = 'LIVE';
         this.statusDot.style.background = '#39ff14';
         this.statusDot.style.boxShadow = '0 0 6px #39ff14';
       }
@@ -256,25 +325,47 @@ export class MotionHUD {
   }
 
   private isMirrorExpanded: boolean = false;
+  private isPipMinimized: boolean = false;
+
+  public togglePipMinimize(): void {
+    this.isPipMinimized = !this.isPipMinimized;
+    if (this.isPipMinimized) {
+      this.pipContainer.classList.add('minimized');
+      this.pipContainer.classList.remove('mirror-expanded');
+    } else {
+      this.pipContainer.classList.remove('minimized');
+    }
+  }
 
   public toggleMirrorMode(): void {
     this.isMirrorExpanded = !this.isMirrorExpanded;
     const btn = this.pipContainer.querySelector('#btn-pip-mirror-toggle');
     if (this.isMirrorExpanded) {
       this.pipContainer.classList.add('mirror-expanded');
-      if (btn) btn.innerHTML = '<span>↗</span><span>Compact PiP</span>';
+      this.pipContainer.classList.remove('minimized');
+      this.isPipMinimized = false;
+      if (btn) btn.innerHTML = '<span>↗</span>';
     } else {
       this.pipContainer.classList.remove('mirror-expanded');
-      if (btn) btn.innerHTML = '<span>🪞</span><span>Mirror View</span>';
+      if (btn) btn.innerHTML = '<span>🪞</span>';
     }
   }
 
   public update(frame: MotionFrame | null): void {
     if (!frame) return;
 
-    // Update Telemetry
-    const speedKmh = Math.max(frame.metrics.rightWristSpeedKmh, frame.metrics.leftWristSpeedKmh);
+    // Update Telemetry & Speedometer with resting deadzone (< 4.0 km/h)
+    const rawSpeedKmh = Math.max(frame.metrics.rightWristSpeedKmh, frame.metrics.leftWristSpeedKmh);
+    const speedKmh = rawSpeedKmh < 4.0 ? 0 : rawSpeedKmh;
     this.actionSpeed.textContent = `${speedKmh.toFixed(0)} KM/H`;
+
+    if (speedKmh > 60) {
+      this.actionSpeed.className = 'stroke-speed smash';
+    } else if (speedKmh > 35) {
+      this.actionSpeed.className = 'stroke-speed fast';
+    } else {
+      this.actionSpeed.className = 'stroke-speed';
+    }
 
     const powerRatio = Math.min(100, (speedKmh / 50) * 100);
     this.meterFill.style.width = `${powerRatio}%`;

@@ -9,6 +9,7 @@ export interface MatchSelectionConfig {
   difficulty: DifficultyLevel;
   targetScore: number;
   useWebcam: boolean;
+  dominantHand: 'right' | 'left';
 }
 
 export class MainMenuUI {
@@ -26,6 +27,7 @@ export class MainMenuUI {
   private selectedOpponent: OpponentMode = 'system';
   private selectedDifficulty: DifficultyLevel = 'casual';
   private selectedTargetScore: number = 11;
+  private selectedHand: 'right' | 'left' = 'right';
   private useWebcam: boolean = true;
 
   // UI Button Maps
@@ -33,6 +35,7 @@ export class MainMenuUI {
   private opponentBtns: Map<OpponentMode, HTMLElement> = new Map();
   private diffBtns: Map<DifficultyLevel, HTMLElement> = new Map();
   private targetBtns: Map<number, HTMLElement> = new Map();
+  private handBtns: Map<'right' | 'left', HTMLElement> = new Map();
   private trackingBtns: Map<string, HTMLElement> = new Map();
 
   constructor(
@@ -198,6 +201,10 @@ export class MainMenuUI {
             <div class="config-group">
               <label class="config-label">SCORING TARGET (WIN BY 2)</label>
               <div class="btn-toggle-row target-toggles">
+                <button class="config-btn" data-target="5">
+                  <strong>5 Points</strong>
+                  <small>Blitz Match</small>
+                </button>
                 <button class="config-btn active" data-target="11">
                   <strong>11 Points</strong>
                   <small>Quick Match</small>
@@ -230,6 +237,26 @@ export class MainMenuUI {
                 <button class="config-btn" data-diff="legend">
                   <strong>Legend 🔥</strong>
                   <small>Smash counters & tight angles</small>
+                </button>
+              </div>
+            </div>
+
+            <div class="config-group">
+              <label class="config-label">DOMINANT PLAYING HAND</label>
+              <div class="btn-toggle-row hand-toggles">
+                <button class="config-btn active" data-hand="right">
+                  <span class="btn-icon">🏸</span>
+                  <div class="btn-text">
+                    <strong>Right-Handed (Default)</strong>
+                    <small>Racket on right hand, serve toss on left</small>
+                  </div>
+                </button>
+                <button class="config-btn" data-hand="left">
+                  <span class="btn-icon">🏸</span>
+                  <div class="btn-text">
+                    <strong>Left-Handed</strong>
+                    <small>Racket on left hand, serve toss on right</small>
+                  </div>
                 </button>
               </div>
             </div>
@@ -319,7 +346,17 @@ export class MainMenuUI {
       });
     });
 
-    // 5. Tracking Mode
+    // 5. Dominant Hand
+    const handElements = this.overlayEl.querySelectorAll('.hand-toggles .config-btn');
+    handElements.forEach((el) => {
+      const hand = el.getAttribute('data-hand') as 'right' | 'left';
+      this.handBtns.set(hand, el as HTMLElement);
+      el.addEventListener('click', () => {
+        this.selectHand(hand);
+      });
+    });
+
+    // 6. Tracking Mode
     const trackingElements = this.overlayEl.querySelectorAll('.tracking-toggles .config-btn');
     trackingElements.forEach((el) => {
       const mode = el.getAttribute('data-tracking')!;
@@ -329,7 +366,7 @@ export class MainMenuUI {
       });
     });
 
-    // 6. Launch Button
+    // 7. Launch Button
     const launchBtn = this.overlayEl.querySelector('#btn-launch-match') as HTMLButtonElement;
     launchBtn.addEventListener('click', async () => {
       await this.launchMatch();
@@ -388,6 +425,19 @@ export class MainMenuUI {
     this.updateSummaryText();
   }
 
+  private selectHand(hand: 'right' | 'left'): void {
+    this.selectedHand = hand;
+    for (const [id, el] of this.handBtns) {
+      if (id === hand) {
+        el.classList.add('active');
+      } else {
+        el.classList.remove('active');
+      }
+    }
+    this.audio.tableTennisBounce(true);
+    this.updateSummaryText();
+  }
+
   private selectTracking(useWebcam: boolean): void {
     this.useWebcam = useWebcam;
     const modeStr = useWebcam ? 'webcam' : 'synthetic';
@@ -410,20 +460,21 @@ export class MainMenuUI {
       this.selectedSport === 'badminton'
         ? 'Badminton 3D'
         : this.selectedSport === 'tabletennis'
-        ? 'Table Tennis 3D'
-        : 'Motion Sandbox';
+          ? 'Table Tennis 3D'
+          : 'Motion Sandbox';
 
     const oppLabel =
       this.selectedOpponent === 'system'
         ? `Vs. AI (${this.selectedDifficulty.toUpperCase()})`
         : this.selectedOpponent === 'pvp'
-        ? '2-Player (PvP)'
-        : 'Free Practice';
+          ? '2-Player (PvP)'
+          : 'Free Practice';
 
+    const handLabel = this.selectedHand === 'right' ? 'Right-Handed' : 'Left-Handed';
     const trackLabel = this.useWebcam ? 'Webcam Pose Tracking' : 'Motion Simulator';
 
     summary.innerHTML = `
-      📋 Selected: <strong>${sportLabel}</strong> • ${oppLabel} • Target: <strong>${this.selectedTargetScore} pts</strong> (Win by 2) • ${trackLabel}
+      📋 Selected: <strong>${sportLabel}</strong> • ${oppLabel} • ${handLabel} • Target: <strong>${this.selectedTargetScore} pts</strong> (Win by 2) • ${trackLabel}
     `;
   }
 
@@ -441,19 +492,23 @@ export class MainMenuUI {
       opponent: this.selectedOpponent,
       difficulty: this.selectedDifficulty,
       targetScore: this.selectedTargetScore,
-      useWebcam: this.useWebcam
+      useWebcam: this.useWebcam,
+      dominantHand: this.selectedHand
     };
 
     // 1. Configure Scene Manager settings
     this.sceneManager.setOpponentMode(config.opponent);
     this.sceneManager.setDifficulty(config.difficulty);
     this.sceneManager.setTargetScore(config.targetScore);
+    this.sceneManager.setDominantHand(config.dominantHand);
+    this.tracker.setDominantHand(config.dominantHand);
 
-    // 2. Initialize tracking & camera if webcam selected
-    const videoEl = this.getVideoElementFn();
-    await this.tracker.init(videoEl);
-
+    // 2. Initialize tracking & camera only if webcam selected
     if (config.useWebcam) {
+      const videoEl = this.getVideoElementFn();
+      if (videoEl) {
+        await this.tracker.init(videoEl);
+      }
       await this.tracker.startWebcam();
     } else {
       this.tracker.setTrackingMode('synthetic');

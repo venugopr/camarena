@@ -17,9 +17,9 @@ export interface ActionClassifierConfig {
 
 export class ActionStateMachine {
   private config: ActionClassifierConfig = {
-    smashVelocityMps: 4.2,   // ~15 km/h at wrist
-    driveVelocityMps: 2.8,   // ~10 km/h at wrist
-    liftVelocityMps: 2.0,    // ~7.2 km/h at wrist
+    smashVelocityMps: 5.2,   // ~18.7 km/h at wrist (requires intentional fast swing)
+    driveVelocityMps: 3.8,   // ~13.7 km/h at wrist (well above 11 km/h desk jitter ceiling)
+    liftVelocityMps: 3.4,    // ~12.2 km/h at wrist (well above 11 km/h desk jitter ceiling)
     cooldownMs: 320          // 320ms refractory period
   };
 
@@ -84,6 +84,13 @@ export class ActionStateMachine {
     const wristVel = velocities[wristIdx] || { x: 0, y: 0, z: 0 };
     const wristSpeed = Math3D.length(wristVel);
     const wristSpeedKmh = wristSpeed * 3.6;
+
+    // Desk jitter suppression: Natural resting webcam pixel noise produces 5-11 km/h (1.4-3.0 m/s).
+    // If the wrist is moving below 3.2 m/s (~11.5 km/h), do not classify as any swing/stroke action.
+    if (wristSpeed < 3.2) {
+      this.currentAction = 'READY_STANCE';
+      return { activeAction: this.currentAction, lastEvent: this.lastActionEvent };
+    }
 
     // Local coordinates relative to torso/hip root
     const localWrist = normalizedLandmarks[wristIdx];

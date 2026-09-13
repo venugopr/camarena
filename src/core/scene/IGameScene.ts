@@ -29,7 +29,7 @@ export interface IGameScene {
   init(
     container: HTMLElement,
     audio: SoundSynthesizer,
-    config?: { opponentMode: OpponentMode; difficulty: DifficultyLevel; targetScore?: number }
+    config?: { opponentMode: OpponentMode; difficulty: DifficultyLevel; targetScore?: number; dominantHand?: 'right' | 'left' }
   ): Promise<void> | void;
 
   start(): void;

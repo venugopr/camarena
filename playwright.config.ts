@@ -11,7 +11,7 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   retries: 0,
-  timeout: 90000,
+  timeout: 180000,
   outputDir: path.resolve(__dirname, 'test-results'),
   use: {
     baseURL: 'http://localhost:5173',

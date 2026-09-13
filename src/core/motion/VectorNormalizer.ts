@@ -77,6 +77,15 @@ export interface LocalBodyBasis {
 export class VectorNormalizer {
   private neutralHipHeight: number | null = null;
   private neutralAnkleWidth: number | null = null;
+  private dominantHand: 'right' | 'left' = 'right';
+
+  public setDominantHand(hand: 'right' | 'left'): void {
+    this.dominantHand = hand;
+  }
+
+  public getDominantHand(): 'right' | 'left' {
+    return this.dominantHand;
+  }
 
   /**
    * Converts the visible shoulder midpoint into a mirrored normalized lateral coordinate.
@@ -89,6 +98,30 @@ export class VectorNormalizer {
 
     const shoulderMidX = (leftShoulder.x + rightShoulder.x) * 0.5;
     return (0.5 - shoulderMidX) * 2.8;
+  }
+
+  /**
+   * Converts the visible hip/torso/shoulder midpoint into a mirrored normalized lateral coordinate.
+   * Uses hips when visible (>0.30 visibility), falling back seamlessly to shoulders.
+   */
+  public getMirroredTorsoX(landmarks: Landmark3D[]): number {
+    const leftHip = landmarks[PoseLandmark.LEFT_HIP];
+    const rightHip = landmarks[PoseLandmark.RIGHT_HIP];
+    const leftShoulder = landmarks[PoseLandmark.LEFT_SHOULDER];
+    const rightShoulder = landmarks[PoseLandmark.RIGHT_SHOULDER];
+
+    const hasHips = leftHip && rightHip && (leftHip.visibility ?? 1) > 0.30 && (rightHip.visibility ?? 1) > 0.30;
+    if (hasHips) {
+      const hipMidX = (leftHip.x + rightHip.x) * 0.5;
+      return (0.5 - hipMidX) * 2.8;
+    }
+
+    if (leftShoulder && rightShoulder) {
+      const shoulderMidX = (leftShoulder.x + rightShoulder.x) * 0.5;
+      return (0.5 - shoulderMidX) * 2.8;
+    }
+
+    return 0;
   }
 
   /**
@@ -215,9 +248,7 @@ export class VectorNormalizer {
     const rightWristSpeedKmh = rightSpeedMps * 3.6;
     const leftWristSpeedKmh = leftSpeedMps * 3.6;
 
-    // CamArena badminton binds the racket to MediaPipe's right arm. Do not
-    // infer equipment ownership from transient wrist speed or screen position.
-    const dominantArm = 'right' as const;
+    const dominantArm = this.dominantHand;
 
     // Lower body kinematics: lunge and weight shift
     const currentHipHeight = basis.origin.y;

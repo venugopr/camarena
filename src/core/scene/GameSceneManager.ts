@@ -18,6 +18,7 @@ export class GameSceneManager {
   private opponentMode: OpponentMode = 'system';
   private difficulty: DifficultyLevel = 'casual';
   private targetScore: number = 11;
+  private dominantHand: 'right' | 'left' = 'right';
   private isPaused: boolean = false;
 
   private scoreChangeCallbacks: ((score: GameScoreState) => void)[] = [];
@@ -89,6 +90,17 @@ export class GameSceneManager {
 
   public getTargetScore(): number {
     return this.targetScore;
+  }
+
+  public setDominantHand(hand: 'right' | 'left'): void {
+    this.dominantHand = hand;
+    if (this.activeSceneId) {
+      this.switchScene(this.activeSceneId);
+    }
+  }
+
+  public getDominantHand(): 'right' | 'left' {
+    return this.dominantHand;
   }
 
   public isGamePaused(): boolean {
@@ -169,7 +181,8 @@ export class GameSceneManager {
     await nextScene.init(this.container, this.audio, {
       opponentMode: this.opponentMode,
       difficulty: this.difficulty,
-      targetScore: this.targetScore
+      targetScore: this.targetScore,
+      dominantHand: this.dominantHand
     });
 
     if (nextScene.setTargetScore) {

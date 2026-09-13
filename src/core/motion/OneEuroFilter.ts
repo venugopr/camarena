@@ -55,10 +55,14 @@ export class OneEuroFilter1D {
   }
 
   filter(val: number, timestamp: number): { value: number; derivative: number } {
+    if (!Number.isFinite(val)) {
+      return { value: 0, derivative: 0 };
+    }
+
     if (this.lastTime === null || timestamp <= this.lastTime) {
       this.lastTime = timestamp;
       const filteredVal = this.xFilter.filter(val, 1.0);
-      return { value: filteredVal, derivative: 0 };
+      return { value: Number.isFinite(filteredVal) ? filteredVal : val, derivative: 0 };
     }
 
     const dt = Math.max((timestamp - this.lastTime) / 1000.0, 0.001);
@@ -73,12 +77,14 @@ export class OneEuroFilter1D {
     const edx = this.dxFilter.filter(rawDx, this.alpha(rate, this.dCutoff));
 
     // Dynamic cutoff frequency based on filtered speed
-    const cutoff = this.minCutoff + this.beta * Math.abs(edx);
+    const cutoff = Math.max(0.5, this.minCutoff + this.beta * Math.abs(edx));
 
     // Filter value
     const filteredVal = this.xFilter.filter(val, this.alpha(rate, cutoff));
+    const safeVal = Number.isFinite(filteredVal) ? filteredVal : val;
+    const safeDx = Number.isFinite(edx) ? edx : 0;
 
-    return { value: filteredVal, derivative: edx };
+    return { value: safeVal, derivative: safeDx };
   }
 
   reset(): void {
@@ -128,13 +134,26 @@ export class PoseFilterBank {
 
   constructor(landmarkCount = 33) {
     for (let i = 0; i < landmarkCount; i++) {
-      // Arms and wrists move much faster than core, so apply higher beta for extremities
+      // Extremities (wrists, fingers, hands) move with rapid acceleration during swings
       const isWristOrHand = (i >= 15 && i <= 22);
+      const isElbowOrKnee = (i === 13 || i === 14 || i === 25 || i === 26);
       const isAnkleOrFoot = (i >= 27 && i <= 32);
-      const minCutoff = (isWristOrHand || isAnkleOrFoot) ? 1.5 : 1.0;
-      const beta = isWristOrHand ? 0.08 : (isAnkleOrFoot ? 0.05 : 0.03);
 
-      this.filters.push(new OneEuroFilter3D(minCutoff, beta, 1.2));
+      let minCutoff = 0.9;
+      let beta = 0.04;
+      let dCutoff = 1.0;
+
+      if (isWristOrHand) {
+        minCutoff = 1.2;
+        beta = 0.08;
+        dCutoff = 1.2;
+      } else if (isElbowOrKnee || isAnkleOrFoot) {
+        minCutoff = 1.1;
+        beta = 0.06;
+        dCutoff = 1.1;
+      }
+
+      this.filters.push(new OneEuroFilter3D(minCutoff, beta, dCutoff));
     }
   }
 

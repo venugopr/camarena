@@ -8,6 +8,8 @@ export const SKELETON_CONNECTIONS: [number, number][] = [
   [PoseLandmark.LEFT_EYE, PoseLandmark.NOSE],
   [PoseLandmark.NOSE, PoseLandmark.RIGHT_EYE],
   [PoseLandmark.RIGHT_EYE, PoseLandmark.RIGHT_EAR],
+  [PoseLandmark.NOSE, PoseLandmark.LEFT_SHOULDER],
+  [PoseLandmark.NOSE, PoseLandmark.RIGHT_SHOULDER],
   // Shoulders & Torso
   [PoseLandmark.LEFT_SHOULDER, PoseLandmark.RIGHT_SHOULDER],
   [PoseLandmark.LEFT_SHOULDER, PoseLandmark.LEFT_HIP],
@@ -24,10 +26,12 @@ export const SKELETON_CONNECTIONS: [number, number][] = [
   // Left Leg
   [PoseLandmark.LEFT_HIP, PoseLandmark.LEFT_KNEE],
   [PoseLandmark.LEFT_KNEE, PoseLandmark.LEFT_ANKLE],
+  [PoseLandmark.LEFT_ANKLE, PoseLandmark.LEFT_HEEL],
   [PoseLandmark.LEFT_ANKLE, PoseLandmark.LEFT_FOOT_INDEX],
   // Right Leg
   [PoseLandmark.RIGHT_HIP, PoseLandmark.RIGHT_KNEE],
   [PoseLandmark.RIGHT_KNEE, PoseLandmark.RIGHT_ANKLE],
+  [PoseLandmark.RIGHT_ANKLE, PoseLandmark.RIGHT_HEEL],
   [PoseLandmark.RIGHT_ANKLE, PoseLandmark.RIGHT_FOOT_INDEX],
 ];
 
@@ -36,6 +40,7 @@ export class Avatar3D {
   private joints: THREE.Mesh[] = [];
   private bones: THREE.Mesh[] = [];
   private racketGroup: THREE.Group | null = null;
+  public racketMesh?: THREE.Mesh;
   private paddleGroup: THREE.Group | null = null;
   private headMesh: THREE.Mesh;
   private readonly jointSmoothing = 0.18;
@@ -45,12 +50,20 @@ export class Avatar3D {
   private jointMat: THREE.MeshStandardMaterial;
   private boneMat: THREE.MeshStandardMaterial;
   private racketFrameMat?: THREE.MeshStandardMaterial;
+  private racketStringMat?: THREE.MeshBasicMaterial;
+  public dominantArm: 'right' | 'left' = 'right';
+  private trackedForwardZ = 0;
   private dominantHandGroup: THREE.Group = new THREE.Group();
   private supportHandGroup: THREE.Group = new THREE.Group();
   private lastRightWrist = new THREE.Vector3();
   private lastLeftWrist = new THREE.Vector3();
   private hasRightWrist = false;
   private hasLeftWrist = false;
+  private smoothedRightWristVel = new THREE.Vector3();
+  private smoothedRacketVel = new THREE.Vector3();
+  private prevRightWristPos = new THREE.Vector3();
+  private prevRacketWorldPos = new THREE.Vector3();
+  private isVelocitiesInitialized = false;
 
   constructor(primaryColor = 0x00f2fe, secondaryColor = 0x39ff14) {
     this.primaryColor = primaryColor;
@@ -228,6 +241,7 @@ export class Avatar3D {
     const frame = new THREE.Mesh(frameGeo, frameMat);
     frame.scale.set(0.88, 1.22, 1);
     frame.position.y = 0.83;
+    this.racketMesh = frame;
     this.racketGroup.add(frame);
 
     // High tension nano-mesh string bed
@@ -238,13 +252,14 @@ export class Avatar3D {
       opacity: 0.6,
       wireframe: true
     });
+    this.racketStringMat = stringMat;
     const strings = new THREE.Mesh(stringGeo, stringMat);
     strings.scale.set(0.88, 1.22, 1);
     strings.position.y = 0.83;
     this.racketGroup.add(strings);
 
-    this.racketGroup.scale.set(1.15, 1.15, 1.15);
-    this.racketGroup.visible = false;
+    this.racketGroup.scale.set(1.0, 1.0, 1.0);
+    this.racketGroup.visible = true;
     this.group.add(this.racketGroup);
   }
 
@@ -336,10 +351,11 @@ export class Avatar3D {
    */
   public applyDefaultPose(sport: 'badminton' | 'tabletennis' | 'sandbox' = 'tabletennis', isOpponent = false): void {
     const hipY = 0.95;
-    const shoulderY = hipY + 0.40; // 1.35m
-    const headY = shoulderY + 0.22; // 1.63m
+    const shoulderY = 1.45; // 1.45m upright athletic shoulder height (just below 1.55m net tape)
+    const headY = 1.75; // 1.75m true full-height standing athlete (visibly taller than 1.55m net tape)
 
     // Set joints to athletic ready pose
+    // Base skeleton in 3D world: Right is +X (screen-right), Left is -X (screen-left)
     this.joints[PoseLandmark.LEFT_HIP].position.set(-0.16, hipY, 0);
     this.joints[PoseLandmark.RIGHT_HIP].position.set(0.16, hipY, 0);
 
@@ -349,44 +365,115 @@ export class Avatar3D {
     this.headMesh.position.set(0, headY, 0.08);
     this.joints[PoseLandmark.NOSE].position.set(0, headY, 0.08);
 
-    // Knees slightly bent in ready athletic crouch
-    this.joints[PoseLandmark.LEFT_KNEE].position.set(-0.19, 0.52, 0.06);
-    this.joints[PoseLandmark.RIGHT_KNEE].position.set(0.19, 0.52, 0.06);
+    // Knees fixed in natural athletic ready bend at Y = 0.50m
+    this.joints[PoseLandmark.LEFT_KNEE].position.set(-0.19, 0.50, 0.06);
+    this.joints[PoseLandmark.RIGHT_KNEE].position.set(0.19, 0.50, 0.06);
     this.joints[PoseLandmark.LEFT_ANKLE].position.set(-0.22, 0.08, -0.02);
     this.joints[PoseLandmark.RIGHT_ANKLE].position.set(0.22, 0.08, -0.02);
+    this.joints[PoseLandmark.LEFT_HEEL].position.set(-0.22, 0.04, -0.06);
+    this.joints[PoseLandmark.RIGHT_HEEL].position.set(0.22, 0.04, -0.06);
+    this.joints[PoseLandmark.LEFT_FOOT_INDEX].position.set(-0.22, 0.00, 0.12);
+    this.joints[PoseLandmark.RIGHT_FOOT_INDEX].position.set(0.22, 0.00, 0.12);
 
     if (sport === 'tabletennis') {
-      // Arms forward in TT stance holding paddle over table height
-      this.joints[PoseLandmark.LEFT_ELBOW].position.set(-0.32, 1.1, 0.22);
-      this.joints[PoseLandmark.LEFT_WRIST].position.set(-0.22, 0.96, 0.36);
+      // Table Tennis stance
+      if (this.dominantArm === 'right') {
+        this.joints[PoseLandmark.LEFT_ELBOW].position.set(-0.32, 1.1, 0.22);
+        this.joints[PoseLandmark.LEFT_WRIST].position.set(-0.22, 0.96, 0.36);
 
-      // Dominant arm holding TT bat
-      this.joints[PoseLandmark.RIGHT_ELBOW].position.set(0.32, 1.06, 0.22);
-      this.joints[PoseLandmark.RIGHT_WRIST].position.set(0.28, 0.96, 0.44);
+        this.joints[PoseLandmark.RIGHT_ELBOW].position.set(0.32, 1.06, 0.22);
+        this.joints[PoseLandmark.RIGHT_WRIST].position.set(0.28, 0.96, 0.44);
 
-      if (this.paddleGroup) {
-        this.paddleGroup.position.set(0.28, 0.96, 0.44);
-        this.paddleGroup.rotation.set(0.35, 0, -0.2);
+        if (this.paddleGroup) {
+          this.paddleGroup.position.set(0.28, 0.96, 0.44);
+          this.paddleGroup.rotation.set(0.35, 0, -0.2);
+        }
+      } else {
+        this.joints[PoseLandmark.RIGHT_ELBOW].position.set(0.32, 1.1, 0.22);
+        this.joints[PoseLandmark.RIGHT_WRIST].position.set(0.22, 0.96, 0.36);
+
+        this.joints[PoseLandmark.LEFT_ELBOW].position.set(-0.32, 1.06, 0.22);
+        this.joints[PoseLandmark.LEFT_WRIST].position.set(-0.28, 0.96, 0.44);
+
+        if (this.paddleGroup) {
+          this.paddleGroup.position.set(-0.28, 0.96, 0.44);
+          this.paddleGroup.rotation.set(0.35, 0, 0.2);
+        }
       }
     } else {
       // Badminton ready pose
-      this.joints[PoseLandmark.LEFT_ELBOW].position.set(-0.32, 1.15, 0.15);
-      this.joints[PoseLandmark.LEFT_WRIST].position.set(-0.24, 1.18, 0.32);
+      if (this.dominantArm === 'right') {
+        // Right-handed: Racket in right hand (+X, screen-right), support hand in left (-X, screen-left)
+        this.joints[PoseLandmark.LEFT_ELBOW].position.set(-0.32, 1.18, 0.15);
+        this.joints[PoseLandmark.LEFT_WRIST].position.set(-0.24, 1.25, 0.32);
 
-      this.joints[PoseLandmark.RIGHT_ELBOW].position.set(0.36, 1.25, 0.18);
-      this.joints[PoseLandmark.RIGHT_WRIST].position.set(0.32, 1.48, 0.28);
+        this.joints[PoseLandmark.RIGHT_ELBOW].position.set(0.36, 1.30, 0.18);
+        this.joints[PoseLandmark.RIGHT_WRIST].position.set(0.32, 1.48, 0.28);
 
-      if (this.racketGroup) {
-        this.racketGroup.position.set(0.32, 1.48, 0.28);
-        this.racketGroup.rotation.set(0.2, 0, 0);
-      }
-      if (this.supportHandGroup) {
-        this.supportHandGroup.position.set(-0.24, 1.18, 0.32);
-        this.supportHandGroup.rotation.set(-0.2, 0.2, 0);
+        if (this.racketGroup) {
+          this.racketGroup.position.set(0.32, 1.48, 0.28);
+          this.racketGroup.rotation.set(0.2, 0, 0);
+          this.racketGroup.scale.set(1.0, 1.0, 1.0);
+          this.racketGroup.visible = true;
+          this.racketGroup.traverse(c => { c.visible = true; });
+        }
+        if (this.supportHandGroup) {
+          this.supportHandGroup.position.set(-0.24, 1.25, 0.32);
+          this.supportHandGroup.rotation.set(-0.2, 0.2, 0);
+        }
+      } else {
+        // Left-handed: Racket in left hand (-X, screen-left), support hand in right (+X, screen-right)
+        this.joints[PoseLandmark.RIGHT_ELBOW].position.set(0.32, 1.18, 0.15);
+        this.joints[PoseLandmark.RIGHT_WRIST].position.set(0.24, 1.25, 0.32);
+
+        this.joints[PoseLandmark.LEFT_ELBOW].position.set(-0.36, 1.30, 0.18);
+        this.joints[PoseLandmark.LEFT_WRIST].position.set(-0.32, 1.48, 0.28);
+
+        if (this.racketGroup) {
+          this.racketGroup.position.set(-0.32, 1.48, 0.28);
+          this.racketGroup.rotation.set(0.2, 0, 0);
+          this.racketGroup.scale.set(1.0, 1.0, 1.0);
+          this.racketGroup.visible = true;
+          this.racketGroup.traverse(c => { c.visible = true; });
+        }
+        if (this.supportHandGroup) {
+          this.supportHandGroup.position.set(0.24, 1.25, 0.32);
+          this.supportHandGroup.rotation.set(-0.2, -0.2, 0);
+        }
       }
     }
 
     this.updateBones();
+  }
+
+  public setDominantArm(arm: 'right' | 'left'): void {
+    this.dominantArm = arm;
+    this.applyDefaultPose(this.racketGroup?.visible ? 'badminton' : (this.paddleGroup?.visible ? 'tabletennis' : 'badminton'));
+  }
+
+  public getDominantWristWorldPosition(): THREE.Vector3 {
+    const wristIdx = this.dominantArm === 'right' ? PoseLandmark.RIGHT_WRIST : PoseLandmark.LEFT_WRIST;
+    const wrist = this.joints[wristIdx];
+    const pos = new THREE.Vector3();
+    wrist.getWorldPosition(pos);
+    return pos;
+  }
+
+  public getRacketGroup(): THREE.Group | null {
+    return this.racketGroup;
+  }
+
+  public lockRacketToWrist(): void {
+    if (!this.racketGroup) return;
+    const wristIdx = this.dominantArm === 'right' ? PoseLandmark.RIGHT_WRIST : PoseLandmark.LEFT_WRIST;
+    const wrist = this.joints[wristIdx];
+    if (wrist) {
+      this.racketGroup.position.copy(wrist.position);
+    }
+    this.racketGroup.scale.set(1.0, 1.0, 1.0);
+    this.racketGroup.visible = true;
+    if (this.racketMesh) this.racketMesh.visible = true;
+    this.racketGroup.traverse((child) => { child.visible = true; });
   }
 
   /**
@@ -395,22 +482,28 @@ export class Avatar3D {
   public poseArmsToTargets(
     dominantWorldTarget: THREE.Vector3,
     supportWorldTarget?: THREE.Vector3,
-    dominantArm: 'right' | 'left' = 'right'
+    dominantArm: 'right' | 'left' = this.dominantArm
   ): void {
     const upVector = new THREE.Vector3(0, 1, 0);
 
     // 1. Dominant arm reaching towards racket target
-    const dShoulderIdx = PoseLandmark.RIGHT_SHOULDER;
-    const dElbowIdx = PoseLandmark.RIGHT_ELBOW;
-    const dWristIdx = PoseLandmark.RIGHT_WRIST;
+    const dShoulderIdx = dominantArm === 'right' ? PoseLandmark.RIGHT_SHOULDER : PoseLandmark.LEFT_SHOULDER;
+    const dElbowIdx = dominantArm === 'right' ? PoseLandmark.RIGHT_ELBOW : PoseLandmark.LEFT_ELBOW;
+    const dWristIdx = dominantArm === 'right' ? PoseLandmark.RIGHT_WRIST : PoseLandmark.LEFT_WRIST;
+
+    const sShoulderIdx = dominantArm === 'right' ? PoseLandmark.LEFT_SHOULDER : PoseLandmark.RIGHT_SHOULDER;
+    const sElbowIdx = dominantArm === 'right' ? PoseLandmark.LEFT_ELBOW : PoseLandmark.RIGHT_ELBOW;
+    const sWristIdx = dominantArm === 'right' ? PoseLandmark.LEFT_WRIST : PoseLandmark.RIGHT_WRIST;
 
     // Reset base shoulder & head lateral anchors before applying dynamic reach lean
-    this.joints[dShoulderIdx].position.x = 0.24;
+    this.joints[PoseLandmark.RIGHT_SHOULDER].position.x = 0.24;
     this.joints[PoseLandmark.LEFT_SHOULDER].position.x = -0.24;
-    this.joints[PoseLandmark.LEFT_SHOULDER].position.y = 1.35;
-    this.joints[dShoulderIdx].position.y = 1.35;
+    this.joints[PoseLandmark.LEFT_SHOULDER].position.y = 1.45;
+    this.joints[PoseLandmark.RIGHT_SHOULDER].position.y = 1.45;
     this.headMesh.position.x = 0;
+    this.headMesh.position.y = 1.75;
     this.joints[PoseLandmark.NOSE].position.x = 0;
+    this.joints[PoseLandmark.NOSE].position.y = 1.75;
 
     const shoulderPos = this.joints[dShoulderIdx].position;
     const localTarget = this.group.worldToLocal(dominantWorldTarget.clone());
@@ -421,8 +514,8 @@ export class Avatar3D {
       const spineRoll = THREE.MathUtils.clamp(reachOffset / 1.2, -0.28, 0.28);
       const shoulderShift = THREE.MathUtils.clamp((reachOffset - Math.sign(reachOffset) * 0.45) * 0.5, -0.25, 0.25);
       shoulderPos.x += shoulderShift;
-      this.joints[PoseLandmark.LEFT_SHOULDER].position.x += shoulderShift * 0.6;
-      this.joints[PoseLandmark.LEFT_SHOULDER].position.y -= Math.sin(spineRoll) * 0.24;
+      this.joints[sShoulderIdx].position.x += (dominantArm === 'right' ? shoulderShift * 0.6 : -shoulderShift * 0.6);
+      this.joints[sShoulderIdx].position.y -= Math.sin(spineRoll) * 0.24;
       this.joints[dShoulderIdx].position.y += Math.sin(spineRoll) * 0.24;
       this.headMesh.position.x += shoulderShift * 0.7;
       this.joints[PoseLandmark.NOSE].position.x += shoulderShift * 0.7;
@@ -436,25 +529,20 @@ export class Avatar3D {
     wristPos.y = Math.min(wristPos.y, 1.78);
     this.joints[dWristIdx].position.copy(wristPos);
 
-    const sideOffset = 0.09;
+    const sideOffset = dominantArm === 'right' ? 0.09 : -0.09;
     this.joints[dElbowIdx].position.copy(shoulderPos).add(wristPos).multiplyScalar(0.5);
     this.joints[dElbowIdx].position.x += sideOffset;
     this.joints[dElbowIdx].position.y -= 0.04;
 
-    const forearmDir = new THREE.Vector3().subVectors(wristPos, this.joints[dElbowIdx].position).normalize();
-    if (this.racketGroup && this.racketGroup.visible) {
-      this.racketGroup.position.copy(wristPos);
-      const quat = new THREE.Quaternion().setFromUnitVectors(upVector, forearmDir);
+    const elbowPos = this.joints[dElbowIdx].position;
+    const forearmDir = new THREE.Vector3().subVectors(wristPos, elbowPos).normalize();
 
-      // Dynamic underhand scoop pitch: when hand drops to waist/knee level, pitch racket head down
-      const handElevation = wristPos.y - shoulderPos.y;
-      if (wristPos.y <= 1.15 || handElevation < -0.30) {
-        const pitchFactor = THREE.MathUtils.clamp((1.15 - wristPos.y) / 0.60, 0.0, 1.0);
-        const pitchRad = pitchFactor * (-75 * Math.PI / 180);
-        const pitchQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), pitchRad);
-        quat.multiply(pitchQuat);
-      }
-      this.racketGroup.setRotationFromQuaternion(quat);
+    if (this.racketGroup) {
+      this.racketGroup.position.copy(wristPos);
+      this.racketGroup.visible = true;
+      this.racketGroup.scale.set(1.0, 1.0, 1.0);
+      this.racketGroup.traverse((child) => { child.visible = true; });
+      this.updateRacketTransform(wristPos, elbowPos, shoulderPos);
     }
     if (this.paddleGroup && this.paddleGroup.visible) {
       this.paddleGroup.position.copy(wristPos);
@@ -464,30 +552,28 @@ export class Avatar3D {
 
     // 2. Support arm (cradling/holding shuttlecock or athletic balance)
     if (supportWorldTarget) {
-      const sShoulderIdx = PoseLandmark.LEFT_SHOULDER;
-      const sElbowIdx = PoseLandmark.LEFT_ELBOW;
-      const sWristIdx = PoseLandmark.LEFT_WRIST;
-
       const sShoulderPos = this.joints[sShoulderIdx].position;
       const localSTarget = this.group.worldToLocal(supportWorldTarget.clone());
       const sArmVector = new THREE.Vector3().subVectors(localSTarget, sShoulderPos);
-      
-      // Relax reach limit, especially when reaching across torso to the right (localSTarget.x > 0)
-      const isCrossBody = localSTarget.x > 0;
+
+      const isCrossBody = dominantArm === 'right' ? localSTarget.x > 0 : localSTarget.x < 0;
       const maxReach = isCrossBody ? 0.95 : 0.78;
       const sArmLength = Math.min(maxReach, Math.max(0.20, sArmVector.length()));
       const sArmDir = sArmVector.normalize();
 
       const sWristPos = new THREE.Vector3().copy(sShoulderPos).addScaledVector(sArmDir, sArmLength);
-      // Ensure cross-body target can reach at least +0.50m to the right of avatar root
-      if (isCrossBody && sWristPos.x < Math.min(localSTarget.x, 0.50)) {
-        sWristPos.x = Math.min(localSTarget.x, 0.50);
+      if (isCrossBody) {
+        if (dominantArm === 'right' && sWristPos.x > Math.min(localSTarget.x, 0.50)) {
+          sWristPos.x = Math.min(localSTarget.x, 0.50);
+        } else if (dominantArm === 'left' && sWristPos.x < Math.max(localSTarget.x, -0.50)) {
+          sWristPos.x = Math.max(localSTarget.x, -0.50);
+        }
       }
       this.joints[sWristIdx].position.copy(sWristPos);
 
-      // Adaptive elbow inflection: when reaching across the body to the right,
-      // allow elbow to tuck inward/forward rather than forcing it outward left (-0.07)
-      const sSideOffset = isCrossBody ? THREE.MathUtils.lerp(-0.04, 0.08, Math.min(1, localSTarget.x / 0.50)) : -0.07;
+      const sSideOffset = isCrossBody
+        ? (dominantArm === 'right' ? THREE.MathUtils.lerp(-0.04, 0.08, Math.min(1, localSTarget.x / 0.50)) : THREE.MathUtils.lerp(0.04, -0.08, Math.min(1, -localSTarget.x / 0.50)))
+        : (dominantArm === 'right' ? -0.07 : 0.07);
       this.joints[sElbowIdx].position.copy(sShoulderPos).add(sWristPos).multiplyScalar(0.5);
       this.joints[sElbowIdx].position.x += sSideOffset;
       this.joints[sElbowIdx].position.y -= 0.04;
@@ -500,6 +586,66 @@ export class Avatar3D {
     }
 
     this.updateBones();
+  }
+
+  /**
+   * Computes an authentic badminton racket transform from active arm kinematics.
+   * Guarantees the handle is held at the wrist, the shaft extends upward and forward (+Z)
+   * into the court, the racket head is ALWAYS in front of the handle, and the string bed faces the net.
+   */
+  public updateRacketTransform(
+    wristPos: THREE.Vector3,
+    elbowPos: THREE.Vector3,
+    shoulderPos: THREE.Vector3
+  ): void {
+    if (!this.racketGroup) return;
+
+    this.racketGroup.position.copy(wristPos);
+    this.racketGroup.visible = true;
+    this.racketGroup.scale.set(1.0, 1.0, 1.0);
+    if (this.racketMesh) this.racketMesh.visible = true;
+    this.racketGroup.traverse((child) => { child.visible = true; });
+
+    const forearmVec = new THREE.Vector3().subVectors(wristPos, elbowPos);
+    const forearmDir = forearmVec.length() > 0.01
+      ? forearmVec.normalize()
+      : new THREE.Vector3(0, 0.4, 0.9).normalize();
+
+    const handElevation = wristPos.y - shoulderPos.y;
+
+    // In avatar local space, forward towards the net is ALWAYS positive Z (+Z).
+    // The shaft vector points upward (+Y) and forward (+Z) into the court.
+    let shaftX = forearmDir.x * 0.35;
+    let shaftY = 0.82;
+    let shaftZ = 0.55;
+
+    if (wristPos.y <= 1.15 || handElevation < -0.30) {
+      // Underhand scoop / low drop: racket head dips down and forward
+      const pitchFactor = THREE.MathUtils.clamp((1.15 - wristPos.y) / 0.60, 0.0, 1.0);
+      shaftY = THREE.MathUtils.lerp(0.82, -0.65, pitchFactor);
+      shaftZ = THREE.MathUtils.lerp(0.55, 0.75, pitchFactor);
+    } else if (handElevation > 0.20) {
+      // Overhead smash / high clear: racket head extends high up and forward
+      shaftY = THREE.MathUtils.clamp(0.70 + forearmDir.y * 0.30, 0.60, 0.96);
+      shaftZ = Math.max(0.30, Math.abs(forearmDir.z) * 0.5 + 0.25);
+    } else {
+      // Mid-court drive / push: natural athletic forward angle
+      shaftY = THREE.MathUtils.clamp(0.75 + Math.max(0, forearmDir.y) * 0.25, 0.50, 0.90);
+      shaftZ = Math.max(0.40, Math.abs(forearmDir.z) * 0.6 + 0.35);
+    }
+
+    const shaftDir = new THREE.Vector3(shaftX, shaftY, shaftZ).normalize();
+
+    // String bed face normal faces forward (+Z in avatar space)
+    const forwardRef = new THREE.Vector3(0, 0, 1);
+    let lateralX = new THREE.Vector3().crossVectors(shaftDir, forwardRef).normalize();
+    if (lateralX.lengthSq() < 0.001) {
+      lateralX = new THREE.Vector3(1, 0, 0);
+    }
+    const normalZ = new THREE.Vector3().crossVectors(lateralX, shaftDir).normalize();
+
+    const basisMatrix = new THREE.Matrix4().makeBasis(lateralX, shaftDir, normalZ);
+    this.racketGroup.setRotationFromMatrix(basisMatrix);
   }
 
   /**
@@ -562,6 +708,40 @@ export class Avatar3D {
   /**
    * Procedural IK swing animation for athletic strokes (smash, drive, clear)
    */
+  /**
+   * Poses arm into a clear, visually telegraphed backswing windup pose
+   * Pulls the racket back by -0.35m to -0.42m behind the body
+   */
+  public playBackswingPose(
+    progress: number, // 0 to 1
+    dominantArm: 'right' | 'left' = 'right',
+    isSmash = false
+  ): void {
+    const dShoulderIdx = dominantArm === 'right' ? PoseLandmark.RIGHT_SHOULDER : PoseLandmark.LEFT_SHOULDER;
+    const shoulderPos = this.joints[dShoulderIdx].position.clone();
+    this.group.localToWorld(shoulderPos);
+
+    // Ready stance position (slightly in front of chest)
+    const readyLocal = new THREE.Vector3(
+      dominantArm === 'right' ? 0.22 : -0.22,
+      0.15,
+      0.10
+    );
+    const readyPos = shoulderPos.clone().add(readyLocal.applyQuaternion(this.group.quaternion));
+
+    // Deep backswing windup: arm pulled back and high (avatar local -Z is behind avatar)
+    const windupLocal = new THREE.Vector3(
+      dominantArm === 'right' ? 0.36 : -0.36,
+      isSmash ? 0.58 : 0.32,
+      -0.42 // -0.42m behind avatar torso
+    );
+    const windupPos = shoulderPos.clone().add(windupLocal.applyQuaternion(this.group.quaternion));
+
+    const easedT = THREE.MathUtils.smoothstep(progress, 0, 1);
+    const currentTarget = new THREE.Vector3().lerpVectors(readyPos, windupPos, easedT);
+    this.poseArmsToTargets(currentTarget, undefined, dominantArm);
+  }
+
   public playSwingAnimation(
     targetWorld: THREE.Vector3,
     progress: number, // 0 to 1
@@ -573,20 +753,34 @@ export class Avatar3D {
     this.group.localToWorld(shoulderPos);
 
     let strikeTarget: THREE.Vector3;
-    if (progress < 0.3) {
-      // Wind-up: pull arm back and up
-      const windupOffset = new THREE.Vector3(dominantArm === 'right' ? 0.35 : -0.35, isSmash ? 0.6 : 0.3, 0.4);
-      strikeTarget = shoulderPos.clone().add(windupOffset);
-    } else if (progress < 0.6) {
+    if (progress < 0.30) {
+      // Wind-up: pull arm back and up (avatar local -Z is behind avatar)
+      const windupLocal = new THREE.Vector3(
+        dominantArm === 'right' ? 0.32 : -0.32,
+        isSmash ? 0.55 : 0.25,
+        -0.38
+      );
+      const windupPos = shoulderPos.clone().add(windupLocal.applyQuaternion(this.group.quaternion));
+      strikeTarget = windupPos;
+    } else if (progress < 0.60) {
       // Strike phase: whip racket head forward into ball target
-      const t = (progress - 0.3) / 0.3;
-      const windupPos = shoulderPos.clone().add(new THREE.Vector3(dominantArm === 'right' ? 0.35 : -0.35, isSmash ? 0.6 : 0.3, 0.4));
+      const t = (progress - 0.30) / 0.30;
+      const windupLocal = new THREE.Vector3(
+        dominantArm === 'right' ? 0.32 : -0.32,
+        isSmash ? 0.55 : 0.25,
+        -0.38
+      );
+      const windupPos = shoulderPos.clone().add(windupLocal.applyQuaternion(this.group.quaternion));
       strikeTarget = new THREE.Vector3().lerpVectors(windupPos, targetWorld, t);
     } else {
-      // Follow-through: sweep across body downwards
-      const t = (progress - 0.6) / 0.4;
-      const followOffset = new THREE.Vector3(dominantArm === 'right' ? -0.28 : 0.28, -0.25, -0.35);
-      const followPos = shoulderPos.clone().add(followOffset);
+      // Follow-through: sweep across body forward into court (avatar local +Z is forward)
+      const t = (progress - 0.60) / 0.40;
+      const followLocal = new THREE.Vector3(
+        dominantArm === 'right' ? -0.28 : 0.28,
+        -0.22,
+        0.38
+      );
+      const followPos = shoulderPos.clone().add(followLocal.applyQuaternion(this.group.quaternion));
       strikeTarget = new THREE.Vector3().lerpVectors(targetWorld, followPos, t);
     }
 
@@ -605,7 +799,8 @@ export class Avatar3D {
 
       const bone = this.bones[b];
       const dist = p1.distanceTo(p2);
-      bone.scale.set(1, Math.max(0.001, dist), 1);
+      // Overlap cylinder ends slightly into joint sphere centers (R=0.045m) to eliminate air gaps
+      bone.scale.set(1, Math.max(0.001, dist + 0.035), 1);
 
       // Position bone at midpoint
       bone.position.copy(p1).add(p2).multiplyScalar(0.5);
@@ -622,83 +817,170 @@ export class Avatar3D {
    */
   public update(
     landmarks: Landmark3D[],
-    dominantArm: 'right' | 'left' = 'right',
+    dominantArm: 'right' | 'left' = this.dominantArm,
     frameDt = 1 / 60
   ): void {
     if (!landmarks || landmarks.length < 33) return;
+    this.dominantArm = dominantArm;
 
-    // Invert Y and adjust scale for Three.js coordinate system (Y is up, Z is depth)
+    // Invert X and Y for Three.js coordinate system (Right is +X, Y is up, Z is depth)
     const toThree = (lm: Landmark3D): THREE.Vector3 => {
-      return new THREE.Vector3(lm.x, -lm.y, lm.z);
+      return new THREE.Vector3(-lm.x, -lm.y, lm.z);
     };
 
     // Keep equipment roles tied to landmark identity, never screen position.
     const trackJoint = (current: THREE.Vector3, target: THREE.Vector3): void => {
-      if (current.distanceTo(target) > 0.25) {
+      if (current.distanceTo(target) > 0.60) {
         current.copy(target);
         return;
       }
 
-      const alpha = 1.0 - Math.exp(-24.0 * Math.min(frameDt, 0.1));
+      const alpha = Math.min(1.0, 1.0 - Math.exp(-36.0 * Math.min(frameDt, 0.1)));
       current.lerp(target, alpha);
     };
 
-    for (let i = 0; i < 33; i++) {
-      const pos = toThree(landmarks[i]);
-      trackJoint(this.joints[i].position, pos);
+    // 1. Procedural Fixed-Height Athletic Base (Court Anchoring — Never collapses to floor)
+    // Feet: Fixed firmly on court surface at Y = 0.0m
+    // Knees: Natural athletic ready bend at Y = 0.45m
+    // Hips / Pelvis: Upright athletic standing height at Y = 0.95m
+    // Shoulders: Positioned upright at Y = 1.45m
+    // Head: Positioned upright at Y = 1.75m
+    const hipY = 0.95;
+    this.joints[PoseLandmark.LEFT_HIP].position.set(-0.16, hipY, 0);
+    this.joints[PoseLandmark.RIGHT_HIP].position.set(0.16, hipY, 0);
+    this.joints[PoseLandmark.LEFT_KNEE].position.set(-0.19, 0.45, 0.06);
+    this.joints[PoseLandmark.RIGHT_KNEE].position.set(0.19, 0.45, 0.06);
+    this.joints[PoseLandmark.LEFT_ANKLE].position.set(-0.22, 0.08, -0.02);
+    this.joints[PoseLandmark.RIGHT_ANKLE].position.set(0.22, 0.08, -0.02);
+    this.joints[PoseLandmark.LEFT_HEEL].position.set(-0.22, 0.04, -0.06);
+    this.joints[PoseLandmark.RIGHT_HEEL].position.set(0.22, 0.04, -0.06);
+    this.joints[PoseLandmark.LEFT_FOOT_INDEX].position.set(-0.22, 0.00, 0.12);
+    this.joints[PoseLandmark.RIGHT_FOOT_INDEX].position.set(0.22, 0.00, 0.12);
+
+    // 2. Drive Only Upper Body with Webcam:
+    // (1) Lateral spine tilt / torso lean from shoulder angle
+    const rawLeftSh = landmarks[PoseLandmark.LEFT_SHOULDER];
+    const rawRightSh = landmarks[PoseLandmark.RIGHT_SHOULDER];
+    let clampedRoll = 0;
+    let spineLeanX = 0;
+
+    if (rawLeftSh && rawRightSh) {
+      const pL = toThree(rawLeftSh);
+      const pR = toThree(rawRightSh);
+      const rollAngle = Math.atan2(pR.y - pL.y, pR.x - pL.x);
+      clampedRoll = THREE.MathUtils.clamp(rollAngle, -0.35, 0.35); // ±20 degrees torso roll
+      spineLeanX = Math.sin(clampedRoll) * 0.20;
     }
 
-    const deadReckonWrist = (
-      wristIndex: PoseLandmark,
-      elbowIndex: PoseLandmark,
-      previous: THREE.Vector3,
-      hasPrevious: boolean
-    ): boolean => {
-      const wrist = this.joints[wristIndex].position;
-      const elbow = this.joints[elbowIndex].position;
-      const visibility = landmarks[wristIndex]?.visibility ?? 1;
-      if (visibility >= 0.35 || !hasPrevious) return visibility >= 0.35;
-
-      const armDirection = previous.clone().sub(elbow).normalize();
-      wrist.copy(elbow).addScaledVector(armDirection, 0.42);
-      return false;
-    };
-
-    const rightVisible = deadReckonWrist(
-      PoseLandmark.RIGHT_WRIST,
-      PoseLandmark.RIGHT_ELBOW,
-      this.lastRightWrist,
-      this.hasRightWrist
+    const baseShoulderY = 1.45;
+    const leftShoulderTarget = new THREE.Vector3(
+      -0.24 * Math.cos(clampedRoll) + spineLeanX,
+      baseShoulderY - 0.24 * Math.sin(clampedRoll),
+      0
     );
-    const leftVisible = deadReckonWrist(
-      PoseLandmark.LEFT_WRIST,
-      PoseLandmark.LEFT_ELBOW,
-      this.lastLeftWrist,
-      this.hasLeftWrist
+    const rightShoulderTarget = new THREE.Vector3(
+      0.24 * Math.cos(clampedRoll) + spineLeanX,
+      baseShoulderY + 0.24 * Math.sin(clampedRoll),
+      0
     );
-    if (rightVisible) {
-      this.lastRightWrist.copy(this.joints[PoseLandmark.RIGHT_WRIST].position);
-      this.hasRightWrist = true;
+    trackJoint(this.joints[PoseLandmark.LEFT_SHOULDER].position, leftShoulderTarget);
+    trackJoint(this.joints[PoseLandmark.RIGHT_SHOULDER].position, rightShoulderTarget);
+
+    // Head / Nose positioned at Y = 1.75m
+    const headTarget = new THREE.Vector3(spineLeanX * 1.25, 1.75, 0.08);
+    trackJoint(this.joints[PoseLandmark.NOSE].position, headTarget);
+    this.headMesh.position.copy(this.joints[PoseLandmark.NOSE].position);
+
+    // Head/Face landmarks (1 to 10) relative to head
+    for (let i = 1; i <= 10; i++) {
+      if (landmarks[i] && landmarks[PoseLandmark.NOSE]) {
+        const rel = toThree(landmarks[i]).sub(toThree(landmarks[PoseLandmark.NOSE]));
+        this.joints[i].position.copy(this.joints[PoseLandmark.NOSE].position).add(rel);
+      }
     }
-    if (leftVisible) {
-      this.lastLeftWrist.copy(this.joints[PoseLandmark.LEFT_WRIST].position);
-      this.hasLeftWrist = true;
+
+    // (2) Arm IK: Shoulder -> Elbow -> Wrist -> Racket Head
+    // Dominant Right Arm (screen-right / +X):
+    const rawRElbow = landmarks[PoseLandmark.RIGHT_ELBOW];
+    const rawRWrist = landmarks[PoseLandmark.RIGHT_WRIST];
+    if (rawRElbow && rawRightSh) {
+      const relUpper = toThree(rawRElbow).sub(toThree(rawRightSh));
+      const upperLen = THREE.MathUtils.clamp(relUpper.length(), 0.18, 0.35);
+      const upperDir = relUpper.length() > 0.01 ? relUpper.normalize() : new THREE.Vector3(0.3, -0.9, 0.1).normalize();
+      const targetElbow = this.joints[PoseLandmark.RIGHT_SHOULDER].position.clone().addScaledVector(upperDir, upperLen);
+      trackJoint(this.joints[PoseLandmark.RIGHT_ELBOW].position, targetElbow);
+
+      if (rawRWrist) {
+        const relForearm = toThree(rawRWrist).sub(toThree(rawRElbow));
+        const forearmLen = THREE.MathUtils.clamp(relForearm.length(), 0.18, 0.35);
+        const forearmDir = relForearm.length() > 0.01 ? relForearm.normalize() : new THREE.Vector3(0.2, 0.8, 0.5).normalize();
+        const targetWrist = this.joints[PoseLandmark.RIGHT_ELBOW].position.clone().addScaledVector(forearmDir, forearmLen);
+
+        trackJoint(this.joints[PoseLandmark.RIGHT_WRIST].position, targetWrist);
+        this.lastRightWrist.copy(this.joints[PoseLandmark.RIGHT_WRIST].position);
+        this.hasRightWrist = true;
+      }
+    }
+
+    // Support Left Arm (screen-left / -X):
+    const rawLElbow = landmarks[PoseLandmark.LEFT_ELBOW];
+    const rawLWrist = landmarks[PoseLandmark.LEFT_WRIST];
+    if (rawLElbow && rawLeftSh) {
+      const relUpper = toThree(rawLElbow).sub(toThree(rawLeftSh));
+      const upperLen = THREE.MathUtils.clamp(relUpper.length(), 0.18, 0.35);
+      const upperDir = relUpper.length() > 0.01 ? relUpper.normalize() : new THREE.Vector3(-0.3, -0.9, 0.1).normalize();
+      const targetElbow = this.joints[PoseLandmark.LEFT_SHOULDER].position.clone().addScaledVector(upperDir, upperLen);
+      trackJoint(this.joints[PoseLandmark.LEFT_ELBOW].position, targetElbow);
+
+      if (rawLWrist) {
+        const relForearm = toThree(rawLWrist).sub(toThree(rawLElbow));
+        const forearmLen = THREE.MathUtils.clamp(relForearm.length(), 0.18, 0.35);
+        const forearmDir = relForearm.length() > 0.01 ? relForearm.normalize() : new THREE.Vector3(-0.2, 0.8, 0.5).normalize();
+        const targetWrist = this.joints[PoseLandmark.LEFT_ELBOW].position.clone().addScaledVector(forearmDir, forearmLen);
+
+        trackJoint(this.joints[PoseLandmark.LEFT_WRIST].position, targetWrist);
+        this.lastLeftWrist.copy(this.joints[PoseLandmark.LEFT_WRIST].position);
+        this.hasLeftWrist = true;
+      }
+    }
+
+    // Fingers/hands relative to wrists
+    for (const idx of [PoseLandmark.RIGHT_PINKY, PoseLandmark.RIGHT_INDEX, PoseLandmark.RIGHT_THUMB]) {
+      if (landmarks[idx] && rawRWrist) {
+        const rel = toThree(landmarks[idx]).sub(toThree(rawRWrist));
+        this.joints[idx].position.copy(this.joints[PoseLandmark.RIGHT_WRIST].position).add(rel);
+      }
+    }
+    for (const idx of [PoseLandmark.LEFT_PINKY, PoseLandmark.LEFT_INDEX, PoseLandmark.LEFT_THUMB]) {
+      if (landmarks[idx] && rawLWrist) {
+        const rel = toThree(landmarks[idx]).sub(toThree(rawLWrist));
+        this.joints[idx].position.copy(this.joints[PoseLandmark.LEFT_WRIST].position).add(rel);
+      }
+    }
+
+    // (3) Forward/backward footwork range from torso width scale
+    if (rawLeftSh && rawRightSh) {
+      const dShoulder = Math.hypot(rawLeftSh.x - rawRightSh.x, rawLeftSh.y - rawRightSh.y);
+      const dBase = 0.18;
+      if (dShoulder > dBase) {
+        const forwardRatio = THREE.MathUtils.clamp((dShoulder - dBase) / 0.14, 0.0, 1.0);
+        this.trackedForwardZ = forwardRatio * 1.8;
+      } else {
+        this.trackedForwardZ = 0;
+      }
     }
 
     // Position and orient bones
     this.updateBones();
 
-    // Position head
-    const nose = this.joints[PoseLandmark.NOSE].position;
-    this.headMesh.position.copy(nose);
-
     // Position equipment on active wrist
-    const wristIdx = PoseLandmark.RIGHT_WRIST;
-    const elbowIdx = PoseLandmark.RIGHT_ELBOW;
+    const wristIdx = dominantArm === 'right' ? PoseLandmark.RIGHT_WRIST : PoseLandmark.LEFT_WRIST;
+    const elbowIdx = dominantArm === 'right' ? PoseLandmark.RIGHT_ELBOW : PoseLandmark.LEFT_ELBOW;
+    const shoulderIdx = dominantArm === 'right' ? PoseLandmark.RIGHT_SHOULDER : PoseLandmark.LEFT_SHOULDER;
 
     const wristPos = this.joints[wristIdx].position;
     const elbowPos = this.joints[elbowIdx].position;
-    const shoulderPos = this.joints[PoseLandmark.RIGHT_SHOULDER].position;
+    const shoulderPos = this.joints[shoulderIdx].position;
 
     // Dynamic Torso Lean & Lateral Reach Expansion for webcam tracking
     if (Math.abs(wristPos.x) > 0.45) {
@@ -709,19 +991,12 @@ export class Avatar3D {
     const forearmDir = new THREE.Vector3().subVectors(wristPos, elbowPos).normalize();
     const upVector = new THREE.Vector3(0, 1, 0);
 
-    if (this.racketGroup && this.racketGroup.visible) {
+    if (this.racketGroup) {
       this.racketGroup.position.copy(wristPos);
-      const quat = new THREE.Quaternion().setFromUnitVectors(upVector, forearmDir);
-
-      // Dynamic underhand scoop pitch: when hand drops to waist/knee level, pitch racket head down
-      const handElevation = wristPos.y - shoulderPos.y;
-      if (wristPos.y <= 1.15 || handElevation < -0.30) {
-        const pitchFactor = THREE.MathUtils.clamp((1.15 - wristPos.y) / 0.60, 0.0, 1.0);
-        const pitchRad = pitchFactor * (-75 * Math.PI / 180);
-        const pitchQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), pitchRad);
-        quat.multiply(pitchQuat);
-      }
-      this.racketGroup.setRotationFromQuaternion(quat);
+      this.racketGroup.visible = true;
+      this.racketGroup.scale.set(1.0, 1.0, 1.0);
+      this.racketGroup.traverse((child) => { child.visible = true; });
+      this.updateRacketTransform(wristPos, elbowPos, shoulderPos);
     }
 
     if (this.paddleGroup && this.paddleGroup.visible) {
@@ -731,8 +1006,8 @@ export class Avatar3D {
     }
 
     // Position support / non-dominant hand
-    const supportWristIdx = PoseLandmark.LEFT_WRIST;
-    const supportElbowIdx = PoseLandmark.LEFT_ELBOW;
+    const supportWristIdx = dominantArm === 'right' ? PoseLandmark.LEFT_WRIST : PoseLandmark.RIGHT_WRIST;
+    const supportElbowIdx = dominantArm === 'right' ? PoseLandmark.LEFT_ELBOW : PoseLandmark.RIGHT_ELBOW;
     const sWristPos = this.joints[supportWristIdx].position;
     const sElbowPos = this.joints[supportElbowIdx].position;
     const sForearmDir = new THREE.Vector3().subVectors(sWristPos, sElbowPos).normalize();
@@ -743,6 +1018,43 @@ export class Avatar3D {
     if (this.racketFrameMat && this.racketFrameMat.emissiveIntensity > 0.7) {
       this.racketFrameMat.emissiveIntensity = THREE.MathUtils.lerp(this.racketFrameMat.emissiveIntensity, 0.7, 0.08);
     }
+
+    // Exponential Moving Average (EMA) smoothing on wrist and racket velocities
+    const currentDominantWristPos = this.joints[wristIdx].position.clone();
+    const currentRacketWorldPos = this.getRacketWorldPosition();
+
+    if (!this.isVelocitiesInitialized) {
+      this.prevRightWristPos.copy(currentDominantWristPos);
+      this.prevRacketWorldPos.copy(currentRacketWorldPos);
+      this.isVelocitiesInitialized = true;
+    } else {
+      const safeDt = Math.max(0.008, frameDt);
+      const rawWristVel = currentDominantWristPos.clone().sub(this.prevRightWristPos).divideScalar(safeDt);
+      const rawRacketVel = currentRacketWorldPos.clone().sub(this.prevRacketWorldPos).divideScalar(safeDt);
+
+      // Deadzone: only filter micro-movements when total velocity is below < 0.15 m/s (~0.54 km/h)
+      if (rawWristVel.length() < 0.15) rawWristVel.set(0, 0, 0);
+      if (rawRacketVel.length() < 0.15) rawRacketVel.set(0, 0, 0);
+
+      // EMA smoothing alpha = 0.35
+      this.smoothedRightWristVel.lerp(rawWristVel, 0.35);
+      this.smoothedRacketVel.lerp(rawRacketVel, 0.35);
+
+      this.prevRightWristPos.copy(currentDominantWristPos);
+      this.prevRacketWorldPos.copy(currentRacketWorldPos);
+    }
+  }
+
+  public getSmoothedRightWristVelocity(): THREE.Vector3 {
+    return this.smoothedRightWristVel.clone();
+  }
+
+  public getSmoothedDominantWristVelocity(): THREE.Vector3 {
+    return this.smoothedRightWristVel.clone();
+  }
+
+  public getSmoothedRacketVelocity(): THREE.Vector3 {
+    return this.smoothedRacketVel.clone();
   }
 
   public getHandWorldPosition(hand: 'left' | 'right'): THREE.Vector3 {
@@ -756,14 +1068,15 @@ export class Avatar3D {
     }
   }
 
-  public getNonDominantHandWorldPosition(dominantArm: 'right' | 'left' = 'right'): THREE.Vector3 {
-    const pos = this.joints[PoseLandmark.LEFT_WRIST].position.clone();
+  public getNonDominantHandWorldPosition(dominantArm: 'right' | 'left' = this.dominantArm): THREE.Vector3 {
+    const idx = dominantArm === 'right' ? PoseLandmark.LEFT_WRIST : PoseLandmark.RIGHT_WRIST;
+    const pos = this.joints[idx].position.clone();
     this.group.localToWorld(pos);
     return pos;
   }
 
   public getSupportHandWorldPosition(): THREE.Vector3 {
-    return this.getNonDominantHandWorldPosition('right');
+    return this.getNonDominantHandWorldPosition(this.dominantArm);
   }
 
   public getPaddleWorldPosition(): THREE.Vector3 {
@@ -786,7 +1099,9 @@ export class Avatar3D {
   }
 
   public getRacketWorldPosition(): THREE.Vector3 {
-    if (this.racketGroup && this.racketGroup.visible) {
+    if (this.racketGroup) {
+      this.racketGroup.visible = true;
+      this.racketGroup.scale.set(1.0, 1.0, 1.0);
       const pos = new THREE.Vector3();
       this.racketGroup.getWorldPosition(pos);
       const headOffsetY = 0.83 * (this.racketGroup.scale.y || 1);
@@ -812,17 +1127,9 @@ export class Avatar3D {
     return this.getRacketWorldPosition();
   }
 
-  public keepRacketInViewport(camera: THREE.PerspectiveCamera, maxNdcY = 0.82): void {
-    if (!this.racketGroup || !this.racketGroup.visible) return;
-
-    const head = this.getRacketWorldPosition();
-    const projected = head.clone().project(camera);
-    if (projected.y > maxNdcY) {
-      const viewSpaceHead = head.clone().applyMatrix4(camera.matrixWorldInverse);
-      const worldPerNdcY = Math.max(0.01, -viewSpaceHead.z) * Math.tan(THREE.MathUtils.degToRad(camera.fov) * 0.5);
-      const correction = (projected.y - maxNdcY) * worldPerNdcY * 1.02;
-      this.racketGroup.position.addScaledVector(camera.up, -correction);
-    }
+  public keepRacketInViewport(_camera: THREE.PerspectiveCamera, _maxNdcY = 0.85, _minNdcY = -0.85): void {
+    if (!this.racketGroup) return;
+    this.lockRacketToWrist();
   }
 
   public getRacketStringNormal(): THREE.Vector3 {
@@ -886,6 +1193,22 @@ export class Avatar3D {
     return { hit: false, impactPoint: ballPos.clone(), normal, distanceToCenter: distParallel };
   }
 
+  public getTrackedForwardZ(): number {
+    return this.trackedForwardZ;
+  }
+
+  public flashStringBedWhite(durationSec = 0.06): void {
+    if (!this.racketStringMat) return;
+    this.racketStringMat.color.setHex(0xffffff);
+    this.racketStringMat.opacity = 1.0;
+    setTimeout(() => {
+      if (this.racketStringMat) {
+        this.racketStringMat.color.setHex(0xe0f2fe);
+        this.racketStringMat.opacity = 0.6;
+      }
+    }, durationSec * 1000);
+  }
+
   /**
    * Projects 2D/3D screen space coordinates to a 3D Strike Plane directly in front of the camera.
    * Ensures 1:1 tracking in the near frustum (0.7m to 1.2m).
@@ -898,8 +1221,9 @@ export class Avatar3D {
     screenY: number, // [0, 1] webcam raw normalized OR [-1, 1] NDC if isRawWebcam is false
     screenZ = 0,
     isRawWebcam = true,
-    distance = 0.95,
-    sideOffset = 0.12
+    distance = 2.05,
+    sideOffset = 0.12,
+    targetPlaneZ = -3.5
   ): THREE.Vector3 {
     let normX: number;
     let normY: number;
@@ -921,7 +1245,15 @@ export class Avatar3D {
     const up = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
 
     const fovRad = THREE.MathUtils.degToRad(camera.fov);
-    const dStrike = THREE.MathUtils.clamp(distance + screenZ * 0.25, 0.70, 1.20);
+
+    // If camera is elevated/pulled back in broadcast mode (z < -6m), dynamically raycast to target player plane
+    let effectiveDist = distance;
+    if (camera.position.z < -6.0 && Math.abs(forward.z) > 0.1) {
+      const distToBaselinePlane = (targetPlaneZ - camera.position.z) / forward.z;
+      effectiveDist = Math.max(distance, distToBaselinePlane);
+    }
+
+    const dStrike = THREE.MathUtils.clamp(effectiveDist + screenZ * 0.25, 1.40, 9.50);
     const halfH = dStrike * Math.tan(fovRad * 0.5);
     const halfW = halfH * camera.aspect;
 
@@ -933,7 +1265,6 @@ export class Avatar3D {
   }
 
   public setGhostMode(isGhost: boolean): void {
-
     const opacity = isGhost ? 0.28 : 1.0;
     this.jointMat.transparent = isGhost;
     this.jointMat.opacity = opacity;

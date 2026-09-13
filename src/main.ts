@@ -13,6 +13,19 @@ import { TableTennisScene } from './scenes/TableTennisScene';
 import { SandboxScene } from './scenes/SandboxScene';
 import { MotionFrame } from './core/motion/Types';
 
+// ─── Playwright / Dev Debug Bridge ─────────────────────────────────────────────
+// window.__camarena is intentionally set in all environments so Playwright tests
+// can read live physics state without relying on visual-only DOM assertions.
+declare global {
+  interface Window {
+    __camarena: {
+      getDebugState: () => ReturnType<BadmintonScene['getDebugState']> | null;
+      debugServe: () => void;
+      tracker: PoseTracker;
+    };
+  }
+}
+
 async function bootstrap() {
   const appContainer = document.getElementById('app');
   const viewportContainer = document.getElementById('viewport-container');
@@ -27,8 +40,9 @@ async function bootstrap() {
   const tracker = new PoseTracker();
   const sceneManager = new GameSceneManager(viewportContainer, audio);
 
-  // 2. Register Game Scenes
-  sceneManager.registerScene(new BadmintonScene());
+  // 2. Register Game Scenes — keep a direct reference to badmintonScene for the debug bridge
+  const badmintonScene = new BadmintonScene();
+  sceneManager.registerScene(badmintonScene);
   sceneManager.registerScene(new TableTennisScene());
   sceneManager.registerScene(new SandboxScene());
 
@@ -94,8 +108,14 @@ async function bootstrap() {
     }
   });
 
+  // 8. Expose window.__camarena debug bridge for Playwright automated tests
+  window.__camarena = {
+    getDebugState: () => badmintonScene.getDebugState(),
+    debugServe: () => badmintonScene.debugServe(),
+    tracker,
+  };
+
   console.log('⚡ CamArena Sports Motion Tracking Platform Initialized — Main Menu Active!');
 }
 
 window.addEventListener('DOMContentLoaded', bootstrap);
-

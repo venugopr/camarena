@@ -66,6 +66,7 @@ export class TableTennisScene implements IGameScene {
   private scoreCallbacks: ((score: GameScoreState) => void)[] = [];
   private isRunning = false;
   private currentDifficulty: DifficultyLevel = 'casual';
+  private dominantHand: 'right' | 'left' = 'right';
 
   // Camera presets
   private cameraViewBtn?: HTMLButtonElement;
@@ -637,10 +638,10 @@ export class TableTennisScene implements IGameScene {
       const paddlePos = this.getPaddleWorldPos();
       const distToPaddle = this.ballPos.distanceTo(paddlePos);
 
-      // Hit zone covers defensive table edge
-      const inHitZone = this.ballPos.z <= -0.65 && this.ballPos.z >= -1.95 && this.ballPos.y >= this.tableHeight - 0.05;
+      // Hit zone covers defensive table edge with forgiving 0.45m radius
+      const inHitZone = this.ballPos.z <= -0.55 && this.ballPos.z >= -2.05 && this.ballPos.y >= this.tableHeight - 0.15;
 
-      if (distToPaddle < 0.28 && inHitZone && this.lastHitter !== 'player') {
+      if (distToPaddle < 0.45 && inHitZone && this.lastHitter !== 'player') {
         this.executeHit(paddlePos);
       }
     }
@@ -652,6 +653,18 @@ export class TableTennisScene implements IGameScene {
         const paddlePos = this.getPaddleWorldPos();
         this.ballPos.set(paddlePos.x, this.tableHeight + 0.22, -1.35);
         this.ballMesh.position.copy(this.ballPos);
+
+        const safeDt = Math.max(0.008, deltaTime);
+        const wristSpeed = motionFrame?.metrics
+          ? Math.max(
+              motionFrame.metrics.rightWristVelocity ? Math.hypot(motionFrame.metrics.rightWristVelocity.x, motionFrame.metrics.rightWristVelocity.y, motionFrame.metrics.rightWristVelocity.z) : 0,
+              motionFrame.metrics.leftWristVelocity ? Math.hypot(motionFrame.metrics.leftWristVelocity.x, motionFrame.metrics.leftWristVelocity.y, motionFrame.metrics.leftWristVelocity.z) : 0
+            )
+          : 0;
+
+        if (wristSpeed >= 1.20) {
+          this.executeHit(paddlePos);
+        }
       } else {
         // AI serves
         this.serveTimer -= deltaTime;
@@ -659,7 +672,8 @@ export class TableTennisScene implements IGameScene {
           this.rallyState = 'IN_PLAY';
           this.isBallInPlay = true;
           const sm = this.speedMultiplier();
-          this.ballVel.set((Math.random() - 0.5) * 0.7 * sm, 1.85, -4.2 * sm);
+          this.ballVel.set((Math.random() - 0.5) * 0.7 * sm, 1.95, -4.2 * sm);
+          this.enforceNetClearance(this.ballPos, this.ballVel, 0.12);
           this.lastHitter = 'opponent';
           this.hideServeBanner();
           this.audio.tableTennisPaddleHit();
@@ -787,8 +801,9 @@ export class TableTennisScene implements IGameScene {
         if (inAiZone && hasBounced && this.ballPos.y < 1.6 && this.ballPos.y > 0.6) {
           const targetX = (Math.random() - 0.5) * (this.tableWidth * 0.75);
           const sm = this.speedMultiplier();
-          const returnSpeed = (this.currentDifficulty === 'casual' ? 2.8 : this.currentDifficulty === 'pro' ? 3.8 : 5.0) * sm;
-          this.ballVel.set(targetX * 0.7, 1.5 + Math.random() * 0.3, -returnSpeed);
+          const returnSpeed = (this.currentDifficulty === 'casual' ? 3.0 : this.currentDifficulty === 'pro' ? 3.8 : 5.0) * sm;
+          this.ballVel.set(targetX * 0.7, 1.6 + Math.random() * 0.3, -returnSpeed);
+          this.enforceNetClearance(this.ballPos, this.ballVel, 0.12);
           this.lastHitter = 'opponent';
           this.bounceCountNear = 0;
           this.bounceCountFar = 0;
@@ -799,6 +814,29 @@ export class TableTennisScene implements IGameScene {
     }
 
     this.renderer.render(this.scene, this.camera);
+  }
+
+  private enforceNetClearance(
+    origin: THREE.Vector3,
+    velocity: THREE.Vector3,
+    minClearance = 0.12
+  ): void {
+    const isPlayerShot = velocity.z > 0.1 && origin.z < 0;
+    const isOpponentShot = velocity.z < -0.1 && origin.z > 0;
+    if (!isPlayerShot && !isOpponentShot) return;
+
+    const netTopY = this.tableHeight + this.netHeight;
+    const minNetY = netTopY + minClearance;
+    const distToNet = Math.abs(origin.z);
+    const forwardSpeed = Math.abs(velocity.z);
+    if (forwardSpeed < 0.1) return;
+
+    const timeToNet = distToNet / forwardSpeed;
+    const predictedHeight = origin.y + velocity.y * timeToNet - 0.5 * 9.8 * timeToNet * timeToNet;
+
+    if (predictedHeight < minNetY) {
+      velocity.y = (minNetY - origin.y + 0.5 * 9.8 * timeToNet * timeToNet) / timeToNet + 0.15;
+    }
   }
 
   private executeHit(paddlePos: THREE.Vector3, isSmash = false): void {
@@ -818,6 +856,7 @@ export class TableTennisScene implements IGameScene {
     const arcY = isSmash ? 1.1 : 1.55;
 
     this.ballVel.set(hitOffsetX, arcY, speed);
+    this.enforceNetClearance(this.ballPos, this.ballVel, 0.08);
     this.audio.tableTennisPaddleHit();
     this.notifyScore();
   }
@@ -825,7 +864,9 @@ export class TableTennisScene implements IGameScene {
   public onAction(event: ActionEvent): void {
     const paddlePos = this.getPaddleWorldPos();
     if (this.rallyState === 'READY_TO_SERVE' && this.scoreState.currentServer === 1) {
-      this.executeHit(paddlePos, event.type === 'OVERHEAD_SMASH');
+      if (event.speedMps >= 1.2) {
+        this.executeHit(paddlePos, event.type === 'OVERHEAD_SMASH');
+      }
       return;
     }
 
@@ -927,6 +968,13 @@ export class TableTennisScene implements IGameScene {
   private notifyScore(): void {
     for (const cb of this.scoreCallbacks) {
       cb(this.scoreState);
+    }
+  }
+
+  public setDominantHand(hand: 'right' | 'left'): void {
+    this.dominantHand = hand;
+    if (this.playerAvatar) {
+      this.playerAvatar.setDominantArm(hand);
     }
   }
 

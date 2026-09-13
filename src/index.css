@@ -88,13 +88,100 @@ html, body {
   top: 16px;
   left: 20px;
   right: 20px;
-  z-index: 20;
+  z-index: 120;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 20px;
+  padding: 8px 18px;
   border-radius: var(--radius-lg);
   pointer-events: auto;
+  transition: all 0.25s ease;
+}
+
+/* In-Match Mode: Ultra-clean transparent top bar */
+.top-nav.in-match {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  pointer-events: auto;
+}
+
+.top-nav.in-match .game-tabs,
+.top-nav.in-match .control-select,
+.top-nav.in-match .current-sport-pill,
+.top-nav.in-match .icon-btn:not(.menu-launcher-btn):not(.pause-nav-btn) {
+  display: none !important;
+}
+
+/* Hover over top-nav in-match allows immediate access to sport switcher and settings */
+.top-nav.in-match:hover {
+  background: var(--bg-surface);
+  border-color: var(--border-subtle);
+  box-shadow: var(--shadow-glass);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+.top-nav.in-match:hover .game-tabs,
+.top-nav.in-match:hover .control-select,
+.top-nav.in-match:hover .icon-btn {
+  display: flex !important;
+}
+
+.top-nav.in-match:hover .current-sport-pill,
+.top-nav.in-match:hover .match-meta-chips {
+  display: none !important;
+}
+
+.current-sport-pill {
+  display: none;
+  align-items: center;
+  gap: 6px;
+  background: rgba(10, 15, 29, 0.75);
+  border: 1px solid rgba(0, 242, 254, 0.3);
+  padding: 4px 14px;
+  border-radius: var(--radius-full);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 800;
+  color: var(--primary-cyan);
+  letter-spacing: 0.05em;
+  backdrop-filter: blur(12px);
+}
+
+.top-nav:not(.in-match) .current-sport-pill {
+  display: none;
+}
+
+/* Match metadata chips in top-right */
+.match-meta-chips {
+  display: none;
+  align-items: center;
+  gap: 6px;
+}
+
+.top-nav.in-match .match-meta-chips {
+  display: flex;
+}
+
+.meta-chip {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  background: rgba(15, 23, 42, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 3px 10px;
+  border-radius: var(--radius-full);
+  backdrop-filter: blur(10px);
+  letter-spacing: 0.04em;
+}
+
+.meta-chip.highlight {
+  color: var(--primary-cyan);
+  border-color: rgba(0, 242, 254, 0.3);
 }
 
 .brand-section {
@@ -220,94 +307,136 @@ html, body {
   box-shadow: var(--shadow-glow-cyan);
 }
 
-/* In-Game Scoreboard HUD */
+/* In-Game Broadcast Scoreboard HUD */
 .score-wrapper {
   position: absolute;
-  top: 84px;
+  top: 14px;
   left: 50%;
   transform: translateX(-50%);
-  z-index: 25;
+  z-index: 28;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   pointer-events: none;
 }
 
-.score-hud {
+/* Compact Broadcast Scoreboard Pill (Height <= 52px) */
+.score-hud.broadcast-pill {
   display: flex;
   align-items: center;
-  gap: 28px;
-  padding: 10px 36px;
-  border-radius: var(--radius-lg);
+  gap: 16px;
+  height: 48px;
+  max-height: 50px;
+  padding: 0 20px;
+  border-radius: var(--radius-full);
   pointer-events: auto;
-  border: 1px solid rgba(0, 242, 254, 0.25);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6), 0 0 20px rgba(0, 242, 254, 0.15);
+  background: rgba(10, 15, 29, 0.78);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1.5px solid rgba(0, 242, 254, 0.35);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6), 0 0 20px rgba(0, 242, 254, 0.12);
+  transition: all 0.2s ease;
 }
 
-.team-score {
+.score-hud.broadcast-pill:hover {
+  border-color: rgba(0, 242, 254, 0.6);
+  box-shadow: 0 8px 36px rgba(0, 0, 0, 0.7), 0 0 25px rgba(0, 242, 254, 0.25);
+}
+
+.team-score-pill {
   display: flex;
-  flex-direction: column;
   align-items: center;
+  gap: 8px;
 }
 
-.team-label {
-  font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-}
-
-.team-points {
-  font-family: var(--font-mono);
-  font-size: 2.6rem;
+.team-score-pill.player .pill-name {
+  color: #e0f2fe;
   font-weight: 800;
-  line-height: 1;
+  font-size: 0.85rem;
+  letter-spacing: 0.04em;
 }
 
-.team-player .team-points {
+.team-score-pill.player .pill-pts {
+  font-family: var(--font-mono);
+  font-size: 1.6rem;
+  font-weight: 900;
   color: var(--primary-cyan);
-  text-shadow: 0 0 16px rgba(0, 242, 254, 0.6);
+  line-height: 1;
+  text-shadow: 0 0 12px rgba(0, 242, 254, 0.7);
 }
 
-.team-opponent .team-points {
+.team-score-pill.opponent .pill-name {
+  color: #fce7f3;
+  font-weight: 800;
+  font-size: 0.85rem;
+  letter-spacing: 0.04em;
+}
+
+.team-score-pill.opponent .pill-pts {
+  font-family: var(--font-mono);
+  font-size: 1.6rem;
+  font-weight: 900;
   color: var(--accent-pink);
-  text-shadow: 0 0 16px rgba(255, 0, 85, 0.6);
+  line-height: 1;
+  text-shadow: 0 0 12px rgba(255, 0, 85, 0.7);
 }
 
-.score-divider {
+.pill-divider {
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+  border-left: 1px solid rgba(255, 255, 255, 0.12);
+  border-right: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.pill-server-badge {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 800;
+  color: var(--accent-amber);
+  letter-spacing: 0.05em;
+  display: flex;
   align-items: center;
   gap: 4px;
 }
 
-.server-text {
-  font-family: var(--font-mono);
-  font-size: 0.65rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.rally-badge {
-  font-family: var(--font-mono);
-  font-size: 0.75rem;
-  background: rgba(255, 255, 255, 0.1);
-  padding: 2px 10px;
-  border-radius: var(--radius-full);
-  color: var(--accent-lime);
-  font-weight: 600;
-}
-
-.server-dot {
-  width: 8px;
-  height: 8px;
+.pill-server-badge .server-indicator-dot {
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   background: var(--accent-amber);
-  box-shadow: 0 0 8px var(--accent-amber);
-  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  box-shadow: 0 0 6px var(--accent-amber);
+  animation: pulse 1.2s infinite;
+}
+
+.pill-rally {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.08);
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  color: var(--accent-lime);
+}
+
+.pill-rules-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+  display: flex;
+  align-items: center;
+}
+
+.pill-rules-btn:hover {
+  color: #fff;
+  transform: scale(1.15);
 }
 
 /* Match Point & Deuce Alert Banner */
@@ -315,65 +444,81 @@ html, body {
   background: linear-gradient(90deg, #ff0055, #f59e0b);
   color: #fff;
   font-family: var(--font-sans);
-  font-size: 0.8rem;
+  font-size: 0.75rem;
   font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  padding: 4px 18px;
+  padding: 3px 16px;
   border-radius: var(--radius-full);
   box-shadow: 0 0 15px rgba(255, 0, 85, 0.6);
   animation: pulse 1.2s infinite;
   pointer-events: auto;
 }
 
-/* Point Reason Toast Notification */
-.point-toast {
+/* Crisp Sports Arcade Callouts (top 14% of screen) */
+.arcade-callout {
+  position: fixed;
+  top: 14%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 45;
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 6px 16px;
-  border-radius: var(--radius-full);
-  font-size: 0.8rem;
-  font-weight: 600;
+  padding: 10px 28px;
+  border-radius: var(--radius-md);
+  font-family: var(--font-sans);
+  font-size: 1.55rem;
+  font-weight: 900;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  color: #fff;
+  pointer-events: none;
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
-  pointer-events: auto;
-  animation: slideDown 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.75);
+  animation: arcadePop 0.22s cubic-bezier(0.18, 0.89, 0.32, 1.28);
+  transition: opacity 0.25s ease, transform 0.25s ease;
 }
 
-.point-toast.player-point {
-  background: rgba(13, 92, 58, 0.85);
-  border-color: rgba(57, 255, 20, 0.4);
-  color: #f8fafc;
+@keyframes arcadePop {
+  0% { opacity: 0; transform: translate(-50%, -40%) scale(0.85); }
+  60% { opacity: 1; transform: translate(-50%, -52%) scale(1.05); }
+  100% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
 }
 
-.point-toast.opponent-point {
-  background: rgba(120, 10, 40, 0.85);
-  border-color: rgba(255, 0, 85, 0.4);
-  color: #f8fafc;
+.arcade-callout.out {
+  background: linear-gradient(135deg, rgba(220, 20, 60, 0.95), rgba(150, 0, 30, 0.95));
+  border: 1.5px solid rgba(255, 0, 85, 0.9);
+  box-shadow: 0 0 35px rgba(255, 0, 85, 0.7);
+  animation: arcadePop 0.22s cubic-bezier(0.18, 0.89, 0.32, 1.28), shake 0.35s ease-in-out;
 }
 
-.point-badge {
-  font-family: var(--font-mono);
-  font-weight: 800;
-  font-size: 0.75rem;
+.arcade-callout.net-fault {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.95), rgba(180, 90, 5, 0.95));
+  border: 1.5px solid rgba(245, 158, 11, 0.9);
+  box-shadow: 0 0 35px rgba(245, 158, 11, 0.7);
 }
 
-.point-reason {
-  font-family: var(--font-sans);
+.arcade-callout.point-won {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.95), rgba(0, 242, 254, 0.9));
+  border: 1.5px solid rgba(57, 255, 20, 0.8);
+  box-shadow: 0 0 35px rgba(0, 242, 254, 0.6);
 }
 
-@keyframes slideDown {
-  from {
-    opacity: 0;
-    transform: translateY(-8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+.arcade-callout.ace {
+  background: linear-gradient(135deg, rgba(251, 191, 36, 0.98), rgba(245, 158, 11, 0.95));
+  border: 2px solid #fff;
+  box-shadow: 0 0 45px rgba(251, 191, 36, 0.8);
+  color: #000;
+}
+
+@keyframes shake {
+  0%, 100% { transform: translate(-50%, -50%); }
+  20% { transform: translate(-53%, -50%); }
+  40% { transform: translate(-47%, -50%); }
+  60% { transform: translate(-52%, -50%); }
+  80% { transform: translate(-48%, -50%); }
 }
 
 /* Transparent Rules & Target Banner */
@@ -441,16 +586,20 @@ html, body {
   pointer-events: auto;
 }
 
+/* Modern Non-Intrusive Glassmorphic Camera PiP */
 .camera-pip {
-  width: 360px;
-  height: 240px;
+  width: 230px;
+  height: 148px;
   position: relative;
   border-radius: var(--radius-md);
   overflow: hidden;
-  border: 2px solid var(--border-subtle);
-  background: #000;
+  border: 1px solid rgba(0, 245, 255, 0.25);
+  background: rgba(10, 15, 29, 0.65);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
-  transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  cursor: pointer;
+  transition: all 0.28s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .camera-pip:hover {
@@ -458,23 +607,47 @@ html, body {
   box-shadow: 0 10px 35px rgba(0, 242, 254, 0.25);
 }
 
-/* Large Mirror View Mode */
-.camera-pip.mirror-expanded {
-  width: 540px;
-  height: 360px;
-  border-color: var(--primary-cyan);
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.8), 0 0 30px rgba(0, 242, 254, 0.3);
+/* Click-to-minimize 40x40px floating pill */
+.camera-pip.minimized {
+  width: 42px !important;
+  height: 42px !important;
+  border-radius: 50% !important;
+  background: rgba(10, 15, 29, 0.85) !important;
+  border: 2px solid var(--primary-cyan) !important;
+  box-shadow: 0 0 18px rgba(0, 242, 254, 0.45) !important;
 }
 
-@media (max-width: 1400px) {
-  .camera-pip {
-    width: 320px;
-    height: 215px;
-  }
-  .camera-pip.mirror-expanded {
-    width: 460px;
-    height: 310px;
-  }
+.camera-pip.minimized .camera-video,
+.camera-pip.minimized .camera-canvas,
+.camera-pip.minimized .pip-header-bar,
+.camera-pip.minimized .pip-status-badge,
+.camera-pip.minimized .pip-equipment-badge,
+.camera-pip.minimized .pip-posture-badge,
+.camera-pip.minimized .pip-depth-badge,
+.camera-pip.minimized .pip-gesture-hint {
+  display: none !important;
+}
+
+.pip-minimized-icon {
+  display: none;
+  width: 100%;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+  color: var(--primary-cyan);
+}
+
+.camera-pip.minimized .pip-minimized-icon {
+  display: flex;
+}
+
+/* Large Mirror View Mode */
+.camera-pip.mirror-expanded {
+  width: 480px;
+  height: 320px;
+  border-color: var(--primary-cyan);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.8), 0 0 30px rgba(0, 242, 254, 0.3);
 }
 
 .camera-video {
@@ -482,6 +655,7 @@ html, body {
   height: 100%;
   object-fit: cover;
   transform: scaleX(-1); /* Mirror camera */
+  opacity: 0.85;
 }
 
 .camera-canvas {
@@ -496,44 +670,59 @@ html, body {
 
 .pip-header-bar {
   position: absolute;
-  top: 8px;
-  left: 8px;
-  right: 8px;
+  top: 6px;
+  left: 6px;
+  right: 6px;
   display: flex;
   justify-content: space-between;
   align-items: center;
   z-index: 10;
+  pointer-events: none;
 }
 
 .pip-status-badge {
   font-family: var(--font-mono);
-  font-size: 0.7rem;
-  background: rgba(0, 0, 0, 0.75);
-  padding: 4px 8px;
+  font-size: 0.65rem;
+  background: rgba(0, 0, 0, 0.55);
+  padding: 3px 6px;
   border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   color: #fff;
   border: 1px solid rgba(255, 255, 255, 0.1);
   backdrop-filter: blur(8px);
 }
 
-.pip-mirror-btn {
-  background: rgba(0, 0, 0, 0.75);
-  border: 1px solid rgba(0, 242, 254, 0.35);
-  color: var(--primary-cyan);
+.pip-controls-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  pointer-events: auto;
+}
+
+.pip-min-btn, .pip-mirror-btn {
+  background: rgba(0, 0, 0, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: var(--text-secondary);
   font-family: var(--font-mono);
   font-size: 0.68rem;
   font-weight: 700;
-  padding: 4px 10px;
+  padding: 3px 6px;
   border-radius: var(--radius-sm);
   cursor: pointer;
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   backdrop-filter: blur(8px);
   transition: all 0.2s ease;
+  pointer-events: auto;
+}
+
+.pip-min-btn:hover {
+  background: rgba(255, 0, 85, 0.35);
+  color: #fff;
+  border-color: rgba(255, 0, 85, 0.6);
 }
 
 .pip-mirror-btn:hover {
@@ -543,144 +732,80 @@ html, body {
 }
 
 .status-dot {
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   background: var(--accent-lime);
-  box-shadow: 0 0 6px var(--accent-lime);
+  box-shadow: 0 0 8px var(--accent-lime);
   animation: pulse 2s infinite;
 }
 
-.pip-equipment-badge {
-  position: absolute;
-  top: 40px;
-  right: 8px;
-  font-family: var(--font-mono);
-  font-size: 0.68rem;
-  font-weight: 800;
-  background: rgba(0, 0, 0, 0.8);
-  padding: 4px 9px;
-  border-radius: var(--radius-sm);
-  letter-spacing: 0.04em;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  backdrop-filter: blur(8px);
-  z-index: 5;
+.status-dot.low-vis {
+  background: var(--accent-amber);
+  box-shadow: 0 0 8px var(--accent-amber);
 }
 
-.pip-posture-badge {
-  position: absolute;
-  bottom: 30px;
-  left: 8px;
-  font-family: var(--font-mono);
-  font-size: 0.68rem;
-  font-weight: 700;
-  padding: 4px 8px;
-  border-radius: var(--radius-sm);
-  letter-spacing: 0.04em;
-  transition: all 0.2s ease;
-  backdrop-filter: blur(8px);
-  z-index: 5;
-}
-
-.pip-depth-badge {
-  position: absolute;
-  bottom: 30px;
-  right: 8px;
-  font-family: var(--font-mono);
-  font-size: 0.66rem;
-  font-weight: 800;
-  padding: 4px 8px;
-  border-radius: var(--radius-sm);
-  letter-spacing: 0.04em;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  background: rgba(0, 0, 0, 0.8);
-  color: #cbd5e1;
-  backdrop-filter: blur(8px);
-  z-index: 5;
-}
-
-.pip-depth-badge.optimal {
-  color: var(--accent-lime);
-  border-color: rgba(57, 255, 20, 0.4);
-  background: rgba(10, 40, 15, 0.85);
-}
-
-.pip-depth-badge.warning {
-  color: var(--accent-amber);
-  border-color: rgba(245, 158, 11, 0.5);
-  background: rgba(45, 30, 5, 0.85);
-}
-
-.pip-gesture-hint {
-  position: absolute;
-  bottom: 6px;
-  left: 8px;
-  right: 8px;
-  font-family: var(--font-sans);
-  font-size: 0.65rem;
-  color: #cbd5e1;
-  background: rgba(0, 0, 0, 0.7);
-  padding: 3px 6px;
-  border-radius: 4px;
-  text-align: center;
-  backdrop-filter: blur(6px);
-  z-index: 5;
-  pointer-events: none;
-}
-
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
-}
-
-
-/* Action Detection HUD Banner */
+/* Minimal Action & Speedometer Banner (Bottom-Left) */
 .action-banner {
   position: absolute;
-  bottom: 30px;
-  left: 30px;
+  bottom: 24px;
+  left: 24px;
   z-index: 20;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   pointer-events: auto;
 }
 
+/* Sleek Minimal Speedometer Card */
 .stroke-card {
-  padding: 14px 22px;
+  padding: 8px 16px;
   border-radius: var(--radius-md);
-  min-width: 280px;
+  min-width: 160px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
+  background: rgba(10, 15, 29, 0.72);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(0, 242, 254, 0.25);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.stroke-card.smash-active {
-  border-color: var(--accent-pink);
-  box-shadow: var(--shadow-glow-pink);
-}
-
 .stroke-title {
-  font-size: 1.15rem;
+  font-size: 0.85rem;
   font-weight: 800;
-  letter-spacing: -0.01em;
+  letter-spacing: 0.02em;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
 }
 
 .stroke-speed {
   font-family: var(--font-mono);
-  font-size: 1.0rem;
-  font-weight: 700;
+  font-size: 1.15rem;
+  font-weight: 900;
   color: var(--accent-lime);
+  text-shadow: 0 0 10px rgba(57, 255, 20, 0.5);
+  transition: color 0.15s ease;
+}
+
+.stroke-speed.fast {
+  color: var(--accent-amber);
+  text-shadow: 0 0 12px rgba(245, 158, 11, 0.6);
+}
+
+.stroke-speed.smash {
+  color: var(--primary-cyan);
+  text-shadow: 0 0 16px rgba(0, 242, 254, 0.85);
 }
 
 /* Gauge Meter */
 .meter-container {
   width: 100%;
-  height: 8px;
+  height: 4px;
   background: rgba(255, 255, 255, 0.1);
   border-radius: var(--radius-full);
   overflow: hidden;
@@ -699,19 +824,30 @@ html, body {
   background: linear-gradient(90deg, var(--accent-amber), var(--accent-pink));
 }
 
+/* Telemetry row: HIDDEN by default, toggled via F3 / D */
 .telemetry-row {
-  display: flex;
-  gap: 16px;
+  display: none;
+  gap: 12px;
   font-family: var(--font-mono);
-  font-size: 0.75rem;
+  font-size: 0.7rem;
   color: var(--text-secondary);
+  padding-top: 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-/* Quick Action Test Buttons (for easy testing in any environment) */
-.test-actions-bar {
+.action-banner.debug-active .telemetry-row {
   display: flex;
-  gap: 8px;
-  margin-top: 4px;
+}
+
+/* Developer test actions bar: HIDDEN by default, visible only in debug mode */
+.test-actions-bar {
+  display: none;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.action-banner.debug-active .test-actions-bar {
+  display: flex;
 }
 
 .test-action-btn {
@@ -1123,7 +1259,7 @@ html, body {
 .main-menu-overlay {
   position: fixed;
   inset: 0;
-  z-index: 100;
+  z-index: 200;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1779,6 +1915,28 @@ html, body {
   border-color: rgba(255, 68, 68, 0.85);
   box-shadow: 0 0 30px rgba(255, 68, 68, 0.6);
   text-shadow: 0 0 18px rgba(255, 68, 68, 0.9);
+}
+
+.bm-hit-badge.lift-style {
+  color: #ecfdf5;
+  border-color: rgba(16, 185, 129, 0.85);
+  box-shadow: 0 0 25px rgba(16, 185, 129, 0.5);
+  text-shadow: 0 0 16px rgba(16, 185, 129, 0.8);
+}
+
+.bm-hit-badge.sweet-style {
+  color: #f0fdf4;
+  border-color: rgba(34, 197, 94, 0.9);
+  box-shadow: 0 0 28px rgba(34, 197, 94, 0.6);
+  text-shadow: 0 0 18px rgba(34, 197, 94, 0.9);
+}
+
+.bm-hit-badge.bot-style {
+  color: #fef08a;
+  border-color: rgba(255, 215, 0, 0.95);
+  box-shadow: 0 0 32px rgba(255, 215, 0, 0.65);
+  text-shadow: 0 0 20px rgba(255, 215, 0, 0.9);
+  background: rgba(234, 179, 8, 0.22);
 }
 
 .bm-hit-badge.visible {
