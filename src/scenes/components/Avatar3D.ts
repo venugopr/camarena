@@ -355,79 +355,60 @@ export class Avatar3D {
     const headY = 1.75; // 1.75m true full-height standing athlete (visibly taller than 1.55m net tape)
 
     // Set joints to athletic ready pose
-    // Base skeleton in 3D world: Right is +X (screen-right), Left is -X (screen-left)
-    this.joints[PoseLandmark.LEFT_HIP].position.set(-0.16, hipY, 0);
-    this.joints[PoseLandmark.RIGHT_HIP].position.set(0.16, hipY, 0);
+    // Base skeleton in 3D world: Left is +X (screen-left), Right is -X (screen-right)
+    this.joints[PoseLandmark.LEFT_HIP].position.set(0.16, hipY, 0);
+    this.joints[PoseLandmark.RIGHT_HIP].position.set(-0.16, hipY, 0);
 
-    this.joints[PoseLandmark.LEFT_SHOULDER].position.set(-0.24, shoulderY, 0);
-    this.joints[PoseLandmark.RIGHT_SHOULDER].position.set(0.24, shoulderY, 0);
+    this.joints[PoseLandmark.LEFT_SHOULDER].position.set(0.24, shoulderY, 0);
+    this.joints[PoseLandmark.RIGHT_SHOULDER].position.set(-0.24, shoulderY, 0);
 
     this.headMesh.position.set(0, headY, 0.08);
     this.joints[PoseLandmark.NOSE].position.set(0, headY, 0.08);
 
     // Knees fixed in natural athletic ready bend at Y = 0.50m
-    this.joints[PoseLandmark.LEFT_KNEE].position.set(-0.19, 0.50, 0.06);
-    this.joints[PoseLandmark.RIGHT_KNEE].position.set(0.19, 0.50, 0.06);
-    this.joints[PoseLandmark.LEFT_ANKLE].position.set(-0.22, 0.08, -0.02);
-    this.joints[PoseLandmark.RIGHT_ANKLE].position.set(0.22, 0.08, -0.02);
-    this.joints[PoseLandmark.LEFT_HEEL].position.set(-0.22, 0.04, -0.06);
-    this.joints[PoseLandmark.RIGHT_HEEL].position.set(0.22, 0.04, -0.06);
-    this.joints[PoseLandmark.LEFT_FOOT_INDEX].position.set(-0.22, 0.00, 0.12);
-    this.joints[PoseLandmark.RIGHT_FOOT_INDEX].position.set(0.22, 0.00, 0.12);
+    this.joints[PoseLandmark.LEFT_KNEE].position.set(0.19, 0.50, 0.06);
+    this.joints[PoseLandmark.RIGHT_KNEE].position.set(-0.19, 0.50, 0.06);
+    this.joints[PoseLandmark.LEFT_ANKLE].position.set(0.22, 0.08, -0.02);
+    this.joints[PoseLandmark.RIGHT_ANKLE].position.set(-0.22, 0.08, -0.02);
+    this.joints[PoseLandmark.LEFT_HEEL].position.set(0.22, 0.04, -0.06);
+    this.joints[PoseLandmark.RIGHT_HEEL].position.set(-0.22, 0.04, -0.06);
+    this.joints[PoseLandmark.LEFT_FOOT_INDEX].position.set(0.22, 0.00, 0.12);
+    this.joints[PoseLandmark.RIGHT_FOOT_INDEX].position.set(-0.22, 0.00, 0.12);
 
     if (sport === 'tabletennis') {
       // Table Tennis stance
       if (this.dominantArm === 'right') {
-        this.joints[PoseLandmark.LEFT_ELBOW].position.set(-0.32, 1.1, 0.22);
-        this.joints[PoseLandmark.LEFT_WRIST].position.set(-0.22, 0.96, 0.36);
+        this.joints[PoseLandmark.LEFT_ELBOW].position.set(0.32, 1.1, 0.22);
+        this.joints[PoseLandmark.LEFT_WRIST].position.set(0.22, 0.96, 0.36);
 
-        this.joints[PoseLandmark.RIGHT_ELBOW].position.set(0.32, 1.06, 0.22);
-        this.joints[PoseLandmark.RIGHT_WRIST].position.set(0.28, 0.96, 0.44);
-
-        if (this.paddleGroup) {
-          this.paddleGroup.position.set(0.28, 0.96, 0.44);
-          this.paddleGroup.rotation.set(0.35, 0, -0.2);
-        }
-      } else {
-        this.joints[PoseLandmark.RIGHT_ELBOW].position.set(0.32, 1.1, 0.22);
-        this.joints[PoseLandmark.RIGHT_WRIST].position.set(0.22, 0.96, 0.36);
-
-        this.joints[PoseLandmark.LEFT_ELBOW].position.set(-0.32, 1.06, 0.22);
-        this.joints[PoseLandmark.LEFT_WRIST].position.set(-0.28, 0.96, 0.44);
+        this.joints[PoseLandmark.RIGHT_ELBOW].position.set(-0.32, 1.06, 0.22);
+        this.joints[PoseLandmark.RIGHT_WRIST].position.set(-0.28, 0.96, 0.44);
 
         if (this.paddleGroup) {
           this.paddleGroup.position.set(-0.28, 0.96, 0.44);
           this.paddleGroup.rotation.set(0.35, 0, 0.2);
         }
+      } else {
+        this.joints[PoseLandmark.RIGHT_ELBOW].position.set(-0.32, 1.1, 0.22);
+        this.joints[PoseLandmark.RIGHT_WRIST].position.set(-0.22, 0.96, 0.36);
+
+        this.joints[PoseLandmark.LEFT_ELBOW].position.set(0.32, 1.06, 0.22);
+        this.joints[PoseLandmark.LEFT_WRIST].position.set(0.28, 0.96, 0.44);
+
+        if (this.paddleGroup) {
+          this.paddleGroup.position.set(0.28, 0.96, 0.44);
+          this.paddleGroup.rotation.set(0.35, 0, -0.2);
+        }
       }
     } else {
       // Badminton ready pose
       if (this.dominantArm === 'right') {
-        // Right-handed: Racket in right hand (+X, screen-right), support hand in left (-X, screen-left)
-        this.joints[PoseLandmark.LEFT_ELBOW].position.set(-0.32, 1.18, 0.15);
-        this.joints[PoseLandmark.LEFT_WRIST].position.set(-0.24, 1.25, 0.32);
+        // Right-handed: Racket in right hand (-X, screen-right), support hand in left (+X, screen-left)
+        this.joints[PoseLandmark.LEFT_ELBOW].position.set(0.32, 1.18, 0.15);
+        this.joints[PoseLandmark.LEFT_WRIST].position.set(0.24, 1.25, 0.32);
 
-        this.joints[PoseLandmark.RIGHT_ELBOW].position.set(0.36, 1.30, 0.18);
-        this.joints[PoseLandmark.RIGHT_WRIST].position.set(0.32, 1.48, 0.28);
-
-        if (this.racketGroup) {
-          this.racketGroup.position.set(0.32, 1.48, 0.28);
-          this.racketGroup.rotation.set(0.2, 0, 0);
-          this.racketGroup.scale.set(1.0, 1.0, 1.0);
-          this.racketGroup.visible = true;
-          this.racketGroup.traverse(c => { c.visible = true; });
-        }
-        if (this.supportHandGroup) {
-          this.supportHandGroup.position.set(-0.24, 1.25, 0.32);
-          this.supportHandGroup.rotation.set(-0.2, 0.2, 0);
-        }
-      } else {
-        // Left-handed: Racket in left hand (-X, screen-left), support hand in right (+X, screen-right)
-        this.joints[PoseLandmark.RIGHT_ELBOW].position.set(0.32, 1.18, 0.15);
-        this.joints[PoseLandmark.RIGHT_WRIST].position.set(0.24, 1.25, 0.32);
-
-        this.joints[PoseLandmark.LEFT_ELBOW].position.set(-0.36, 1.30, 0.18);
-        this.joints[PoseLandmark.LEFT_WRIST].position.set(-0.32, 1.48, 0.28);
+        this.joints[PoseLandmark.RIGHT_ELBOW].position.set(-0.36, 1.30, 0.18);
+        this.joints[PoseLandmark.RIGHT_WRIST].position.set(-0.32, 1.48, 0.28);
 
         if (this.racketGroup) {
           this.racketGroup.position.set(-0.32, 1.48, 0.28);
@@ -440,8 +421,28 @@ export class Avatar3D {
           this.supportHandGroup.position.set(0.24, 1.25, 0.32);
           this.supportHandGroup.rotation.set(-0.2, -0.2, 0);
         }
+      } else {
+        // Left-handed: Racket in left hand (+X, screen-left), support hand in right (-X, screen-right)
+        this.joints[PoseLandmark.RIGHT_ELBOW].position.set(-0.32, 1.18, 0.15);
+        this.joints[PoseLandmark.RIGHT_WRIST].position.set(-0.24, 1.25, 0.32);
+
+        this.joints[PoseLandmark.LEFT_ELBOW].position.set(0.36, 1.30, 0.18);
+        this.joints[PoseLandmark.LEFT_WRIST].position.set(0.32, 1.48, 0.28);
+
+        if (this.racketGroup) {
+          this.racketGroup.position.set(0.32, 1.48, 0.28);
+          this.racketGroup.rotation.set(0.2, 0, 0);
+          this.racketGroup.scale.set(1.0, 1.0, 1.0);
+          this.racketGroup.visible = true;
+          this.racketGroup.traverse(c => { c.visible = true; });
+        }
+        if (this.supportHandGroup) {
+          this.supportHandGroup.position.set(-0.24, 1.25, 0.32);
+          this.supportHandGroup.rotation.set(-0.2, 0.2, 0);
+        }
       }
     }
+
 
     this.updateBones();
   }
@@ -496,8 +497,8 @@ export class Avatar3D {
     const sWristIdx = dominantArm === 'right' ? PoseLandmark.LEFT_WRIST : PoseLandmark.RIGHT_WRIST;
 
     // Reset base shoulder & head lateral anchors before applying dynamic reach lean
-    this.joints[PoseLandmark.RIGHT_SHOULDER].position.x = 0.24;
-    this.joints[PoseLandmark.LEFT_SHOULDER].position.x = -0.24;
+    this.joints[PoseLandmark.RIGHT_SHOULDER].position.x = -0.24;
+    this.joints[PoseLandmark.LEFT_SHOULDER].position.x = 0.24;
     this.joints[PoseLandmark.LEFT_SHOULDER].position.y = 1.45;
     this.joints[PoseLandmark.RIGHT_SHOULDER].position.y = 1.45;
     this.headMesh.position.x = 0;
@@ -514,9 +515,9 @@ export class Avatar3D {
       const spineRoll = THREE.MathUtils.clamp(reachOffset / 1.2, -0.28, 0.28);
       const shoulderShift = THREE.MathUtils.clamp((reachOffset - Math.sign(reachOffset) * 0.45) * 0.5, -0.25, 0.25);
       shoulderPos.x += shoulderShift;
-      this.joints[sShoulderIdx].position.x += (dominantArm === 'right' ? shoulderShift * 0.6 : -shoulderShift * 0.6);
-      this.joints[sShoulderIdx].position.y -= Math.sin(spineRoll) * 0.24;
-      this.joints[dShoulderIdx].position.y += Math.sin(spineRoll) * 0.24;
+      this.joints[sShoulderIdx].position.x += (dominantArm === 'right' ? -shoulderShift * 0.6 : shoulderShift * 0.6);
+      this.joints[sShoulderIdx].position.y += Math.sin(spineRoll) * 0.24;
+      this.joints[dShoulderIdx].position.y -= Math.sin(spineRoll) * 0.24;
       this.headMesh.position.x += shoulderShift * 0.7;
       this.joints[PoseLandmark.NOSE].position.x += shoulderShift * 0.7;
     }
@@ -529,7 +530,7 @@ export class Avatar3D {
     wristPos.y = Math.min(wristPos.y, 1.78);
     this.joints[dWristIdx].position.copy(wristPos);
 
-    const sideOffset = dominantArm === 'right' ? 0.09 : -0.09;
+    const sideOffset = dominantArm === 'right' ? -0.09 : 0.09;
     this.joints[dElbowIdx].position.copy(shoulderPos).add(wristPos).multiplyScalar(0.5);
     this.joints[dElbowIdx].position.x += sideOffset;
     this.joints[dElbowIdx].position.y -= 0.04;
@@ -556,24 +557,24 @@ export class Avatar3D {
       const localSTarget = this.group.worldToLocal(supportWorldTarget.clone());
       const sArmVector = new THREE.Vector3().subVectors(localSTarget, sShoulderPos);
 
-      const isCrossBody = dominantArm === 'right' ? localSTarget.x > 0 : localSTarget.x < 0;
+      const isCrossBody = dominantArm === 'right' ? localSTarget.x < 0 : localSTarget.x > 0;
       const maxReach = isCrossBody ? 0.95 : 0.78;
       const sArmLength = Math.min(maxReach, Math.max(0.20, sArmVector.length()));
       const sArmDir = sArmVector.normalize();
 
       const sWristPos = new THREE.Vector3().copy(sShoulderPos).addScaledVector(sArmDir, sArmLength);
       if (isCrossBody) {
-        if (dominantArm === 'right' && sWristPos.x > Math.min(localSTarget.x, 0.50)) {
-          sWristPos.x = Math.min(localSTarget.x, 0.50);
-        } else if (dominantArm === 'left' && sWristPos.x < Math.max(localSTarget.x, -0.50)) {
+        if (dominantArm === 'right' && sWristPos.x < Math.max(localSTarget.x, -0.50)) {
           sWristPos.x = Math.max(localSTarget.x, -0.50);
+        } else if (dominantArm === 'left' && sWristPos.x > Math.min(localSTarget.x, 0.50)) {
+          sWristPos.x = Math.min(localSTarget.x, 0.50);
         }
       }
       this.joints[sWristIdx].position.copy(sWristPos);
 
       const sSideOffset = isCrossBody
-        ? (dominantArm === 'right' ? THREE.MathUtils.lerp(-0.04, 0.08, Math.min(1, localSTarget.x / 0.50)) : THREE.MathUtils.lerp(0.04, -0.08, Math.min(1, -localSTarget.x / 0.50)))
-        : (dominantArm === 'right' ? -0.07 : 0.07);
+        ? (dominantArm === 'right' ? THREE.MathUtils.lerp(0.04, -0.08, Math.min(1, -localSTarget.x / 0.50)) : THREE.MathUtils.lerp(-0.04, 0.08, Math.min(1, localSTarget.x / 0.50)))
+        : (dominantArm === 'right' ? 0.07 : -0.07);
       this.joints[sElbowIdx].position.copy(sShoulderPos).add(sWristPos).multiplyScalar(0.5);
       this.joints[sElbowIdx].position.x += sSideOffset;
       this.joints[sElbowIdx].position.y -= 0.04;
@@ -723,7 +724,7 @@ export class Avatar3D {
 
     // Ready stance position (slightly in front of chest)
     const readyLocal = new THREE.Vector3(
-      dominantArm === 'right' ? 0.22 : -0.22,
+      dominantArm === 'right' ? -0.22 : 0.22,
       0.15,
       0.10
     );
@@ -731,7 +732,7 @@ export class Avatar3D {
 
     // Deep backswing windup: arm pulled back and high (avatar local -Z is behind avatar)
     const windupLocal = new THREE.Vector3(
-      dominantArm === 'right' ? 0.36 : -0.36,
+      dominantArm === 'right' ? -0.36 : 0.36,
       isSmash ? 0.58 : 0.32,
       -0.42 // -0.42m behind avatar torso
     );
@@ -756,7 +757,7 @@ export class Avatar3D {
     if (progress < 0.30) {
       // Wind-up: pull arm back and up (avatar local -Z is behind avatar)
       const windupLocal = new THREE.Vector3(
-        dominantArm === 'right' ? 0.32 : -0.32,
+        dominantArm === 'right' ? -0.32 : 0.32,
         isSmash ? 0.55 : 0.25,
         -0.38
       );
@@ -766,7 +767,7 @@ export class Avatar3D {
       // Strike phase: whip racket head forward into ball target
       const t = (progress - 0.30) / 0.30;
       const windupLocal = new THREE.Vector3(
-        dominantArm === 'right' ? 0.32 : -0.32,
+        dominantArm === 'right' ? -0.32 : 0.32,
         isSmash ? 0.55 : 0.25,
         -0.38
       );
@@ -776,7 +777,7 @@ export class Avatar3D {
       // Follow-through: sweep across body forward into court (avatar local +Z is forward)
       const t = (progress - 0.60) / 0.40;
       const followLocal = new THREE.Vector3(
-        dominantArm === 'right' ? -0.28 : 0.28,
+        dominantArm === 'right' ? 0.28 : -0.28,
         -0.22,
         0.38
       );
@@ -823,9 +824,9 @@ export class Avatar3D {
     if (!landmarks || landmarks.length < 33) return;
     this.dominantArm = dominantArm;
 
-    // Invert X and Y for Three.js coordinate system (Right is +X, Y is up, Z is depth)
+    // Map MediaPipe world landmarks to Three.js coordinate system (Right is +X, Up is +Y, Forward is +Z)
     const toThree = (lm: Landmark3D): THREE.Vector3 => {
-      return new THREE.Vector3(-lm.x, -lm.y, lm.z);
+      return new THREE.Vector3(lm.x, -lm.y, lm.z);
     };
 
     // Keep equipment roles tied to landmark identity, never screen position.
@@ -846,16 +847,16 @@ export class Avatar3D {
     // Shoulders: Positioned upright at Y = 1.45m
     // Head: Positioned upright at Y = 1.75m
     const hipY = 0.95;
-    this.joints[PoseLandmark.LEFT_HIP].position.set(-0.16, hipY, 0);
-    this.joints[PoseLandmark.RIGHT_HIP].position.set(0.16, hipY, 0);
-    this.joints[PoseLandmark.LEFT_KNEE].position.set(-0.19, 0.45, 0.06);
-    this.joints[PoseLandmark.RIGHT_KNEE].position.set(0.19, 0.45, 0.06);
-    this.joints[PoseLandmark.LEFT_ANKLE].position.set(-0.22, 0.08, -0.02);
-    this.joints[PoseLandmark.RIGHT_ANKLE].position.set(0.22, 0.08, -0.02);
-    this.joints[PoseLandmark.LEFT_HEEL].position.set(-0.22, 0.04, -0.06);
-    this.joints[PoseLandmark.RIGHT_HEEL].position.set(0.22, 0.04, -0.06);
-    this.joints[PoseLandmark.LEFT_FOOT_INDEX].position.set(-0.22, 0.00, 0.12);
-    this.joints[PoseLandmark.RIGHT_FOOT_INDEX].position.set(0.22, 0.00, 0.12);
+    this.joints[PoseLandmark.LEFT_HIP].position.set(0.16, hipY, 0);
+    this.joints[PoseLandmark.RIGHT_HIP].position.set(-0.16, hipY, 0);
+    this.joints[PoseLandmark.LEFT_KNEE].position.set(0.19, 0.45, 0.06);
+    this.joints[PoseLandmark.RIGHT_KNEE].position.set(-0.19, 0.45, 0.06);
+    this.joints[PoseLandmark.LEFT_ANKLE].position.set(0.22, 0.08, -0.02);
+    this.joints[PoseLandmark.RIGHT_ANKLE].position.set(-0.22, 0.08, -0.02);
+    this.joints[PoseLandmark.LEFT_HEEL].position.set(0.22, 0.04, -0.06);
+    this.joints[PoseLandmark.RIGHT_HEEL].position.set(-0.22, 0.04, -0.06);
+    this.joints[PoseLandmark.LEFT_FOOT_INDEX].position.set(0.22, 0.00, 0.12);
+    this.joints[PoseLandmark.RIGHT_FOOT_INDEX].position.set(-0.22, 0.00, 0.12);
 
     // 2. Drive Only Upper Body with Webcam:
     // (1) Lateral spine tilt / torso lean from shoulder angle
@@ -867,20 +868,20 @@ export class Avatar3D {
     if (rawLeftSh && rawRightSh) {
       const pL = toThree(rawLeftSh);
       const pR = toThree(rawRightSh);
-      const rollAngle = Math.atan2(pR.y - pL.y, pR.x - pL.x);
+      const rollAngle = Math.atan2(pL.y - pR.y, pL.x - pR.x);
       clampedRoll = THREE.MathUtils.clamp(rollAngle, -0.35, 0.35); // ±20 degrees torso roll
       spineLeanX = Math.sin(clampedRoll) * 0.20;
     }
 
     const baseShoulderY = 1.45;
     const leftShoulderTarget = new THREE.Vector3(
-      -0.24 * Math.cos(clampedRoll) + spineLeanX,
-      baseShoulderY - 0.24 * Math.sin(clampedRoll),
+      0.24 * Math.cos(clampedRoll) + spineLeanX,
+      baseShoulderY + 0.24 * Math.sin(clampedRoll),
       0
     );
     const rightShoulderTarget = new THREE.Vector3(
-      0.24 * Math.cos(clampedRoll) + spineLeanX,
-      baseShoulderY + 0.24 * Math.sin(clampedRoll),
+      -0.24 * Math.cos(clampedRoll) + spineLeanX,
+      baseShoulderY - 0.24 * Math.sin(clampedRoll),
       0
     );
     trackJoint(this.joints[PoseLandmark.LEFT_SHOULDER].position, leftShoulderTarget);
@@ -900,20 +901,20 @@ export class Avatar3D {
     }
 
     // (2) Arm IK: Shoulder -> Elbow -> Wrist -> Racket Head
-    // Dominant Right Arm (screen-right / +X):
+    // Dominant Right Arm (screen-right / -X):
     const rawRElbow = landmarks[PoseLandmark.RIGHT_ELBOW];
     const rawRWrist = landmarks[PoseLandmark.RIGHT_WRIST];
     if (rawRElbow && rawRightSh) {
       const relUpper = toThree(rawRElbow).sub(toThree(rawRightSh));
       const upperLen = THREE.MathUtils.clamp(relUpper.length(), 0.18, 0.35);
-      const upperDir = relUpper.length() > 0.01 ? relUpper.normalize() : new THREE.Vector3(0.3, -0.9, 0.1).normalize();
+      const upperDir = relUpper.length() > 0.01 ? relUpper.normalize() : new THREE.Vector3(-0.3, -0.9, 0.1).normalize();
       const targetElbow = this.joints[PoseLandmark.RIGHT_SHOULDER].position.clone().addScaledVector(upperDir, upperLen);
       trackJoint(this.joints[PoseLandmark.RIGHT_ELBOW].position, targetElbow);
 
       if (rawRWrist) {
         const relForearm = toThree(rawRWrist).sub(toThree(rawRElbow));
         const forearmLen = THREE.MathUtils.clamp(relForearm.length(), 0.18, 0.35);
-        const forearmDir = relForearm.length() > 0.01 ? relForearm.normalize() : new THREE.Vector3(0.2, 0.8, 0.5).normalize();
+        const forearmDir = relForearm.length() > 0.01 ? relForearm.normalize() : new THREE.Vector3(-0.2, 0.8, 0.5).normalize();
         const targetWrist = this.joints[PoseLandmark.RIGHT_ELBOW].position.clone().addScaledVector(forearmDir, forearmLen);
 
         trackJoint(this.joints[PoseLandmark.RIGHT_WRIST].position, targetWrist);
@@ -922,20 +923,20 @@ export class Avatar3D {
       }
     }
 
-    // Support Left Arm (screen-left / -X):
+    // Support Left Arm (screen-left / +X):
     const rawLElbow = landmarks[PoseLandmark.LEFT_ELBOW];
     const rawLWrist = landmarks[PoseLandmark.LEFT_WRIST];
     if (rawLElbow && rawLeftSh) {
       const relUpper = toThree(rawLElbow).sub(toThree(rawLeftSh));
       const upperLen = THREE.MathUtils.clamp(relUpper.length(), 0.18, 0.35);
-      const upperDir = relUpper.length() > 0.01 ? relUpper.normalize() : new THREE.Vector3(-0.3, -0.9, 0.1).normalize();
+      const upperDir = relUpper.length() > 0.01 ? relUpper.normalize() : new THREE.Vector3(0.3, -0.9, 0.1).normalize();
       const targetElbow = this.joints[PoseLandmark.LEFT_SHOULDER].position.clone().addScaledVector(upperDir, upperLen);
       trackJoint(this.joints[PoseLandmark.LEFT_ELBOW].position, targetElbow);
 
       if (rawLWrist) {
         const relForearm = toThree(rawLWrist).sub(toThree(rawLElbow));
         const forearmLen = THREE.MathUtils.clamp(relForearm.length(), 0.18, 0.35);
-        const forearmDir = relForearm.length() > 0.01 ? relForearm.normalize() : new THREE.Vector3(-0.2, 0.8, 0.5).normalize();
+        const forearmDir = relForearm.length() > 0.01 ? relForearm.normalize() : new THREE.Vector3(0.2, 0.8, 0.5).normalize();
         const targetWrist = this.joints[PoseLandmark.LEFT_ELBOW].position.clone().addScaledVector(forearmDir, forearmLen);
 
         trackJoint(this.joints[PoseLandmark.LEFT_WRIST].position, targetWrist);

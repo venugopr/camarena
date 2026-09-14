@@ -108,26 +108,32 @@ export class OpponentAI {
     let isPreparingSwing = false;
     let windupProgress = 0;
 
-    const isIncoming = projectileVel.z > 0.3;
+    const isIncoming = projectileVel.z > 0.15;
 
     if (isIncoming) {
       this.moveReactionTimer += dt;
       if (this.moveReactionTimer >= this.config.reactionTimeSec) {
         const g = 9.81;
-        const currentY = projectilePos.y;
+        const currentY = Math.max(0.1, projectilePos.y);
         const vy = projectileVel.y;
-        const targetY = 1.35;
+        const targetFloorY = 0.80;
 
-        // Solve for descending intercept time when shuttle reaches targetY
-        const underRadical = Math.max(0.01, vy * vy + 2 * g * (currentY - targetY));
-        const timeToReach = Math.max(0.25, Math.min(2.2, (vy + Math.sqrt(underRadical)) / g));
+        // Quadratic solve for time until shuttle descends into strike zone
+        const underRadical = Math.max(0.01, vy * vy + 2 * g * (currentY - targetFloorY));
+        const timeToDescend = Math.max(0.15, Math.min(2.5, (vy + Math.sqrt(underRadical)) / g));
 
-        const predictedZ = projectilePos.z + projectileVel.z * timeToReach * 0.84;
-        const predictedX = projectilePos.x + projectileVel.x * timeToReach * 0.86;
+        // Predict future position where the shuttle will be within reach
+        const predictedZ = projectilePos.z + projectileVel.z * timeToDescend * 0.82;
+        const predictedX = projectilePos.x + projectileVel.x * timeToDescend * 0.85;
 
-        this.targetPosition.x = THREE_CLAMP(predictedX, courtBounds.minX, courtBounds.maxX);
-        // Position slightly behind anticipated contact point to strike forward into the court
-        this.targetPosition.z = THREE_CLAMP(predictedZ + 0.30, courtBounds.minZ, courtBounds.maxZ);
+        // If the shuttle is already in the opponent court (z >= 0.5), actively position right behind it
+        if (projectilePos.z >= 0.5) {
+          this.targetPosition.x = THREE_CLAMP(projectilePos.x, courtBounds.minX, courtBounds.maxX);
+          this.targetPosition.z = THREE_CLAMP(Math.max(projectilePos.z + 0.25, predictedZ), courtBounds.minZ, courtBounds.maxZ);
+        } else {
+          this.targetPosition.x = THREE_CLAMP(predictedX, courtBounds.minX, courtBounds.maxX);
+          this.targetPosition.z = THREE_CLAMP(predictedZ + 0.25, courtBounds.minZ, courtBounds.maxZ);
+        }
       }
     } else {
       this.moveReactionTimer = 0;
@@ -152,17 +158,15 @@ export class OpponentAI {
 
     // Strike trigger: when shuttlecock enters opponent's court and approaches within reach
     const distToShuttle = Math.hypot(projectilePos.x - this.position.x, projectilePos.z - this.position.z);
-    const distZ = this.position.z - projectilePos.z;
+    const inOpponentCourt = projectilePos.z >= 0.4;
 
     const shouldStartWindup =
       isIncoming &&
       this.swingState === 'IDLE' &&
-      projectilePos.z >= 0.6 &&
-      distZ <= 2.4 &&
-      distZ >= -0.5 &&
-      distToShuttle <= 2.6 &&
-      projectilePos.y <= 3.2 &&
-      projectilePos.y >= 0.3;
+      inOpponentCourt &&
+      distToShuttle <= 2.8 &&
+      projectilePos.y <= 3.4 &&
+      projectilePos.y >= 0.15;
 
     if (shouldStartWindup) {
       this.swingState = 'WINDUP';
@@ -176,9 +180,10 @@ export class OpponentAI {
       windupProgress = THREE_CLAMP(1.0 - (this.windupTimer / this.windupDuration), 0, 1);
       this.swingTarget = { ...projectilePos };
 
-      // Strike triggers when windup finishes OR when the shuttlecock gets dangerously close to the floor
-      const emergencyFloorHit = projectilePos.y <= 0.45 && distToShuttle <= 1.8;
-      if (this.windupTimer <= 0 || emergencyFloorHit) {
+      // Strike triggers when windup finishes OR when the shuttlecock gets into hitting reach
+      const inStrikePocket = distToShuttle <= 2.0 && inOpponentCourt;
+      const emergencyFloorHit = projectilePos.y <= 0.70 && distToShuttle <= 2.4 && inOpponentCourt;
+      if (this.windupTimer <= 0 || inStrikePocket || emergencyFloorHit) {
         this.swingState = 'STRIKING';
         this.isSwinging = true;
         this.swingProgress = 0;
@@ -248,21 +253,19 @@ export function getBotTarget(
   shotType: 'drop' | 'clear' | 'drive' | 'smash',
   _difficulty: DifficultyLevel = 'casual'
 ): { x: number; z: number } {
-  // Aim strictly down the center corridor (|x| <= 0.35m) so bot never misses the sidelines
-  const targetX = (Math.random() - 0.5) * 0.70;
+  const targetX = (Math.random() - 0.5) * 0.50; // Narrow corridor right down center
   let targetZ: number;
   switch (shotType) {
     case 'clear':
     default:
-      // Lands cleanly in front of player's midcourt stance (avatar at z = -4.2)
-      targetZ = -3.2 - Math.random() * 0.4;
+      targetZ = -3.3 - Math.random() * 0.30; // Drops right in front of player
       break;
     case 'smash':
     case 'drive':
-      targetZ = -2.8 - Math.random() * 0.4;
+      targetZ = -2.8 - Math.random() * 0.30;
       break;
     case 'drop':
-      targetZ = -2.0 - Math.random() * 0.3;
+      targetZ = -1.9 - Math.random() * 0.30;
       break;
   }
   return { x: targetX, z: targetZ };
@@ -272,91 +275,56 @@ export function solveLaunchVelocity(
   origin: Vector3D,
   target: { x: number; z: number },
   shotType: 'drop' | 'clear' | 'drive' | 'smash',
-  dragCoeff = 0.085,
+  _dragCoeff = 0.085,
   gravity = 9.81,
-  targetFlightTime = 2.20
+  _targetFlightTime = 1.65
 ): Vector3D {
-  let initVy: number;
-  switch (shotType) {
-    case 'clear':
-      initVy = 6.6 + Math.random() * 0.3;
-      break;
-    case 'drop':
-      initVy = 4.0 + Math.random() * 0.2;
-      break;
-    case 'smash':
-      initVy = 4.2 + Math.random() * 0.2;
-      break;
-    case 'drive':
-    default:
-      initVy = 5.4 + Math.random() * 0.2;
-      break;
-  }
+  // 1. Choose base vy based on shot type
+  let vy = 6.2;
+  if (shotType === 'drop') vy = 4.8;
+  else if (shotType === 'smash') vy = 3.8;
+  else if (shotType === 'drive') vy = 5.2;
 
-  const flightT = Math.max(1.6, targetFlightTime);
+  // 2. Approximate forward speed to net to verify net clearance height
+  const distToNet = Math.abs(origin.z);
   const distZ = target.z - origin.z;
-  let vz = distZ / flightT;
-  let vx = (target.x - origin.x) / flightT;
-  let vy = initVy;
-
-  const simDt = 1 / 60;
-  const targetFloorY = 0.08;
-
-  for (let iter = 0; iter < 8; iter++) {
-    let simX = origin.x;
-    let simY = origin.y;
-    let simZ = origin.z;
-    let simVx = vx;
-    let simVy = vy;
-    let simVz = vz;
-    let netCrossingY = origin.y;
-    let crossedNet = false;
-    let totalTime = 0;
-
-    while (simY > targetFloorY && totalTime < 3.5) {
-      const spd = Math.sqrt(simVx * simVx + simVy * simVy + simVz * simVz);
-      const dMag = dragCoeff * spd;
-      simVx -= dMag * simVx * simDt;
-      simVy -= (dMag * simVy + gravity) * simDt;
-      simVz -= dMag * simVz * simDt;
-
-      const prevZ = simZ;
-      simX += simVx * simDt;
-      simY += simVy * simDt;
-      simZ += simVz * simDt;
-      totalTime += simDt;
-
-      if (!crossedNet && prevZ > 0 && simZ <= 0) {
-        netCrossingY = simY;
-        crossedNet = true;
-      }
-    }
-
-    if (netCrossingY < 1.95 && origin.z > 0.2) {
-      vy += (1.95 - netCrossingY) * 0.7;
-    }
-
-    const errZ = simZ - target.z;
-    const errX = simX - target.x;
-    if (Math.abs(errZ) < 0.08 && Math.abs(errX) < 0.08) break;
-
-    const timeRatio = Math.max(0.8, totalTime);
-    vz -= (errZ / timeRatio) * 0.7;
-    vx -= (errX / timeRatio) * 0.7;
+  const approxVz = Math.min(-2.5, distZ / 1.35);
+  const tNet = distToNet / Math.max(1.0, Math.abs(approxVz * 0.86));
+  const predNetY = origin.y + vy * tNet - 0.5 * gravity * tNet * tNet;
+  if (predNetY < 1.85) {
+    vy += (1.85 - predNetY) * 0.85 + 0.30;
   }
 
-  // Gentle, slow, highly readable returns that land in bounds and give 2+ seconds to hit back
-  if (shotType === 'clear') {
-    vy = THREE_CLAMP(vy, 6.0, 7.2);
-    vz = THREE_CLAMP(vz, -2.8, -1.8);
-  } else if (shotType === 'drop') {
-    vy = THREE_CLAMP(vy, 3.8, 4.8);
-    vz = THREE_CLAMP(vz, -2.2, -1.4);
-  } else {
-    vy = THREE_CLAMP(vy, 5.0, 6.2);
-    vz = THREE_CLAMP(vz, -2.8, -1.8);
+  // 3. Flight time estimation with final vy
+  const y0 = Math.max(0.20, origin.y);
+  let tEst = (vy + Math.sqrt(vy * vy + 2 * gravity * (y0 - 0.08))) / gravity;
+  tEst *= 1.08; // 8% drag deceleration on hangtime
+
+  // 4. Fast iterative vz convergence with final vy to guarantee exact landing at target.z
+  let vz = distZ / (tEst * 0.75);
+
+  for (let iter = 0; iter < 6; iter++) {
+    let curZ = origin.z;
+    let curVz = vz;
+    const dtSim = 0.04;
+    const simSteps = Math.floor(tEst / dtSim);
+    for (let s = 0; s < simSteps; s++) {
+      const speed = Math.sqrt(curVz * curVz + 25.0);
+      curVz -= 0.085 * speed * curVz * dtSim;
+      curZ += curVz * dtSim;
+    }
+    const err = curZ - target.z;
+    vz -= err * 0.55;
   }
-  vx = THREE_CLAMP(vx, -0.40, 0.40);
+
+  // 5. Horizontal velocity towards target.x
+  const distX = target.x - origin.x;
+  let vx = distX / (tEst * 0.85);
+
+  // Clamping to ensure flight stays cleanly in singles court boundaries
+  vx = THREE_CLAMP(vx, -0.60, 0.60);
+  vy = THREE_CLAMP(vy, 3.5, 7.5);
+  vz = THREE_CLAMP(vz, -11.0, -2.5);
 
   return { x: vx, y: vy, z: vz };
 }
@@ -364,3 +332,4 @@ export function solveLaunchVelocity(
 function THREE_CLAMP(val: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, val));
 }
+

@@ -97,7 +97,7 @@ export class VectorNormalizer {
     if (!leftShoulder || !rightShoulder) return 0;
 
     const shoulderMidX = (leftShoulder.x + rightShoulder.x) * 0.5;
-    return (0.5 - shoulderMidX) * 2.8;
+    return (shoulderMidX - 0.5) * 2.8;
   }
 
   /**
@@ -113,12 +113,12 @@ export class VectorNormalizer {
     const hasHips = leftHip && rightHip && (leftHip.visibility ?? 1) > 0.30 && (rightHip.visibility ?? 1) > 0.30;
     if (hasHips) {
       const hipMidX = (leftHip.x + rightHip.x) * 0.5;
-      return (0.5 - hipMidX) * 2.8;
+      return (hipMidX - 0.5) * 2.8;
     }
 
     if (leftShoulder && rightShoulder) {
       const shoulderMidX = (leftShoulder.x + rightShoulder.x) * 0.5;
-      return (0.5 - shoulderMidX) * 2.8;
+      return (shoulderMidX - 0.5) * 2.8;
     }
 
     return 0;

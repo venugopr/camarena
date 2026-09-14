@@ -582,36 +582,26 @@ export class PoseTracker {
       };
     };
 
-    // Hips: Right is -X, Left is +X
-    setLM(PoseLandmark.LEFT_HIP, hipX + 0.16, hipY, hipZ);
+    // Hips: Right is -X, Left is +X (aligned with MediaPipe standard world frame)
     setLM(PoseLandmark.RIGHT_HIP, hipX - 0.16, hipY, hipZ);
+    setLM(PoseLandmark.LEFT_HIP, hipX + 0.16, hipY, hipZ);
 
     // Spine and Shoulders
     const shoulderY = hipY + 0.48;
-    setLM(PoseLandmark.LEFT_SHOULDER, hipX + 0.24, shoulderY, hipZ);
     setLM(PoseLandmark.RIGHT_SHOULDER, hipX - 0.24, shoulderY, hipZ);
+    setLM(PoseLandmark.LEFT_SHOULDER, hipX + 0.24, shoulderY, hipZ);
 
     // Head
     const headY = shoulderY + 0.22;
     setLM(PoseLandmark.NOSE, hipX, headY, hipZ + 0.08);
-    setLM(PoseLandmark.LEFT_EYE, hipX + 0.04, headY + 0.03, hipZ + 0.08);
     setLM(PoseLandmark.RIGHT_EYE, hipX - 0.04, headY + 0.03, hipZ + 0.08);
-    setLM(PoseLandmark.LEFT_EAR, hipX + 0.1, headY + 0.02, hipZ);
+    setLM(PoseLandmark.LEFT_EYE, hipX + 0.04, headY + 0.03, hipZ + 0.08);
     setLM(PoseLandmark.RIGHT_EAR, hipX - 0.1, headY + 0.02, hipZ);
-    setLM(PoseLandmark.MOUTH_LEFT, hipX + 0.03, headY - 0.04, hipZ + 0.07);
+    setLM(PoseLandmark.LEFT_EAR, hipX + 0.1, headY + 0.02, hipZ);
     setLM(PoseLandmark.MOUTH_RIGHT, hipX - 0.03, headY - 0.04, hipZ + 0.07);
+    setLM(PoseLandmark.MOUTH_LEFT, hipX + 0.03, headY - 0.04, hipZ + 0.07);
 
-    // Left Arm (Neutral support at screen-left +X in MediaPipe coordinates)
-    const leftElbowX = hipX + 0.24 + leftArmX * 0.45;
-    const leftElbowY = shoulderY - 0.25;
-    const leftElbowZ = hipZ + leftArmZ * 0.5;
-    setLM(PoseLandmark.LEFT_ELBOW, leftElbowX, leftElbowY, leftElbowZ);
-    setLM(PoseLandmark.LEFT_WRIST, hipX + 0.24 + leftArmX * 0.65, shoulderY - 0.45 + (leftArmY - 0.8), hipZ + leftArmZ);
-    setLM(PoseLandmark.LEFT_PINKY, hipX + 0.24 + leftArmX * 0.65 + 0.03, shoulderY - 0.5, hipZ + leftArmZ);
-    setLM(PoseLandmark.LEFT_INDEX, hipX + 0.24 + leftArmX * 0.65 - 0.02, shoulderY - 0.5, hipZ + leftArmZ);
-    setLM(PoseLandmark.LEFT_THUMB, hipX + 0.24 + leftArmX * 0.65, shoulderY - 0.48, hipZ + leftArmZ + 0.03);
-
-    // Right Arm (Dynamic swinging arm at screen-right -X in MediaPipe coordinates)
+    // Right Arm (Dynamic swinging arm at -X)
     const rightElbowX = hipX - (0.24 + rightArmX * 0.45);
     const rightElbowY = shoulderY - 0.15 + (rightArmY - 0.8) * 0.5;
     const rightElbowZ = hipZ + rightArmZ * 0.4;
@@ -621,19 +611,29 @@ export class PoseTracker {
     setLM(PoseLandmark.RIGHT_INDEX, hipX - (0.24 + rightArmX * 0.65) + 0.02, shoulderY - 0.4, hipZ + rightArmZ);
     setLM(PoseLandmark.RIGHT_THUMB, hipX - (0.24 + rightArmX * 0.65), shoulderY - 0.38, hipZ + rightArmZ + 0.03);
 
+    // Left Arm (Neutral support at +X)
+    const leftElbowX = hipX + 0.24 + leftArmX * 0.45;
+    const leftElbowY = shoulderY - 0.25;
+    const leftElbowZ = hipZ + leftArmZ * 0.5;
+    setLM(PoseLandmark.LEFT_ELBOW, leftElbowX, leftElbowY, leftElbowZ);
+    setLM(PoseLandmark.LEFT_WRIST, hipX + 0.24 + leftArmX * 0.65, shoulderY - 0.45 + (leftArmY - 0.8), hipZ + leftArmZ);
+    setLM(PoseLandmark.LEFT_PINKY, hipX + 0.24 + leftArmX * 0.65 + 0.03, shoulderY - 0.5, hipZ + leftArmZ);
+    setLM(PoseLandmark.LEFT_INDEX, hipX + 0.24 + leftArmX * 0.65 - 0.02, shoulderY - 0.5, hipZ + leftArmZ);
+    setLM(PoseLandmark.LEFT_THUMB, hipX + 0.24 + leftArmX * 0.65, shoulderY - 0.48, hipZ + leftArmZ + 0.03);
+
     // Legs
     const kneeY = hipY * 0.52;
-    setLM(PoseLandmark.LEFT_KNEE, leftAnkleX * 0.8, kneeY, hipZ + 0.05);
     setLM(PoseLandmark.RIGHT_KNEE, -rightAnkleX * 0.8, kneeY, hipZ + 0.05);
+    setLM(PoseLandmark.LEFT_KNEE, leftAnkleX * 0.8, kneeY, hipZ + 0.05);
 
-    setLM(PoseLandmark.LEFT_ANKLE, leftAnkleX, leftAnkleY, hipZ);
     setLM(PoseLandmark.RIGHT_ANKLE, -rightAnkleX, rightAnkleY, hipZ);
+    setLM(PoseLandmark.LEFT_ANKLE, leftAnkleX, leftAnkleY, hipZ);
 
-    setLM(PoseLandmark.LEFT_HEEL, leftAnkleX, leftAnkleY, hipZ - 0.08);
     setLM(PoseLandmark.RIGHT_HEEL, -rightAnkleX, rightAnkleY, hipZ - 0.08);
+    setLM(PoseLandmark.LEFT_HEEL, leftAnkleX, leftAnkleY, hipZ - 0.08);
 
-    setLM(PoseLandmark.LEFT_FOOT_INDEX, leftAnkleX, 0.02, hipZ + 0.12);
     setLM(PoseLandmark.RIGHT_FOOT_INDEX, -rightAnkleX, 0.02, hipZ + 0.12);
+    setLM(PoseLandmark.LEFT_FOOT_INDEX, leftAnkleX, 0.02, hipZ + 0.12);
 
     return { raw2D, world3D };
   }
