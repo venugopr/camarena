@@ -66,7 +66,7 @@ export class BadmintonScene implements IGameScene {
   private isUsingMouse = false;
   private lastMouseTime = performance.now();
   private mouseSpeed = 2.0;
-  private playerZ = -3.5;
+  private playerZ = -4.2;
 
   // AI Paddle
   private aiPaddlePos = new THREE.Vector3(0, 1.5, 4.2);
@@ -105,16 +105,16 @@ export class BadmintonScene implements IGameScene {
   private impactMaxDuration = 0.36;
   private impactIsSmash = false;
   private cameraTrauma = 0;
-  private baseCameraPos = new THREE.Vector3(0, 6.2, -9.2);
-  private baseCameraLook = new THREE.Vector3(0, 0.75, 0.6);
-  private baseCameraFov = 40;
+  private baseCameraPos = new THREE.Vector3(0, 7.8, -10.8);
+  private baseCameraLook = new THREE.Vector3(0, 1.1, 0.2);
+  private baseCameraFov = 46;
   private screenImpactFlashEl?: HTMLElement;
   private hitQualityBadgeEl?: HTMLElement;
   private lineCallBadgeEl?: HTMLElement;
 
   // ─── Section 2: Spring-Damper FOV Punch ────────────────────────────────────
   private fovSpringVel = 0;     // FOV spring velocity (°/s)
-  private currentFov = 40;
+  private currentFov = 46;
 
   // ─── Section 3: Radial Visual Streaks ──────────────────────────────────────
   private streakCanvas?: HTMLCanvasElement;
@@ -480,10 +480,10 @@ export class BadmintonScene implements IGameScene {
       if (this.fpSupportArmGroup) this.fpSupportArmGroup.visible = false;
     } else if (preset === 'broadcast') {
       // High-angle stadium broadcast camera (Olympic reference framing)
-      this.baseCameraPos.set(0, 6.2, -9.2);
-      this.baseCameraLook.set(0, 0.75, 0.6);
-      this.baseCameraFov = 40; // Narrower broadcast FOV eliminates wide-angle distortion
-      this.camera.fov = 40;
+      this.baseCameraPos.set(0, 7.8, -10.8);
+      this.baseCameraLook.set(0, 1.1, 0.2);
+      this.baseCameraFov = 46;
+      this.camera.fov = 46;
       this.camera.position.copy(this.baseCameraPos);
       this.camera.up.set(0, 1, 0);
       this.camera.lookAt(this.baseCameraLook);
@@ -1053,7 +1053,7 @@ export class BadmintonScene implements IGameScene {
         this.mouseSpeed = 3.2;
         this.isUsingMouse = true;
       } else if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') {
-        this.playerZ = Math.max(-3.5, this.playerZ - 0.40);
+        this.playerZ = Math.max(-4.5, this.playerZ - 0.40);
         this.mouseRacketTarget.y = Math.max(this.mouseRacketTarget.y - 0.25, 0.6);
         this.mouseSpeed = 2.0;
         this.isUsingMouse = true;
@@ -1080,7 +1080,7 @@ export class BadmintonScene implements IGameScene {
         const racketHeadPos = this.playerAvatar.getRacketHeadWorldPosition();
         const d = racketHeadPos.distanceTo(this.shuttlePos);
 
-        if (d <= 0.85 && isUserInitiated) {
+        if (d <= 1.85 && isUserInitiated) {
           this.hitStopTimer = 0.016;
           this.floorDropGraceTimer = 0;
           this.swingIntentTimer = 0;
@@ -1828,11 +1828,11 @@ export class BadmintonScene implements IGameScene {
 
       // Subtle lateral broadcast camera sway tracking player lateral position
       this.baseCameraPos.x = THREE.MathUtils.lerp(this.baseCameraPos.x, targetCamX, 0.04);
-      this.baseCameraPos.y = 6.2;
-      this.baseCameraPos.z = -9.2;
+      this.baseCameraPos.y = 7.8;
+      this.baseCameraPos.z = -10.8;
       this.baseCameraLook.x = THREE.MathUtils.lerp(this.baseCameraLook.x, targetLookX, 0.02);
-      this.baseCameraLook.y = 0.75;
-      this.baseCameraLook.z = 0.6;
+      this.baseCameraLook.y = 1.1;
+      this.baseCameraLook.z = 0.2;
     } else if (this.currentCameraPreset === 'over_shoulder' && this.playerAvatar) {
       const avX = this.playerAvatar.group.position.x;
       const targetCamX = avX * 0.35;
@@ -2036,8 +2036,8 @@ export class BadmintonScene implements IGameScene {
     this.hideImpactReticle();
 
     // Reset player footwork stance to baseline for every serve
-    this.playerZ = -3.5;
-    this.playerAvatar.group.position.z = -3.5;
+    this.playerZ = -4.2;
+    this.playerAvatar.group.position.z = -4.2;
 
     // Reset AI stance to its home position for every serve
     this.opponentAI.reset();
@@ -2125,26 +2125,23 @@ export class BadmintonScene implements IGameScene {
     // 2. Generous Z-depth window (absorbs synthetic depth noise)
     const distZ = Math.abs(racketHeadPos.z - this.shuttlePos.z);
 
-    // Criteria: racket passing through the serve pocket on a committed swing
-    return distXY <= 1.10 && distZ <= 1.25;
+    // Criteria: racket passing through the serve pocket on a committed swing (forgiving proximity)
+    return distXY <= 1.40 && distZ <= 1.35;
   }
 
   private isServeStrikeRegistered(wristSpeed = 0, swingSpeed = 0, userInitiated = false): boolean {
     if (this.rallyState !== 'READY_TO_SERVE' || this.scoreState.currentServer !== 1) return false;
     if (this.serveCooldownTimer > 0) return false;
 
-    // Explicit click/button serve
+    // Explicit click/spacebar serve
     if (userInitiated) return true;
 
     // Must be in hitting proximity of held shuttle
     if (!this.isRacketInServeProximity()) return false;
 
-    // Determine swing velocity from actual motion tracking
+    // Require genuine physical wrist/arm movement (ignore racket tip rotational jitter)
     const physicalSpeed = Math.max(wristSpeed, swingSpeed, this.isUsingMouse ? this.mouseSpeed : 0);
-    const racketSpeed = this.racketVelocity.length();
-
-    // Trigger on genuine physical swing without requiring noisy mesh velocity direction
-    return physicalSpeed >= 1.8 || (physicalSpeed >= 1.2 && racketSpeed >= 1.8);
+    return physicalSpeed >= 2.2;
   }
 
   /**
@@ -2152,10 +2149,10 @@ export class BadmintonScene implements IGameScene {
    * matching the in-play drag/gravity integrator.
    */
   private constrainLandingInCourt(origin: THREE.Vector3, vel: THREE.Vector3, towardOpponent: boolean): void {
-    const minX = -1.4;
-    const maxX = 1.4;
-    const zMin = towardOpponent ? 2.0 : -5.2; // Was -4.6
-    const zMax = towardOpponent ? 4.8 : -2.4; // Was -2.2
+    const minX = -1.10;
+    const maxX = 1.10;
+    const zMin = towardOpponent ? 2.0 : -3.8; // Don't let bot push past -3.8m (safe inside -6.70m baseline)
+    const zMax = towardOpponent ? 4.2 : -2.2; // Don't let bot drop closer than -2.2m
     const DRAG = 0.085;
     const g = 9.81;
     const dt = 1 / 60;
@@ -2170,7 +2167,7 @@ export class BadmintonScene implements IGameScene {
       let landX = x;
       let landZ = z;
       let t = 0;
-      while (y > 0.08 && t < 3.2) {
+      while (y > 0.08 && t < 3.5) {
         const spd = Math.hypot(vx, vy, vz);
         const d = DRAG * spd;
         vx -= d * vx * dt;
@@ -2195,13 +2192,14 @@ export class BadmintonScene implements IGameScene {
       if (!adj) break;
     }
 
-    vel.x = THREE.MathUtils.clamp(vel.x, -1.8, 1.8);
+    vel.x = THREE.MathUtils.clamp(vel.x, -0.45, 0.45);
     if (towardOpponent) {
-      vel.z = THREE.MathUtils.clamp(vel.z, 3.4, 6.8);
-      vel.y = THREE.MathUtils.clamp(vel.y, 4.5, 7.6);
+      vel.z = THREE.MathUtils.clamp(vel.z, 3.4, 5.2);
+      vel.y = THREE.MathUtils.clamp(vel.y, 4.8, 6.8);
     } else {
-      vel.z = THREE.MathUtils.clamp(vel.z, -5.6, -3.4);
-      vel.y = THREE.MathUtils.clamp(vel.y, 3.5, 7.6);
+      // Gentle opponent return: floats comfortably with 2+ seconds to react, landing well inside court
+      vel.z = THREE.MathUtils.clamp(vel.z, -2.8, -1.8);
+      vel.y = THREE.MathUtils.clamp(vel.y, 5.8, 7.2);
     }
   }
 
@@ -2229,13 +2227,12 @@ export class BadmintonScene implements IGameScene {
     this.triggerPlayerSwing(this.shuttlePos.clone(), false, 0.22);
     this.playerAvatar.pulseImpact('serve');
 
-    const avatarX = this.playerAvatar.group.position.x;
-    const swingX = this.racketVelocity.x;
-    const contactOffset = (contactPoint.x - avatarX) / 0.35;
-    const serveVX = THREE.MathUtils.clamp((swingX * 0.25) + (contactOffset * 0.45), -1.4, 1.4);
+    // Clean forward serve aimed into opponent service court center
+    const swingVx = this.racketVelocity.x;
+    const serveVX = THREE.MathUtils.clamp(swingVx * 0.20, -0.45, 0.45);
 
     // High, readable serve that lands in the opponent forecourt rather than rocketing long.
-    this.shuttleVel.set(serveVX, 6.6, 5.4);
+    this.shuttleVel.set(serveVX, 6.6, 5.2);
     this.enforceNetClearance(this.shuttlePos.clone(), this.shuttleVel, 2.05);
     this.constrainLandingInCourt(this.shuttlePos.clone(), this.shuttleVel, true);
     this.floorDropImmunityTimer = 0.6; // Grace period: floor collisions disabled during first 0.6s
@@ -2308,8 +2305,8 @@ export class BadmintonScene implements IGameScene {
     let badgeStyle: 'smash' | 'drive' | 'lift' | 'sweet' = 'drive';
 
     const rawRacketSpeed = Math.max(vSwing, this.racketVelocity.length());
-    const baseSpeedZ = this.currentDifficulty === 'casual' ? 4.6 : 5.6;
-    const speedMultiplier = this.currentDifficulty === 'casual' ? 0.35 : 0.55;
+    const baseSpeedZ = this.currentDifficulty === 'casual' ? 4.4 : 5.0;
+    const speedMultiplier = this.currentDifficulty === 'casual' ? 0.30 : 0.45;
 
     // Shot selection based on contact height & swing trajectory
     const isOverheadSmash = contactY > 1.70 && (vySwing < -0.20 || (!isUpward && rawRacketSpeed > 2.2));
@@ -2318,7 +2315,7 @@ export class BadmintonScene implements IGameScene {
 
     if (isOverheadSmash && this.currentDifficulty !== 'casual') {
       shotType = 'smash';
-      speedZ = 7.2 + rawRacketSpeed * 0.45;
+      speedZ = Math.min(6.8 + rawRacketSpeed * 0.35, 7.8);
       reqVy = 3.4;
       speedKmh = Math.round(speedZ * 9.5);
       badgeText = `💥 OVERHEAD SMASH ${speedKmh} KM/H`;
@@ -2326,7 +2323,7 @@ export class BadmintonScene implements IGameScene {
       this.audio.badmintonSmash();
     } else if (isDropShot) {
       shotType = 'drop';
-      speedZ = 4.2 + rawRacketSpeed * 0.25;
+      speedZ = Math.min(4.0 + rawRacketSpeed * 0.20, 4.6);
       reqVy = 5.0;
       speedKmh = Math.round(speedZ * 6.5);
       badgeText = '🏸 DROP SHOT';
@@ -2334,7 +2331,7 @@ export class BadmintonScene implements IGameScene {
       this.audio.badmintonHit(65);
     } else if (isUnderhandLift) {
       shotType = 'clear';
-      speedZ = 4.8 + rawRacketSpeed * 0.3;
+      speedZ = Math.min(4.6 + rawRacketSpeed * 0.25, 5.4);
       reqVy = 6.6;
       speedKmh = Math.round(speedZ * 7.5);
       badgeText = '🏸 HIGH CLEAR';
@@ -2342,7 +2339,7 @@ export class BadmintonScene implements IGameScene {
       this.audio.badmintonHit(75);
     } else {
       shotType = 'drive';
-      speedZ = baseSpeedZ + rawRacketSpeed * speedMultiplier;
+      speedZ = Math.min(baseSpeedZ + rawRacketSpeed * speedMultiplier, 5.8);
       reqVy = 5.0;
       speedKmh = Math.round(speedZ * 8.0);
       badgeText = '🏸 CLEAN RETURN';
@@ -2359,9 +2356,8 @@ export class BadmintonScene implements IGameScene {
     // 1. Swing lateral velocity (vxSwing) directs the shuttle:
     //    vxSwing > 0 (screen-left) -> cross-court left (+X)
     //    vxSwing < 0 (screen-right) -> down-the-line right (-X)
-    // 2. Early vs late contact timing relative to avatar center:
-    const contactOffset = (origin.x - this.playerAvatar.group.position.x);
-    let returnX = THREE.MathUtils.clamp((vxSwing * 0.28) + (contactOffset * 0.7), -1.5, 1.5);
+    // Direct returns cleanly into opponent court without extreme lateral hooks
+    let returnX = THREE.MathUtils.clamp(vxSwing * 0.25, -0.65, 0.65);
 
     this.shuttleVel.set(returnX, reqVy, speedZ);
     this.enforceNetClearance(origin, this.shuttleVel, 2.05);
@@ -2443,19 +2439,18 @@ export class BadmintonScene implements IGameScene {
       const normX = this.vectorNormalizer.getMirroredTorsoX(motionFrame.rawLandmarks);
       const targetAvatarX = THREE.MathUtils.clamp(normX * 1.8, -this.singlesCourtWidth * 0.44, this.singlesCourtWidth * 0.44);
 
-      // Depth Movement (Z): forward step moves avatar forward toward net ([-3.5m, -1.7m])
-      const webcamForwardZ = this.playerAvatar.getTrackedForwardZ();
-      let targetAvatarZ = -3.5 + webcamForwardZ;
+      // Anchor player to standard BWF midcourt position (z = -4.2m)
+      let targetAvatarZ = -4.2;
 
-      // Contextual lunge on incoming drops so short shots can always be reached
-      const isShortDrop = this.rallyState === 'IN_PLAY' && this.shuttleVel.z < 0 && this.shuttlePos.z > -2.8 && this.shuttlePos.z < -1.4;
+      // Contextual lunge forward only when opponent hits a short net drop
+      const isShortDrop = this.rallyState === 'IN_PLAY' && this.shuttleVel.z < 0 && this.shuttlePos.z > -3.2 && this.shuttlePos.z < -1.2;
       if (isShortDrop) {
-        const lungeTargetZ = THREE.MathUtils.clamp(this.shuttlePos.z - 0.45, -3.5, -1.7);
+        const lungeTargetZ = THREE.MathUtils.clamp(this.shuttlePos.z - 0.40, -4.2, -2.2);
         targetAvatarZ = Math.max(targetAvatarZ, lungeTargetZ);
       }
 
       this.playerZ = THREE.MathUtils.lerp(this.playerZ, targetAvatarZ, 0.15);
-      this.playerAvatar.group.position.x = THREE.MathUtils.lerp(this.playerAvatar.group.position.x, targetAvatarX, 0.15);
+      this.playerAvatar.group.position.x = THREE.MathUtils.lerp(this.playerAvatar.group.position.x, targetAvatarX, 0.20);
       this.playerAvatar.group.position.z = this.playerZ;
 
       const domWristIdx = this.dominantHand === 'right' ? 16 : 15;
@@ -2497,13 +2492,13 @@ export class BadmintonScene implements IGameScene {
         this.trackedSupportHandPos.copy(sHand);
       }
     } else if (this.isUsingMouse) {
-      // Allow mouse / keyboard to move player across court within [-2.2, 2.2] and [-3.5, -1.7]
+      // Allow mouse / keyboard to move player across court within [-2.2, 2.2] and [-4.2, -1.7]
       const targetAvatarX = THREE.MathUtils.clamp(this.mouseRacketTarget.x * 0.65, -2.2, 2.2);
 
       let targetAvatarZ = this.playerZ;
-      const isShortDrop = this.rallyState === 'IN_PLAY' && this.shuttleVel.z < 0 && this.shuttlePos.z > -2.8 && this.shuttlePos.z < -1.4;
+      const isShortDrop = this.rallyState === 'IN_PLAY' && this.shuttleVel.z < 0 && this.shuttlePos.z > -3.2 && this.shuttlePos.z < -1.2;
       if (isShortDrop) {
-        const lungeTargetZ = THREE.MathUtils.clamp(this.shuttlePos.z - 0.45, -3.5, -1.7);
+        const lungeTargetZ = THREE.MathUtils.clamp(this.shuttlePos.z - 0.40, -4.2, -2.2);
         targetAvatarZ = Math.max(targetAvatarZ, lungeTargetZ);
       }
 
@@ -2570,42 +2565,43 @@ export class BadmintonScene implements IGameScene {
     this.racketVelocity.lerp(rawRacketVel, 0.35);
     this.previousRacketPosition.copy(racketPosition);
 
-    const wristSpeedNow = trackedWristVel
+    const motionSpeed = trackedWristVel
       ? Math.hypot(trackedWristVel.x, trackedWristVel.y, trackedWristVel.z)
       : 0;
-    const swingVy = trackedWristVel?.y || this.racketVelocity.y;
+    const swingVy = trackedWristVel?.y || 0;
     const isUnderhandScoop = swingVy > 0.80 && this.shuttlePos.y < 1.30;
+
+    // Swing is only committed on intentional physical motion or explicit input (NOT racket tip jitter)
     const committedSwing =
       this.userSwingIntentTimer > 0 ||
-      wristSpeedNow >= this.intentionalSwingMps ||
-      (this.isUsingMouse && this.mouseSpeed >= this.intentionalSwingMps);
+      motionSpeed >= 2.2 ||
+      (this.isUsingMouse && this.mouseSpeed >= 2.2);
 
     if (committedSwing) {
-      this.swingIntentTimer = 0.30;
+      this.swingIntentTimer = 0.22;
     } else {
-      this.swingIntentTimer = Math.max(0, this.swingIntentTimer - deltaTime);
+      this.swingIntentTimer = Math.max(0, this.swingIntentTimer - frameDt);
     }
 
-    // Player return: racket must be near the shuttle AND the player must actually swing.
     if (this.rallyState === 'IN_PLAY' && this.lastHitter !== 'player') {
-      const isApproaching = this.shuttleVel.z < 0 && this.shuttlePos.z <= -0.4;
+      const isApproaching = this.shuttleVel.z < 0.2 && this.shuttlePos.z <= -1.2;
       if (isApproaching) {
         const racketHeadPos = this.playerAvatar.getRacketHeadWorldPosition();
-        const dx = racketHeadPos.x - this.shuttlePos.x;
-        const dy = racketHeadPos.y - this.shuttlePos.y;
-        const dz = Math.abs(racketHeadPos.z - this.shuttlePos.z);
-        const sweptDist = this.distanceToSegment(racketHeadPos, this.prevShuttlePos, this.shuttlePos);
         const dist3D = racketHeadPos.distanceTo(this.shuttlePos);
+        const sweptDist = this.distanceToSegment(racketHeadPos, this.prevShuttlePos, this.shuttlePos);
         const effectiveDist = Math.min(dist3D, sweptDist);
-        const isInHitZone = (Math.hypot(dx, dy) < 0.75 && dz < 1.0) || effectiveDist <= 0.85;
 
-        if (isInHitZone && committedSwing) {
+        // Sensible physical racket reach (1.1m radius around racket head)
+        const isInHitZone = effectiveDist <= 1.15;
+
+        // Trigger hit ONLY when player performs an actual swing while shuttle is in reach
+        if (isInHitZone && this.swingIntentTimer > 0) {
           this.hitStopTimer = 0.016;
           this.floorDropGraceTimer = 0;
           this.swingIntentTimer = 0;
           this.userSwingIntentTimer = 0;
           const isUpwardOrScoop = isUpwardSwing || isUnderhandScoop || swingVy > 0.45 || this.shuttlePos.y < 1.30;
-          this.executePlayerHit(racketHeadPos, Math.max(wristSpeedNow, this.mouseSpeed, 2.5), isUpwardOrScoop);
+          this.executePlayerHit(racketHeadPos, Math.max(motionSpeed, this.mouseSpeed, 2.5), isUpwardOrScoop);
         }
       }
     }
@@ -2695,7 +2691,7 @@ export class BadmintonScene implements IGameScene {
 
           this.shuttlePos.set(this.opponentAvatar.group.position.x, 1.4, this.opponentAvatar.group.position.z - 0.3);
           const target = getBotTarget('clear', this.currentDifficulty);
-          const launchVel = solveLaunchVelocity(this.shuttlePos, target, 'clear', undefined, undefined, 1.85);
+          const launchVel = solveLaunchVelocity(this.shuttlePos, target, 'clear', undefined, undefined, 2.20);
           this.shuttleVel.set(launchVel.x, launchVel.y, launchVel.z);
           this.constrainLandingInCourt(this.shuttlePos.clone(), this.shuttleVel, false);
           this.floorDropImmunityTimer = 0.6;
@@ -2877,7 +2873,7 @@ export class BadmintonScene implements IGameScene {
         const courtBounds = {
           minX: -this.singlesCourtWidth * 0.44,
           maxX: this.singlesCourtWidth * 0.44,
-          minZ: 2.2,
+          minZ: 1.0, // Changed from 2.2 to 1.0 so the bot can reach frontcourt serves/drops
           maxZ: this.courtLength * 0.46
         };
 

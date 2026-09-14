@@ -1229,9 +1229,8 @@ export class Avatar3D {
     let normY: number;
 
     if (isRawWebcam) {
-      // Safeguard 2: Mirror inversion for webcam feed (1.0 - screenX)
-      // Moving right in real world moves right on screen along R
-      normX = ((1.0 - screenX) - 0.5) * 2.0;
+      // 1:1 real-world mapping (screenX) for natural hand-eye coordination
+      normX = (screenX - 0.5) * 2.0;
       // Invert Y so upward hand movement in webcam increases Three.js world Y
       normY = (0.5 - screenY) * 2.0;
     } else {

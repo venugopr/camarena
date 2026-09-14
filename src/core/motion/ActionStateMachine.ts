@@ -17,9 +17,9 @@ export interface ActionClassifierConfig {
 
 export class ActionStateMachine {
   private config: ActionClassifierConfig = {
-    smashVelocityMps: 5.2,   // ~18.7 km/h at wrist (requires intentional fast swing)
-    driveVelocityMps: 3.8,   // ~13.7 km/h at wrist (well above 11 km/h desk jitter ceiling)
-    liftVelocityMps: 3.4,    // ~12.2 km/h at wrist (well above 11 km/h desk jitter ceiling)
+    smashVelocityMps: 4.8,   // ~17.3 km/h at wrist (requires intentional fast swing)
+    driveVelocityMps: 2.8,   // ~10.1 km/h at wrist (fluid arm stroke)
+    liftVelocityMps: 2.2,    // ~7.9 km/h at wrist (natural gentle underhand serve/lift)
     cooldownMs: 320          // 320ms refractory period
   };
 
@@ -85,9 +85,9 @@ export class ActionStateMachine {
     const wristSpeed = Math3D.length(wristVel);
     const wristSpeedKmh = wristSpeed * 3.6;
 
-    // Desk jitter suppression: Natural resting webcam pixel noise produces 5-11 km/h (1.4-3.0 m/s).
-    // If the wrist is moving below 3.2 m/s (~11.5 km/h), do not classify as any swing/stroke action.
-    if (wristSpeed < 3.2) {
+    // Desk jitter suppression: Natural resting webcam pixel noise produces ~1.0-1.8 m/s.
+    // If the wrist is moving below 2.2 m/s (~7.9 km/h), do not classify as any swing/stroke action.
+    if (wristSpeed < 2.2) {
       this.currentAction = 'READY_STANCE';
       return { activeAction: this.currentAction, lastEvent: this.lastActionEvent };
     }
