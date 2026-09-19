@@ -17,9 +17,11 @@ export interface GamePacingProfile {
 }
 
 export const PACING_PROFILES: Record<string, GamePacingProfile> = {
-  casual: { modeName: 'casual', opponentSpeedZ: -2.4, opponentLiftY: 6.8, targetFlightTime: 2.30, hitTimeWindow: 650 },
-  normal: { modeName: 'normal', opponentSpeedZ: -2.6, opponentLiftY: 6.5, targetFlightTime: 2.05, hitTimeWindow: 520 },
-  pro: { modeName: 'pro', opponentSpeedZ: -2.9, opponentLiftY: 6.0, targetFlightTime: 1.80, hitTimeWindow: 420 }
+  // Wii Sports-style readable pacing — generous hang-time so the player can always track the shuttle
+  // casual: 2.60s float → apex ~3.4m; normal: 2.30s → apex ~3.0m; pro: 2.05s → apex ~2.8m
+  casual: { modeName: 'casual', opponentSpeedZ: -2.2, opponentLiftY: 6.8, targetFlightTime: 2.60, hitTimeWindow: 700 },
+  normal: { modeName: 'normal', opponentSpeedZ: -2.4, opponentLiftY: 6.5, targetFlightTime: 2.30, hitTimeWindow: 560 },
+  pro:    { modeName: 'pro',    opponentSpeedZ: -2.7, opponentLiftY: 6.0, targetFlightTime: 2.05, hitTimeWindow: 460 }
 };
 
 export class OpponentAI {
@@ -209,7 +211,11 @@ export class OpponentAI {
         hitVel = solveLaunchVelocity(
           projectilePos,
           botTarget,
-          this.lastShotType
+          this.lastShotType,
+          0.085,
+          9.81,
+          undefined,      // minimumNetHeight — auto
+          this.pacingProfile // Pillar B: thread Wii-Sports pacing into physics solver
         );
         hitTarget = botTarget;
         didHit = true;
@@ -251,19 +257,24 @@ export function getBotTarget(
   shotType: 'drop' | 'clear' | 'drive' | 'smash',
   _difficulty: DifficultyLevel = 'casual'
 ): { x: number; z: number } {
-  const targetX = (Math.random() - 0.5) * 0.50; // Narrow corridor right down center
+  // All target Z values strictly inside inner singles court: player z ∈ [-5.2, -2.6]
+  // Lateral: ±0.80m corridor (avoids near-sideline framing issues)
+  const targetX = (Math.random() - 0.5) * 1.60;
   let targetZ: number;
   switch (shotType) {
     case 'clear':
     default:
-      targetZ = -3.3 - Math.random() * 0.30; // Drops right in front of player
+      // Deep baseline clear — 4.2 to 5.2m back from net
+      targetZ = THREE_CLAMP(-4.2 - Math.random() * 1.0, -5.2, -4.0);
       break;
     case 'smash':
     case 'drive':
-      targetZ = -2.8 - Math.random() * 0.30;
+      // Mid-court — 2.8 to 4.4m back from net
+      targetZ = THREE_CLAMP(-2.8 - Math.random() * 1.4, -4.4, -2.6);
       break;
     case 'drop':
-      targetZ = -1.9 - Math.random() * 0.30;
+      // Short drop — 2.6 to 3.2m back from net (strictly inside court)
+      targetZ = THREE_CLAMP(-2.6 - Math.random() * 0.6, -3.2, -2.6);
       break;
   }
   return { x: targetX, z: targetZ };
@@ -274,69 +285,106 @@ export function solveLaunchVelocity(
   target: { x: number; z: number },
   shotType: 'drop' | 'clear' | 'drive' | 'smash',
   dragCoeff = 0.085,
-  gravity = 9.81
+  gravity = 9.81,
+  minimumNetHeight?: number,
+  pacingProfile?: GamePacingProfile
 ): Vector3D {
-  // Randomized speed variation per shot type so no two shots have identical velocity
-  const speedVariation = 0.88 + Math.random() * 0.24; // ±12% speed variance
+  // Difficulty-aware hang time from pacing profile
+  //   casual  → 2.30s  |  normal  → 2.05s  |  pro  → 1.85s
+  const profileFlightTime = pacingProfile?.targetFlightTime ?? 2.05;
 
-  let targetFlightTime = 1.85 * speedVariation;
-  let baseVy = 5.4;
+  // ─── Per-shot tactical speed multiplier ────────────────────────────────────────────────────
+  // Range 0.80–1.25: slow defensive touch (0.80) to aggressive fast drive (1.25).
+  // Applied to vz/vx AFTER the base ballistic solve — keeps targetFlightTime stable
+  // so the landing zone stays pinned while speed feel varies organically.
+  const speedMod = 0.80 + Math.random() * 0.45;
+
+  let targetFlightTime: number;
+  let baseVy: number;
+  let apexHeightTarget: number;
 
   switch (shotType) {
     case 'smash':
-      targetFlightTime = 0.70 * speedVariation;
+      targetFlightTime = 0.72;
       baseVy = 2.9;
+      apexHeightTarget = 1.8;
       break;
     case 'drive':
-      targetFlightTime = 1.15 * speedVariation;
-      baseVy = 4.0;
+      targetFlightTime = profileFlightTime * 0.85;
+      baseVy = 4.4;
+      apexHeightTarget = 2.8;
       break;
     case 'drop':
-      targetFlightTime = 1.50 * speedVariation;
-      baseVy = 4.2;
+      // Drops always float soft — cap speedMod so they don’t accidentally laser
+      targetFlightTime = profileFlightTime * 0.65;
+      baseVy = 4.0;
+      apexHeightTarget = 2.6;
       break;
     case 'clear':
     default:
-      targetFlightTime = 1.95 * speedVariation;
-      baseVy = 6.0;
+      targetFlightTime = profileFlightTime;
+      baseVy = gravity * targetFlightTime * 0.52;
+      apexHeightTarget = 3.2;
       break;
   }
 
-  // Ensure target.z stays strictly inside player court [-5.2m to -2.3m] (never past -6.75m baseline)
-  const clampedTargetZ = THREE_CLAMP(target.z, -5.2, -2.3);
-  const distZ = clampedTargetZ - origin.z;
-  const distX = target.x - origin.x;
+  // Clamp to physically plausible flight window
+  targetFlightTime = THREE_CLAMP(targetFlightTime, 0.55, 3.00);
 
+  // ─── Strict landing clamp: inner singles court only ─────────────────────────────────────
+  // Player court: z ∈ [-5.2, -2.6]; never past the back-baseline or net-short
+  const safeTargetZ = THREE_CLAMP(target.z, -5.2, -2.6);
+  const distZ = safeTargetZ - origin.z;
+  const distX = target.x  - origin.x;
+
+  // Base ballistic solve
   let vz = distZ / targetFlightTime;
   let vx = distX / targetFlightTime;
   let vy = baseVy;
 
-  // Net clearance check at Z = 0
-  const distToNet = Math.abs(origin.z);
-  const tNet = distToNet / Math.max(0.5, Math.abs(vz));
-  const netY = origin.y + vy * tNet - 0.5 * gravity * tNet * tNet;
-  if (netY < 1.70) {
-    vy += (1.70 - netY) * 1.15;
-  }
+  // Apex height enforcement: vy_min = sqrt(2g * (apexTarget - origin.y))
+  const vyForApex = Math.sqrt(Math.max(0, 2 * gravity * (apexHeightTarget - origin.y)));
+  if (vy < vyForApex) vy = vyForApex;
 
-  // Safe velocity bounds guaranteed to land inside player singles court
+  // Net clearance at Z = 0
+  const netClearMin = minimumNetHeight ?? 1.70;
+  const distToNet   = Math.abs(origin.z);
+  const tNet        = distToNet / Math.max(0.5, Math.abs(vz));
+  const netY        = origin.y + vy * tNet - 0.5 * gravity * tNet * tNet;
+  if (netY < netClearMin) vy += (netClearMin - netY) * 1.20;
+
+  // ─── Apply speed variety to horizontal components ONLY ────────────────────────────────
+  // Multiplying vz/vx by speedMod after the base solve preserves apex height
+  // and net clearance, while making each shot feel organically faster or slower.
+  // For drops, keep speedMod <= 1.0 so they stay gentle.
+  const effectiveMod = shotType === 'drop' ? Math.min(speedMod, 1.0) : speedMod;
+  vz *= effectiveMod;
+  vx *= effectiveMod;
+
+  // ─── Final velocity bounds ─────────────────────────────────────────────────────────────────
+  // Caps prevent extreme speedMod values from launching out-of-bounds.
+  // Ranges chosen so slow shots are genuinely easy to read and fast shots are
+  // challenging but never unfair.
   if (shotType === 'smash') {
-    vz = THREE_CLAMP(vz, -7.8, -6.2); // Prevents out-of-bounds baseline overshoots
-    vy = THREE_CLAMP(vy, 2.0, 3.4);
+    // Smash: the ONE fast shot type — reserved so speed contrast with other shots is felt
+    vz = THREE_CLAMP(vz, -7.5, -5.2);
+    vy = THREE_CLAMP(vy, 2.0, 3.8);
   } else if (shotType === 'drive') {
-    vz = THREE_CLAMP(vz, -5.8, -4.2);
-    vy = THREE_CLAMP(vy, 3.2, 4.4);
+    // Drive: noticeably slower than smash — should feel like a flat but readable push
+    vz = THREE_CLAMP(vz, -4.0, -2.0);
+    vy = THREE_CLAMP(vy, 3.8, 5.6);
   } else if (shotType === 'drop') {
-    vz = THREE_CLAMP(vz, -2.8, -1.8);
-    vy = THREE_CLAMP(vy, 3.6, 4.6);
+    // Drop: soft and short, player has plenty of time to reach
+    vz = THREE_CLAMP(vz, -2.4, -1.2);
+    vy = THREE_CLAMP(vy, 3.4, 5.0);
   } else {
-    // Clear
-    vz = THREE_CLAMP(vz, -4.2, -2.6);
-    vy = THREE_CLAMP(vy, 5.0, 6.8);
+    // Clear: deep floating lob — slowest horizontal speed, highest arc
+    vz = THREE_CLAMP(vz, -3.2, -1.6);
+    vy = THREE_CLAMP(vy, 5.0, 8.2);
   }
 
   return {
-    x: THREE_CLAMP(vx, -0.45, 0.45),
+    x: THREE_CLAMP(vx, -0.55, 0.55),
     y: vy,
     z: vz
   };
