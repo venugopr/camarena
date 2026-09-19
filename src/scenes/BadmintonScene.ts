@@ -2141,13 +2141,15 @@ export class BadmintonScene implements IGameScene {
    * matching the in-play drag/gravity integrator.
    */
   private constrainLandingInCourt(origin: THREE.Vector3, vel: THREE.Vector3, towardOpponent: boolean): void {
-    vel.x = THREE.MathUtils.clamp(vel.x, -0.60, 0.60);
+    vel.x = THREE.MathUtils.clamp(vel.x, -0.55, 0.55);
     if (towardOpponent) {
-      vel.z = THREE.MathUtils.clamp(vel.z, 3.8, 7.8);
-      vel.y = THREE.MathUtils.clamp(vel.y, 4.0, 6.8);
+      // Player hitting toward opponent court: safe bounds inside opponent baseline (+2.2m to +5.8m)
+      vel.z = THREE.MathUtils.clamp(vel.z, 2.8, 8.2);
+      vel.y = THREE.MathUtils.clamp(vel.y, 2.5, 7.2);
     } else {
-      vel.z = THREE.MathUtils.clamp(vel.z, -5.4, -2.5);
-      vel.y = THREE.MathUtils.clamp(vel.y, 3.8, 6.0);
+      // Opponent hitting toward player court: safe bounds inside player baseline (-5.2m to -2.3m)
+      vel.z = THREE.MathUtils.clamp(vel.z, -8.2, -2.2);
+      vel.y = THREE.MathUtils.clamp(vel.y, 2.2, 7.2);
     }
   }
 
@@ -2193,6 +2195,7 @@ export class BadmintonScene implements IGameScene {
     this.shuttleTargetQuat.setFromUnitVectors(new THREE.Vector3(0, 1, 0), this.shuttleVel.clone().normalize());
 
     const speedKmh = Math.round(this.shuttleVel.length() * 3.6);
+    this.updateSpeedometer(speedKmh);
     this.triggerImpactFeedback(this.shuttlePos, 'serve', speedKmh);
     const serveQuality = serveRatio > 0.65 ? `🏸 POWER SERVE ${speedKmh} KM/H` : (serveRatio < 0.25 ? `🏸 SOFT SERVE ${speedKmh} KM/H` : `🏸 SERVE ${speedKmh} KM/H`);
     this.showHitQualityBadge(serveQuality, false);
@@ -2257,42 +2260,42 @@ export class BadmintonScene implements IGameScene {
     const speedRatio = THREE.MathUtils.clamp((rawRacketSpeed - 1.5) / 5.0, 0.0, 1.0);
 
     // Shot selection based on contact height & swing trajectory
-    const isOverheadSmash = contactY > 1.65 && rawRacketSpeed > 2.8 && (vySwing < 0.15 || !isUpward);
-    const isSoftDrop = !isOverheadSmash && rawRacketSpeed < 2.4 && contactY > 1.30 && !isUpward;
+    const isOverheadSmash = contactY > 1.60 && rawRacketSpeed > 3.0 && (vySwing < 0.20 || !isUpward);
+    const isSoftDrop = !isOverheadSmash && rawRacketSpeed < 2.2 && contactY > 1.25 && !isUpward;
     const isUnderhandLift = !isOverheadSmash && !isSoftDrop && (contactY < 1.30 || isUpward || vySwing > 0.35);
 
     if (isOverheadSmash) {
       shotType = 'smash';
-      speedZ = THREE.MathUtils.lerp(6.2, 8.4, speedRatio);
-      reqVy = THREE.MathUtils.lerp(3.4, 2.6, speedRatio);
+      speedZ = THREE.MathUtils.lerp(5.5, 9.5, speedRatio);
+      reqVy = THREE.MathUtils.lerp(3.2, 2.2, speedRatio);
       speedKmh = Math.round(speedZ * 11.5);
       badgeText = `💥 OVERHEAD SMASH ${speedKmh} KM/H`;
       badgeStyle = 'smash';
       this.audio.badmintonSmash();
     } else if (isSoftDrop) {
       shotType = 'drop';
-      speedZ = THREE.MathUtils.lerp(3.8, 4.5, rawRacketSpeed / 2.4);
-      reqVy = 4.6;
+      speedZ = THREE.MathUtils.lerp(2.8, 4.0, rawRacketSpeed / 2.2);
+      reqVy = 3.8;
       speedKmh = Math.round(speedZ * 7.0);
       badgeText = `🏸 SOFT DROP ${speedKmh} KM/H`;
       badgeStyle = 'lift';
-      this.audio.badmintonHit(55);
+      this.audio.badmintonHit(45);
     } else if (isUnderhandLift) {
       shotType = 'clear';
-      speedZ = THREE.MathUtils.lerp(4.8, 7.2, speedRatio);
-      reqVy = THREE.MathUtils.lerp(5.8, 7.2, speedRatio);
+      speedZ = THREE.MathUtils.lerp(4.0, 7.0, speedRatio);
+      reqVy = THREE.MathUtils.lerp(5.2, 7.8, speedRatio);
       speedKmh = Math.round(speedZ * 8.5);
       badgeText = `🏸 HIGH CLEAR ${speedKmh} KM/H`;
       badgeStyle = 'lift';
-      this.audio.badmintonHit(75);
+      this.audio.badmintonHit(70);
     } else {
       shotType = 'drive';
-      speedZ = THREE.MathUtils.lerp(4.8, 7.5, speedRatio);
-      reqVy = THREE.MathUtils.lerp(4.8, 3.8, speedRatio);
+      speedZ = THREE.MathUtils.lerp(4.2, 8.2, speedRatio);
+      reqVy = THREE.MathUtils.lerp(4.2, 3.2, speedRatio);
       speedKmh = Math.round(speedZ * 9.5);
       badgeText = rawRacketSpeed > 4.2 ? `⚡ FAST DRIVE ${speedKmh} KM/H` : `🏸 DRIVE ${speedKmh} KM/H`;
       badgeStyle = rawRacketSpeed > 4.2 ? 'sweet' : 'drive';
-      this.audio.badmintonHit(rawRacketSpeed > 4.2 ? 90 : 70);
+      this.audio.badmintonHit(rawRacketSpeed > 4.2 ? 90 : 65);
     }
 
     if (rawRacketSpeed > 4.2 && !isOverheadSmash) {
@@ -2324,9 +2327,24 @@ export class BadmintonScene implements IGameScene {
     this.triggerPlayerSwing(racketPos.clone(), shotType === 'smash', 0.22);
     this.playerAvatar.pulseImpact(shotType === 'smash' ? 'smash' : 'hit');
     this.playerAvatar.flashStringBedWhite(0.06);
+    this.updateSpeedometer(speedKmh);
     this.triggerImpactFeedback(racketPos, shotType, speedKmh);
     this.showHitQualityBadge(badgeText, badgeStyle);
     this.notifyScore();
+  }
+
+  private updateSpeedometer(speedKmh: number): void {
+    const speedCard = document.querySelector('.stroke-speed');
+    if (speedCard) {
+      speedCard.textContent = `${Math.round(speedKmh)} KM/H`;
+      if (speedKmh > 75) speedCard.className = 'stroke-speed smash';
+      else if (speedKmh > 45) speedCard.className = 'stroke-speed fast';
+      else speedCard.className = 'stroke-speed';
+    }
+    const meterFill = document.querySelector('.meter-fill') as HTMLElement;
+    if (meterFill) {
+      meterFill.style.width = `${Math.min(100, (speedKmh / 120) * 100)}%`;
+    }
   }
 
   // ─── Game Loop ──────────────────────────────────────────────────────────────
@@ -2519,8 +2537,8 @@ export class BadmintonScene implements IGameScene {
     const swingVy = trackedWristVel?.y || 0;
     const isUnderhandScoop = swingVy > 0.80 && this.shuttlePos.y < 1.30;
 
-    // Genuine physical swing requires intentional fast stroke (> 3.8 m/s / ~14 km/h)
-    const isPhysicalSwing = motionSpeed >= 3.8 || (this.isUsingMouse && this.mouseSpeed >= 3.5);
+    // Swing detection allows soft touches, normal swings, and power smashes
+    const isPhysicalSwing = motionSpeed >= 1.5 || (this.isUsingMouse && this.mouseSpeed >= 1.5);
     if (this.userSwingIntentTimer > 0 || isPhysicalSwing) {
       this.swingIntentTimer = 0.30; // 300ms window
     } else {
@@ -2546,7 +2564,8 @@ export class BadmintonScene implements IGameScene {
           this.swingIntentTimer = 0;
           this.userSwingIntentTimer = 0;
           const isUpwardOrScoop = isUpwardSwing || isUnderhandScoop || swingVy > 0.45 || this.shuttlePos.y < 1.30;
-          this.executePlayerHit(racketHeadPos, Math.max(motionSpeed, this.mouseSpeed, 3.5), isUpwardOrScoop);
+          const hitSpeed = Math.max(motionSpeed, this.isUsingMouse ? this.mouseSpeed : 0, 0.8); // Allow slow soft touches (< 1.5 m/s)
+          this.executePlayerHit(racketHeadPos, hitSpeed, isUpwardOrScoop);
         }
       }
     }
@@ -2853,9 +2872,16 @@ export class BadmintonScene implements IGameScene {
 
           const oppRacketHead = this.opponentAvatar.getRacketHeadWorldPosition();
           const shotType = aiResult.shotType || (aiResult.isSmash ? 'smash' : 'clear');
+          let botSpeedKmh = 60;
+          if (shotType === 'smash') botSpeedKmh = 112;
+          else if (shotType === 'drive') botSpeedKmh = 76;
+          else if (shotType === 'drop') botSpeedKmh = 35;
+          else botSpeedKmh = 58;
+
+          this.updateSpeedometer(botSpeedKmh);
 
           // Spawn bright gold impact starburst at opponent's racket head
-          this.triggerImpactFeedback(oppRacketHead, shotType, aiResult.isSmash ? 115 : 75, true);
+          this.triggerImpactFeedback(oppRacketHead, shotType, botSpeedKmh, true);
 
           // Punchy, high-frequency racket string audio crack
           if (aiResult.isSmash) {

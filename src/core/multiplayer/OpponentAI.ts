@@ -194,24 +194,22 @@ export class OpponentAI {
         isSmash = canSmash && roll < this.config.smashChance;
         const isDrop = !isSmash && (roll < 0.22 || (rallyCount >= 4 && roll < 0.35));
 
-        if (this.config.difficulty === 'casual') {
-          this.lastShotType = 'clear';
-        } else if (isSmash) {
+        // True shot variety across Casual, Pro, and Legend
+        if (isSmash) {
           this.lastShotType = 'smash';
         } else if (isDrop) {
           this.lastShotType = 'drop';
+        } else if (roll < 0.45) {
+          this.lastShotType = 'drive';
         } else {
-          this.lastShotType = roll < 0.60 ? 'clear' : 'drive';
+          this.lastShotType = 'clear';
         }
 
         const botTarget = getBotTarget(this.lastShotType, this.config.difficulty);
         hitVel = solveLaunchVelocity(
           projectilePos,
           botTarget,
-          this.lastShotType,
-          undefined,
-          undefined,
-          this.pacingProfile.targetFlightTime
+          this.lastShotType
         );
         hitTarget = botTarget;
         didHit = true;
@@ -275,58 +273,73 @@ export function solveLaunchVelocity(
   origin: Vector3D,
   target: { x: number; z: number },
   shotType: 'drop' | 'clear' | 'drive' | 'smash',
-  _dragCoeff = 0.085,
-  gravity = 9.81,
-  _targetFlightTime = 1.65
+  dragCoeff = 0.085,
+  gravity = 9.81
 ): Vector3D {
-  // 1. Choose base vy based on shot type
-  let vy = 6.2;
-  if (shotType === 'drop') vy = 4.8;
-  else if (shotType === 'smash') vy = 3.8;
-  else if (shotType === 'drive') vy = 5.2;
+  // Randomized speed variation per shot type so no two shots have identical velocity
+  const speedVariation = 0.88 + Math.random() * 0.24; // ±12% speed variance
 
-  // 2. Approximate forward speed to net to verify net clearance height
-  const distToNet = Math.abs(origin.z);
-  const distZ = target.z - origin.z;
-  const approxVz = Math.min(-2.5, distZ / 1.35);
-  const tNet = distToNet / Math.max(1.0, Math.abs(approxVz * 0.86));
-  const predNetY = origin.y + vy * tNet - 0.5 * gravity * tNet * tNet;
-  if (predNetY < 1.85) {
-    vy += (1.85 - predNetY) * 0.85 + 0.30;
+  let targetFlightTime = 1.85 * speedVariation;
+  let baseVy = 5.4;
+
+  switch (shotType) {
+    case 'smash':
+      targetFlightTime = 0.70 * speedVariation;
+      baseVy = 2.9;
+      break;
+    case 'drive':
+      targetFlightTime = 1.15 * speedVariation;
+      baseVy = 4.0;
+      break;
+    case 'drop':
+      targetFlightTime = 1.50 * speedVariation;
+      baseVy = 4.2;
+      break;
+    case 'clear':
+    default:
+      targetFlightTime = 1.95 * speedVariation;
+      baseVy = 6.0;
+      break;
   }
 
-  // 3. Flight time estimation with final vy
-  const y0 = Math.max(0.20, origin.y);
-  let tEst = (vy + Math.sqrt(vy * vy + 2 * gravity * (y0 - 0.08))) / gravity;
-  tEst *= 1.08; // 8% drag deceleration on hangtime
-
-  // 4. Fast iterative vz convergence with final vy to guarantee exact landing at target.z
-  let vz = distZ / (tEst * 0.75);
-
-  for (let iter = 0; iter < 6; iter++) {
-    let curZ = origin.z;
-    let curVz = vz;
-    const dtSim = 0.04;
-    const simSteps = Math.floor(tEst / dtSim);
-    for (let s = 0; s < simSteps; s++) {
-      const speed = Math.sqrt(curVz * curVz + 25.0);
-      curVz -= 0.085 * speed * curVz * dtSim;
-      curZ += curVz * dtSim;
-    }
-    const err = curZ - target.z;
-    vz -= err * 0.55;
-  }
-
-  // 5. Horizontal velocity towards target.x
+  // Ensure target.z stays strictly inside player court [-5.2m to -2.3m] (never past -6.75m baseline)
+  const clampedTargetZ = THREE_CLAMP(target.z, -5.2, -2.3);
+  const distZ = clampedTargetZ - origin.z;
   const distX = target.x - origin.x;
-  let vx = distX / (tEst * 0.85);
 
-  // Clamping to ensure flight stays cleanly in singles court boundaries
-  vx = THREE_CLAMP(vx, -0.60, 0.60);
-  vy = THREE_CLAMP(vy, 3.5, 7.5);
-  vz = THREE_CLAMP(vz, -11.0, -2.5);
+  let vz = distZ / targetFlightTime;
+  let vx = distX / targetFlightTime;
+  let vy = baseVy;
 
-  return { x: vx, y: vy, z: vz };
+  // Net clearance check at Z = 0
+  const distToNet = Math.abs(origin.z);
+  const tNet = distToNet / Math.max(0.5, Math.abs(vz));
+  const netY = origin.y + vy * tNet - 0.5 * gravity * tNet * tNet;
+  if (netY < 1.70) {
+    vy += (1.70 - netY) * 1.15;
+  }
+
+  // Safe velocity bounds guaranteed to land inside player singles court
+  if (shotType === 'smash') {
+    vz = THREE_CLAMP(vz, -7.8, -6.2); // Prevents out-of-bounds baseline overshoots
+    vy = THREE_CLAMP(vy, 2.0, 3.4);
+  } else if (shotType === 'drive') {
+    vz = THREE_CLAMP(vz, -5.8, -4.2);
+    vy = THREE_CLAMP(vy, 3.2, 4.4);
+  } else if (shotType === 'drop') {
+    vz = THREE_CLAMP(vz, -2.8, -1.8);
+    vy = THREE_CLAMP(vy, 3.6, 4.6);
+  } else {
+    // Clear
+    vz = THREE_CLAMP(vz, -4.2, -2.6);
+    vy = THREE_CLAMP(vy, 5.0, 6.8);
+  }
+
+  return {
+    x: THREE_CLAMP(vx, -0.45, 0.45),
+    y: vy,
+    z: vz
+  };
 }
 
 function THREE_CLAMP(val: number, min: number, max: number): number {

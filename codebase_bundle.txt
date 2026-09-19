@@ -1521,58 +1521,58 @@ export class PoseTracker {
       };
     };
 
-    // Hips: Right is +X, Left is -X (aligned with MediaPipe standard world frame)
-    setLM(PoseLandmark.RIGHT_HIP, hipX + 0.16, hipY, hipZ);
-    setLM(PoseLandmark.LEFT_HIP, hipX - 0.16, hipY, hipZ);
+    // Hips: Right is -X, Left is +X (aligned with MediaPipe standard world frame)
+    setLM(PoseLandmark.RIGHT_HIP, hipX - 0.16, hipY, hipZ);
+    setLM(PoseLandmark.LEFT_HIP, hipX + 0.16, hipY, hipZ);
 
     // Spine and Shoulders
     const shoulderY = hipY + 0.48;
-    setLM(PoseLandmark.RIGHT_SHOULDER, hipX + 0.24, shoulderY, hipZ);
-    setLM(PoseLandmark.LEFT_SHOULDER, hipX - 0.24, shoulderY, hipZ);
+    setLM(PoseLandmark.RIGHT_SHOULDER, hipX - 0.24, shoulderY, hipZ);
+    setLM(PoseLandmark.LEFT_SHOULDER, hipX + 0.24, shoulderY, hipZ);
 
     // Head
     const headY = shoulderY + 0.22;
     setLM(PoseLandmark.NOSE, hipX, headY, hipZ + 0.08);
-    setLM(PoseLandmark.RIGHT_EYE, hipX + 0.04, headY + 0.03, hipZ + 0.08);
-    setLM(PoseLandmark.LEFT_EYE, hipX - 0.04, headY + 0.03, hipZ + 0.08);
-    setLM(PoseLandmark.RIGHT_EAR, hipX + 0.1, headY + 0.02, hipZ);
-    setLM(PoseLandmark.LEFT_EAR, hipX - 0.1, headY + 0.02, hipZ);
-    setLM(PoseLandmark.MOUTH_RIGHT, hipX + 0.03, headY - 0.04, hipZ + 0.07);
-    setLM(PoseLandmark.MOUTH_LEFT, hipX - 0.03, headY - 0.04, hipZ + 0.07);
+    setLM(PoseLandmark.RIGHT_EYE, hipX - 0.04, headY + 0.03, hipZ + 0.08);
+    setLM(PoseLandmark.LEFT_EYE, hipX + 0.04, headY + 0.03, hipZ + 0.08);
+    setLM(PoseLandmark.RIGHT_EAR, hipX - 0.1, headY + 0.02, hipZ);
+    setLM(PoseLandmark.LEFT_EAR, hipX + 0.1, headY + 0.02, hipZ);
+    setLM(PoseLandmark.MOUTH_RIGHT, hipX - 0.03, headY - 0.04, hipZ + 0.07);
+    setLM(PoseLandmark.MOUTH_LEFT, hipX + 0.03, headY - 0.04, hipZ + 0.07);
 
-    // Right Arm (Dynamic swinging arm at +X)
-    const rightElbowX = hipX + 0.24 + rightArmX * 0.45;
+    // Right Arm (Dynamic swinging arm at -X)
+    const rightElbowX = hipX - (0.24 + rightArmX * 0.45);
     const rightElbowY = shoulderY - 0.15 + (rightArmY - 0.8) * 0.5;
     const rightElbowZ = hipZ + rightArmZ * 0.4;
     setLM(PoseLandmark.RIGHT_ELBOW, rightElbowX, rightElbowY, rightElbowZ);
-    setLM(PoseLandmark.RIGHT_WRIST, hipX + 0.24 + rightArmX * 0.65, shoulderY - 0.35 + (rightArmY - 0.8), hipZ + rightArmZ);
-    setLM(PoseLandmark.RIGHT_PINKY, hipX + 0.24 + rightArmX * 0.65 + 0.03, shoulderY - 0.4, hipZ + rightArmZ);
-    setLM(PoseLandmark.RIGHT_INDEX, hipX + 0.24 + rightArmX * 0.65 - 0.02, shoulderY - 0.4, hipZ + rightArmZ);
-    setLM(PoseLandmark.RIGHT_THUMB, hipX + 0.24 + rightArmX * 0.65, shoulderY - 0.38, hipZ + rightArmZ + 0.03);
+    setLM(PoseLandmark.RIGHT_WRIST, hipX - (0.24 + rightArmX * 0.65), shoulderY - 0.35 + (rightArmY - 0.8), hipZ + rightArmZ);
+    setLM(PoseLandmark.RIGHT_PINKY, hipX - (0.24 + rightArmX * 0.65) - 0.03, shoulderY - 0.4, hipZ + rightArmZ);
+    setLM(PoseLandmark.RIGHT_INDEX, hipX - (0.24 + rightArmX * 0.65) + 0.02, shoulderY - 0.4, hipZ + rightArmZ);
+    setLM(PoseLandmark.RIGHT_THUMB, hipX - (0.24 + rightArmX * 0.65), shoulderY - 0.38, hipZ + rightArmZ + 0.03);
 
-    // Left Arm (Neutral support at -X)
-    const leftElbowX = hipX - (0.24 + leftArmX * 0.45);
+    // Left Arm (Neutral support at +X)
+    const leftElbowX = hipX + 0.24 + leftArmX * 0.45;
     const leftElbowY = shoulderY - 0.25;
     const leftElbowZ = hipZ + leftArmZ * 0.5;
     setLM(PoseLandmark.LEFT_ELBOW, leftElbowX, leftElbowY, leftElbowZ);
-    setLM(PoseLandmark.LEFT_WRIST, hipX - (0.24 + leftArmX * 0.65), shoulderY - 0.45 + (leftArmY - 0.8), hipZ + leftArmZ);
-    setLM(PoseLandmark.LEFT_PINKY, hipX - (0.24 + leftArmX * 0.65) - 0.03, shoulderY - 0.5, hipZ + leftArmZ);
-    setLM(PoseLandmark.LEFT_INDEX, hipX - (0.24 + leftArmX * 0.65) + 0.02, shoulderY - 0.5, hipZ + leftArmZ);
-    setLM(PoseLandmark.LEFT_THUMB, hipX - (0.24 + leftArmX * 0.65), shoulderY - 0.48, hipZ + leftArmZ + 0.03);
+    setLM(PoseLandmark.LEFT_WRIST, hipX + 0.24 + leftArmX * 0.65, shoulderY - 0.45 + (leftArmY - 0.8), hipZ + leftArmZ);
+    setLM(PoseLandmark.LEFT_PINKY, hipX + 0.24 + leftArmX * 0.65 + 0.03, shoulderY - 0.5, hipZ + leftArmZ);
+    setLM(PoseLandmark.LEFT_INDEX, hipX + 0.24 + leftArmX * 0.65 - 0.02, shoulderY - 0.5, hipZ + leftArmZ);
+    setLM(PoseLandmark.LEFT_THUMB, hipX + 0.24 + leftArmX * 0.65, shoulderY - 0.48, hipZ + leftArmZ + 0.03);
 
     // Legs
     const kneeY = hipY * 0.52;
-    setLM(PoseLandmark.RIGHT_KNEE, rightAnkleX * 0.8, kneeY, hipZ + 0.05);
-    setLM(PoseLandmark.LEFT_KNEE, -leftAnkleX * 0.8, kneeY, hipZ + 0.05);
+    setLM(PoseLandmark.RIGHT_KNEE, -rightAnkleX * 0.8, kneeY, hipZ + 0.05);
+    setLM(PoseLandmark.LEFT_KNEE, leftAnkleX * 0.8, kneeY, hipZ + 0.05);
 
-    setLM(PoseLandmark.RIGHT_ANKLE, rightAnkleX, rightAnkleY, hipZ);
-    setLM(PoseLandmark.LEFT_ANKLE, -leftAnkleX, leftAnkleY, hipZ);
+    setLM(PoseLandmark.RIGHT_ANKLE, -rightAnkleX, rightAnkleY, hipZ);
+    setLM(PoseLandmark.LEFT_ANKLE, leftAnkleX, leftAnkleY, hipZ);
 
-    setLM(PoseLandmark.RIGHT_HEEL, rightAnkleX, rightAnkleY, hipZ - 0.08);
-    setLM(PoseLandmark.LEFT_HEEL, -leftAnkleX, leftAnkleY, hipZ - 0.08);
+    setLM(PoseLandmark.RIGHT_HEEL, -rightAnkleX, rightAnkleY, hipZ - 0.08);
+    setLM(PoseLandmark.LEFT_HEEL, leftAnkleX, leftAnkleY, hipZ - 0.08);
 
-    setLM(PoseLandmark.RIGHT_FOOT_INDEX, rightAnkleX, 0.02, hipZ + 0.12);
-    setLM(PoseLandmark.LEFT_FOOT_INDEX, -leftAnkleX, 0.02, hipZ + 0.12);
+    setLM(PoseLandmark.RIGHT_FOOT_INDEX, -rightAnkleX, 0.02, hipZ + 0.12);
+    setLM(PoseLandmark.LEFT_FOOT_INDEX, leftAnkleX, 0.02, hipZ + 0.12);
 
     return { raw2D, world3D };
   }
@@ -1839,7 +1839,7 @@ export class VectorNormalizer {
     if (!leftShoulder || !rightShoulder) return 0;
 
     const shoulderMidX = (leftShoulder.x + rightShoulder.x) * 0.5;
-    return (0.5 - shoulderMidX) * 2.8;
+    return (shoulderMidX - 0.5) * 2.8;
   }
 
   /**
@@ -1855,12 +1855,12 @@ export class VectorNormalizer {
     const hasHips = leftHip && rightHip && (leftHip.visibility ?? 1) > 0.30 && (rightHip.visibility ?? 1) > 0.30;
     if (hasHips) {
       const hipMidX = (leftHip.x + rightHip.x) * 0.5;
-      return (0.5 - hipMidX) * 2.8;
+      return (hipMidX - 0.5) * 2.8;
     }
 
     if (leftShoulder && rightShoulder) {
       const shoulderMidX = (leftShoulder.x + rightShoulder.x) * 0.5;
-      return (0.5 - shoulderMidX) * 2.8;
+      return (shoulderMidX - 0.5) * 2.8;
     }
 
     return 0;
@@ -2253,24 +2253,22 @@ export class OpponentAI {
         isSmash = canSmash && roll < this.config.smashChance;
         const isDrop = !isSmash && (roll < 0.22 || (rallyCount >= 4 && roll < 0.35));
 
-        if (this.config.difficulty === 'casual') {
-          this.lastShotType = 'clear';
-        } else if (isSmash) {
+        // True shot variety across Casual, Pro, and Legend
+        if (isSmash) {
           this.lastShotType = 'smash';
         } else if (isDrop) {
           this.lastShotType = 'drop';
+        } else if (roll < 0.45) {
+          this.lastShotType = 'drive';
         } else {
-          this.lastShotType = roll < 0.60 ? 'clear' : 'drive';
+          this.lastShotType = 'clear';
         }
 
         const botTarget = getBotTarget(this.lastShotType, this.config.difficulty);
         hitVel = solveLaunchVelocity(
           projectilePos,
           botTarget,
-          this.lastShotType,
-          undefined,
-          undefined,
-          this.pacingProfile.targetFlightTime
+          this.lastShotType
         );
         hitTarget = botTarget;
         didHit = true;
@@ -2334,58 +2332,94 @@ export function solveLaunchVelocity(
   origin: Vector3D,
   target: { x: number; z: number },
   shotType: 'drop' | 'clear' | 'drive' | 'smash',
-  _dragCoeff = 0.085,
-  gravity = 9.81,
-  _targetFlightTime = 1.65
+  dragCoeff = 0.085,
+  gravity = 9.81
 ): Vector3D {
-  // 1. Choose base vy based on shot type
-  let vy = 6.2;
-  if (shotType === 'drop') vy = 4.8;
-  else if (shotType === 'smash') vy = 3.8;
-  else if (shotType === 'drive') vy = 5.2;
+  let targetFlightTime = 1.95;
+  let baseVy = 5.8;
 
-  // 2. Approximate forward speed to net to verify net clearance height
-  const distToNet = Math.abs(origin.z);
-  const distZ = target.z - origin.z;
-  const approxVz = Math.min(-2.5, distZ / 1.35);
-  const tNet = distToNet / Math.max(1.0, Math.abs(approxVz * 0.86));
-  const predNetY = origin.y + vy * tNet - 0.5 * gravity * tNet * tNet;
-  if (predNetY < 1.85) {
-    vy += (1.85 - predNetY) * 0.85 + 0.30;
+  switch (shotType) {
+    case 'smash':
+      targetFlightTime = 0.76;
+      baseVy = 3.1;
+      break;
+    case 'drive':
+      targetFlightTime = 1.25;
+      baseVy = 4.2;
+      break;
+    case 'drop':
+      targetFlightTime = 1.60;
+      baseVy = 4.5;
+      break;
+    case 'clear':
+    default:
+      targetFlightTime = 2.10;
+      baseVy = 6.4;
+      break;
   }
 
-  // 3. Flight time estimation with final vy
-  const y0 = Math.max(0.20, origin.y);
-  let tEst = (vy + Math.sqrt(vy * vy + 2 * gravity * (y0 - 0.08))) / gravity;
-  tEst *= 1.08; // 8% drag deceleration on hangtime
+  const distZ = target.z - origin.z;
+  const distX = target.x - origin.x;
 
-  // 4. Fast iterative vz convergence with final vy to guarantee exact landing at target.z
-  let vz = distZ / (tEst * 0.75);
+  let vz = distZ / targetFlightTime;
+  let vx = distX / targetFlightTime;
+  let vy = baseVy;
 
-  for (let iter = 0; iter < 6; iter++) {
+  // Net clearance check at Z = 0
+  const distToNet = Math.abs(origin.z);
+  const tNet = distToNet / Math.max(0.5, Math.abs(vz));
+  const netY = origin.y + vy * tNet - 0.5 * gravity * tNet * tNet;
+  if (netY < 1.70) {
+    vy += (1.70 - netY) * 1.15;
+  }
+
+  // Iterative 3D velocity convergence for precision landing inside player court
+  for (let iter = 0; iter < 5; iter++) {
+    let curX = origin.x;
+    let curY = origin.y;
     let curZ = origin.z;
+    let curVx = vx;
+    let curVy = vy;
     let curVz = vz;
-    const dtSim = 0.04;
-    const simSteps = Math.floor(tEst / dtSim);
-    for (let s = 0; s < simSteps; s++) {
-      const speed = Math.sqrt(curVz * curVz + 25.0);
-      curVz -= 0.085 * speed * curVz * dtSim;
+    const dtSim = 0.03;
+    const steps = Math.floor(targetFlightTime / dtSim);
+
+    for (let s = 0; s < steps; s++) {
+      const spd = Math.hypot(curVx, curVy, curVz);
+      const d = dragCoeff * spd;
+      curVx -= d * curVx * dtSim;
+      curVy -= (d * curVy + gravity) * dtSim;
+      curVz -= d * curVz * dtSim;
+      curX += curVx * dtSim;
+      curY += curVy * dtSim;
       curZ += curVz * dtSim;
     }
-    const err = curZ - target.z;
-    vz -= err * 0.55;
+
+    const errZ = curZ - target.z;
+    const errX = curX - target.x;
+    vz -= errZ * 0.45;
+    vx -= errX * 0.45;
   }
 
-  // 5. Horizontal velocity towards target.x
-  const distX = target.x - origin.x;
-  let vx = distX / (tEst * 0.85);
+  if (shotType === 'smash') {
+    vz = THREE_CLAMP(vz, -11.0, -8.2);
+    vy = THREE_CLAMP(vy, 2.2, 3.8);
+  } else if (shotType === 'drive') {
+    vz = THREE_CLAMP(vz, -7.2, -4.8);
+    vy = THREE_CLAMP(vy, 3.6, 5.0);
+  } else if (shotType === 'drop') {
+    vz = THREE_CLAMP(vz, -3.1, -1.6);
+    vy = THREE_CLAMP(vy, 3.9, 5.0);
+  } else {
+    vz = THREE_CLAMP(vz, -4.6, -2.8);
+    vy = THREE_CLAMP(vy, 5.6, 7.2);
+  }
 
-  // Clamping to ensure flight stays cleanly in singles court boundaries
-  vx = THREE_CLAMP(vx, -0.60, 0.60);
-  vy = THREE_CLAMP(vy, 3.5, 7.5);
-  vz = THREE_CLAMP(vz, -11.0, -2.5);
-
-  return { x: vx, y: vy, z: vz };
+  return {
+    x: THREE_CLAMP(vx, -0.55, 0.55),
+    y: vy,
+    z: vz
+  };
 }
 
 function THREE_CLAMP(val: number, min: number, max: number): number {
@@ -3143,79 +3177,60 @@ export class Avatar3D {
     const headY = 1.75; // 1.75m true full-height standing athlete (visibly taller than 1.55m net tape)
 
     // Set joints to athletic ready pose
-    // Base skeleton in 3D world: Right is +X (screen-right), Left is -X (screen-left)
-    this.joints[PoseLandmark.LEFT_HIP].position.set(-0.16, hipY, 0);
-    this.joints[PoseLandmark.RIGHT_HIP].position.set(0.16, hipY, 0);
+    // Base skeleton in 3D world: Left is +X (screen-left), Right is -X (screen-right)
+    this.joints[PoseLandmark.LEFT_HIP].position.set(0.16, hipY, 0);
+    this.joints[PoseLandmark.RIGHT_HIP].position.set(-0.16, hipY, 0);
 
-    this.joints[PoseLandmark.LEFT_SHOULDER].position.set(-0.24, shoulderY, 0);
-    this.joints[PoseLandmark.RIGHT_SHOULDER].position.set(0.24, shoulderY, 0);
+    this.joints[PoseLandmark.LEFT_SHOULDER].position.set(0.24, shoulderY, 0);
+    this.joints[PoseLandmark.RIGHT_SHOULDER].position.set(-0.24, shoulderY, 0);
 
     this.headMesh.position.set(0, headY, 0.08);
     this.joints[PoseLandmark.NOSE].position.set(0, headY, 0.08);
 
     // Knees fixed in natural athletic ready bend at Y = 0.50m
-    this.joints[PoseLandmark.LEFT_KNEE].position.set(-0.19, 0.50, 0.06);
-    this.joints[PoseLandmark.RIGHT_KNEE].position.set(0.19, 0.50, 0.06);
-    this.joints[PoseLandmark.LEFT_ANKLE].position.set(-0.22, 0.08, -0.02);
-    this.joints[PoseLandmark.RIGHT_ANKLE].position.set(0.22, 0.08, -0.02);
-    this.joints[PoseLandmark.LEFT_HEEL].position.set(-0.22, 0.04, -0.06);
-    this.joints[PoseLandmark.RIGHT_HEEL].position.set(0.22, 0.04, -0.06);
-    this.joints[PoseLandmark.LEFT_FOOT_INDEX].position.set(-0.22, 0.00, 0.12);
-    this.joints[PoseLandmark.RIGHT_FOOT_INDEX].position.set(0.22, 0.00, 0.12);
+    this.joints[PoseLandmark.LEFT_KNEE].position.set(0.19, 0.50, 0.06);
+    this.joints[PoseLandmark.RIGHT_KNEE].position.set(-0.19, 0.50, 0.06);
+    this.joints[PoseLandmark.LEFT_ANKLE].position.set(0.22, 0.08, -0.02);
+    this.joints[PoseLandmark.RIGHT_ANKLE].position.set(-0.22, 0.08, -0.02);
+    this.joints[PoseLandmark.LEFT_HEEL].position.set(0.22, 0.04, -0.06);
+    this.joints[PoseLandmark.RIGHT_HEEL].position.set(-0.22, 0.04, -0.06);
+    this.joints[PoseLandmark.LEFT_FOOT_INDEX].position.set(0.22, 0.00, 0.12);
+    this.joints[PoseLandmark.RIGHT_FOOT_INDEX].position.set(-0.22, 0.00, 0.12);
 
     if (sport === 'tabletennis') {
       // Table Tennis stance
       if (this.dominantArm === 'right') {
-        this.joints[PoseLandmark.LEFT_ELBOW].position.set(-0.32, 1.1, 0.22);
-        this.joints[PoseLandmark.LEFT_WRIST].position.set(-0.22, 0.96, 0.36);
+        this.joints[PoseLandmark.LEFT_ELBOW].position.set(0.32, 1.1, 0.22);
+        this.joints[PoseLandmark.LEFT_WRIST].position.set(0.22, 0.96, 0.36);
 
-        this.joints[PoseLandmark.RIGHT_ELBOW].position.set(0.32, 1.06, 0.22);
-        this.joints[PoseLandmark.RIGHT_WRIST].position.set(0.28, 0.96, 0.44);
-
-        if (this.paddleGroup) {
-          this.paddleGroup.position.set(0.28, 0.96, 0.44);
-          this.paddleGroup.rotation.set(0.35, 0, -0.2);
-        }
-      } else {
-        this.joints[PoseLandmark.RIGHT_ELBOW].position.set(0.32, 1.1, 0.22);
-        this.joints[PoseLandmark.RIGHT_WRIST].position.set(0.22, 0.96, 0.36);
-
-        this.joints[PoseLandmark.LEFT_ELBOW].position.set(-0.32, 1.06, 0.22);
-        this.joints[PoseLandmark.LEFT_WRIST].position.set(-0.28, 0.96, 0.44);
+        this.joints[PoseLandmark.RIGHT_ELBOW].position.set(-0.32, 1.06, 0.22);
+        this.joints[PoseLandmark.RIGHT_WRIST].position.set(-0.28, 0.96, 0.44);
 
         if (this.paddleGroup) {
           this.paddleGroup.position.set(-0.28, 0.96, 0.44);
           this.paddleGroup.rotation.set(0.35, 0, 0.2);
         }
+      } else {
+        this.joints[PoseLandmark.RIGHT_ELBOW].position.set(-0.32, 1.1, 0.22);
+        this.joints[PoseLandmark.RIGHT_WRIST].position.set(-0.22, 0.96, 0.36);
+
+        this.joints[PoseLandmark.LEFT_ELBOW].position.set(0.32, 1.06, 0.22);
+        this.joints[PoseLandmark.LEFT_WRIST].position.set(0.28, 0.96, 0.44);
+
+        if (this.paddleGroup) {
+          this.paddleGroup.position.set(0.28, 0.96, 0.44);
+          this.paddleGroup.rotation.set(0.35, 0, -0.2);
+        }
       }
     } else {
       // Badminton ready pose
       if (this.dominantArm === 'right') {
-        // Right-handed: Racket in right hand (+X, screen-right), support hand in left (-X, screen-left)
-        this.joints[PoseLandmark.LEFT_ELBOW].position.set(-0.32, 1.18, 0.15);
-        this.joints[PoseLandmark.LEFT_WRIST].position.set(-0.24, 1.25, 0.32);
+        // Right-handed: Racket in right hand (-X, screen-right), support hand in left (+X, screen-left)
+        this.joints[PoseLandmark.LEFT_ELBOW].position.set(0.32, 1.18, 0.15);
+        this.joints[PoseLandmark.LEFT_WRIST].position.set(0.24, 1.25, 0.32);
 
-        this.joints[PoseLandmark.RIGHT_ELBOW].position.set(0.36, 1.30, 0.18);
-        this.joints[PoseLandmark.RIGHT_WRIST].position.set(0.32, 1.48, 0.28);
-
-        if (this.racketGroup) {
-          this.racketGroup.position.set(0.32, 1.48, 0.28);
-          this.racketGroup.rotation.set(0.2, 0, 0);
-          this.racketGroup.scale.set(1.0, 1.0, 1.0);
-          this.racketGroup.visible = true;
-          this.racketGroup.traverse(c => { c.visible = true; });
-        }
-        if (this.supportHandGroup) {
-          this.supportHandGroup.position.set(-0.24, 1.25, 0.32);
-          this.supportHandGroup.rotation.set(-0.2, 0.2, 0);
-        }
-      } else {
-        // Left-handed: Racket in left hand (-X, screen-left), support hand in right (+X, screen-right)
-        this.joints[PoseLandmark.RIGHT_ELBOW].position.set(0.32, 1.18, 0.15);
-        this.joints[PoseLandmark.RIGHT_WRIST].position.set(0.24, 1.25, 0.32);
-
-        this.joints[PoseLandmark.LEFT_ELBOW].position.set(-0.36, 1.30, 0.18);
-        this.joints[PoseLandmark.LEFT_WRIST].position.set(-0.32, 1.48, 0.28);
+        this.joints[PoseLandmark.RIGHT_ELBOW].position.set(-0.36, 1.30, 0.18);
+        this.joints[PoseLandmark.RIGHT_WRIST].position.set(-0.32, 1.48, 0.28);
 
         if (this.racketGroup) {
           this.racketGroup.position.set(-0.32, 1.48, 0.28);
@@ -3228,8 +3243,28 @@ export class Avatar3D {
           this.supportHandGroup.position.set(0.24, 1.25, 0.32);
           this.supportHandGroup.rotation.set(-0.2, -0.2, 0);
         }
+      } else {
+        // Left-handed: Racket in left hand (+X, screen-left), support hand in right (-X, screen-right)
+        this.joints[PoseLandmark.RIGHT_ELBOW].position.set(-0.32, 1.18, 0.15);
+        this.joints[PoseLandmark.RIGHT_WRIST].position.set(-0.24, 1.25, 0.32);
+
+        this.joints[PoseLandmark.LEFT_ELBOW].position.set(0.36, 1.30, 0.18);
+        this.joints[PoseLandmark.LEFT_WRIST].position.set(0.32, 1.48, 0.28);
+
+        if (this.racketGroup) {
+          this.racketGroup.position.set(0.32, 1.48, 0.28);
+          this.racketGroup.rotation.set(0.2, 0, 0);
+          this.racketGroup.scale.set(1.0, 1.0, 1.0);
+          this.racketGroup.visible = true;
+          this.racketGroup.traverse(c => { c.visible = true; });
+        }
+        if (this.supportHandGroup) {
+          this.supportHandGroup.position.set(-0.24, 1.25, 0.32);
+          this.supportHandGroup.rotation.set(-0.2, 0.2, 0);
+        }
       }
     }
+
 
     this.updateBones();
   }
@@ -3284,8 +3319,8 @@ export class Avatar3D {
     const sWristIdx = dominantArm === 'right' ? PoseLandmark.LEFT_WRIST : PoseLandmark.RIGHT_WRIST;
 
     // Reset base shoulder & head lateral anchors before applying dynamic reach lean
-    this.joints[PoseLandmark.RIGHT_SHOULDER].position.x = 0.24;
-    this.joints[PoseLandmark.LEFT_SHOULDER].position.x = -0.24;
+    this.joints[PoseLandmark.RIGHT_SHOULDER].position.x = -0.24;
+    this.joints[PoseLandmark.LEFT_SHOULDER].position.x = 0.24;
     this.joints[PoseLandmark.LEFT_SHOULDER].position.y = 1.45;
     this.joints[PoseLandmark.RIGHT_SHOULDER].position.y = 1.45;
     this.headMesh.position.x = 0;
@@ -3302,9 +3337,9 @@ export class Avatar3D {
       const spineRoll = THREE.MathUtils.clamp(reachOffset / 1.2, -0.28, 0.28);
       const shoulderShift = THREE.MathUtils.clamp((reachOffset - Math.sign(reachOffset) * 0.45) * 0.5, -0.25, 0.25);
       shoulderPos.x += shoulderShift;
-      this.joints[sShoulderIdx].position.x += (dominantArm === 'right' ? shoulderShift * 0.6 : -shoulderShift * 0.6);
-      this.joints[sShoulderIdx].position.y -= Math.sin(spineRoll) * 0.24;
-      this.joints[dShoulderIdx].position.y += Math.sin(spineRoll) * 0.24;
+      this.joints[sShoulderIdx].position.x += (dominantArm === 'right' ? -shoulderShift * 0.6 : shoulderShift * 0.6);
+      this.joints[sShoulderIdx].position.y += Math.sin(spineRoll) * 0.24;
+      this.joints[dShoulderIdx].position.y -= Math.sin(spineRoll) * 0.24;
       this.headMesh.position.x += shoulderShift * 0.7;
       this.joints[PoseLandmark.NOSE].position.x += shoulderShift * 0.7;
     }
@@ -3317,7 +3352,7 @@ export class Avatar3D {
     wristPos.y = Math.min(wristPos.y, 1.78);
     this.joints[dWristIdx].position.copy(wristPos);
 
-    const sideOffset = dominantArm === 'right' ? 0.09 : -0.09;
+    const sideOffset = dominantArm === 'right' ? -0.09 : 0.09;
     this.joints[dElbowIdx].position.copy(shoulderPos).add(wristPos).multiplyScalar(0.5);
     this.joints[dElbowIdx].position.x += sideOffset;
     this.joints[dElbowIdx].position.y -= 0.04;
@@ -3344,24 +3379,24 @@ export class Avatar3D {
       const localSTarget = this.group.worldToLocal(supportWorldTarget.clone());
       const sArmVector = new THREE.Vector3().subVectors(localSTarget, sShoulderPos);
 
-      const isCrossBody = dominantArm === 'right' ? localSTarget.x > 0 : localSTarget.x < 0;
+      const isCrossBody = dominantArm === 'right' ? localSTarget.x < 0 : localSTarget.x > 0;
       const maxReach = isCrossBody ? 0.95 : 0.78;
       const sArmLength = Math.min(maxReach, Math.max(0.20, sArmVector.length()));
       const sArmDir = sArmVector.normalize();
 
       const sWristPos = new THREE.Vector3().copy(sShoulderPos).addScaledVector(sArmDir, sArmLength);
       if (isCrossBody) {
-        if (dominantArm === 'right' && sWristPos.x > Math.min(localSTarget.x, 0.50)) {
-          sWristPos.x = Math.min(localSTarget.x, 0.50);
-        } else if (dominantArm === 'left' && sWristPos.x < Math.max(localSTarget.x, -0.50)) {
+        if (dominantArm === 'right' && sWristPos.x < Math.max(localSTarget.x, -0.50)) {
           sWristPos.x = Math.max(localSTarget.x, -0.50);
+        } else if (dominantArm === 'left' && sWristPos.x > Math.min(localSTarget.x, 0.50)) {
+          sWristPos.x = Math.min(localSTarget.x, 0.50);
         }
       }
       this.joints[sWristIdx].position.copy(sWristPos);
 
       const sSideOffset = isCrossBody
-        ? (dominantArm === 'right' ? THREE.MathUtils.lerp(-0.04, 0.08, Math.min(1, localSTarget.x / 0.50)) : THREE.MathUtils.lerp(0.04, -0.08, Math.min(1, -localSTarget.x / 0.50)))
-        : (dominantArm === 'right' ? -0.07 : 0.07);
+        ? (dominantArm === 'right' ? THREE.MathUtils.lerp(0.04, -0.08, Math.min(1, -localSTarget.x / 0.50)) : THREE.MathUtils.lerp(-0.04, 0.08, Math.min(1, localSTarget.x / 0.50)))
+        : (dominantArm === 'right' ? 0.07 : -0.07);
       this.joints[sElbowIdx].position.copy(sShoulderPos).add(sWristPos).multiplyScalar(0.5);
       this.joints[sElbowIdx].position.x += sSideOffset;
       this.joints[sElbowIdx].position.y -= 0.04;
@@ -3511,7 +3546,7 @@ export class Avatar3D {
 
     // Ready stance position (slightly in front of chest)
     const readyLocal = new THREE.Vector3(
-      dominantArm === 'right' ? 0.22 : -0.22,
+      dominantArm === 'right' ? -0.22 : 0.22,
       0.15,
       0.10
     );
@@ -3519,7 +3554,7 @@ export class Avatar3D {
 
     // Deep backswing windup: arm pulled back and high (avatar local -Z is behind avatar)
     const windupLocal = new THREE.Vector3(
-      dominantArm === 'right' ? 0.36 : -0.36,
+      dominantArm === 'right' ? -0.36 : 0.36,
       isSmash ? 0.58 : 0.32,
       -0.42 // -0.42m behind avatar torso
     );
@@ -3544,7 +3579,7 @@ export class Avatar3D {
     if (progress < 0.30) {
       // Wind-up: pull arm back and up (avatar local -Z is behind avatar)
       const windupLocal = new THREE.Vector3(
-        dominantArm === 'right' ? 0.32 : -0.32,
+        dominantArm === 'right' ? -0.32 : 0.32,
         isSmash ? 0.55 : 0.25,
         -0.38
       );
@@ -3554,7 +3589,7 @@ export class Avatar3D {
       // Strike phase: whip racket head forward into ball target
       const t = (progress - 0.30) / 0.30;
       const windupLocal = new THREE.Vector3(
-        dominantArm === 'right' ? 0.32 : -0.32,
+        dominantArm === 'right' ? -0.32 : 0.32,
         isSmash ? 0.55 : 0.25,
         -0.38
       );
@@ -3564,7 +3599,7 @@ export class Avatar3D {
       // Follow-through: sweep across body forward into court (avatar local +Z is forward)
       const t = (progress - 0.60) / 0.40;
       const followLocal = new THREE.Vector3(
-        dominantArm === 'right' ? -0.28 : 0.28,
+        dominantArm === 'right' ? 0.28 : -0.28,
         -0.22,
         0.38
       );
@@ -3634,16 +3669,16 @@ export class Avatar3D {
     // Shoulders: Positioned upright at Y = 1.45m
     // Head: Positioned upright at Y = 1.75m
     const hipY = 0.95;
-    this.joints[PoseLandmark.LEFT_HIP].position.set(-0.16, hipY, 0);
-    this.joints[PoseLandmark.RIGHT_HIP].position.set(0.16, hipY, 0);
-    this.joints[PoseLandmark.LEFT_KNEE].position.set(-0.19, 0.45, 0.06);
-    this.joints[PoseLandmark.RIGHT_KNEE].position.set(0.19, 0.45, 0.06);
-    this.joints[PoseLandmark.LEFT_ANKLE].position.set(-0.22, 0.08, -0.02);
-    this.joints[PoseLandmark.RIGHT_ANKLE].position.set(0.22, 0.08, -0.02);
-    this.joints[PoseLandmark.LEFT_HEEL].position.set(-0.22, 0.04, -0.06);
-    this.joints[PoseLandmark.RIGHT_HEEL].position.set(0.22, 0.04, -0.06);
-    this.joints[PoseLandmark.LEFT_FOOT_INDEX].position.set(-0.22, 0.00, 0.12);
-    this.joints[PoseLandmark.RIGHT_FOOT_INDEX].position.set(0.22, 0.00, 0.12);
+    this.joints[PoseLandmark.LEFT_HIP].position.set(0.16, hipY, 0);
+    this.joints[PoseLandmark.RIGHT_HIP].position.set(-0.16, hipY, 0);
+    this.joints[PoseLandmark.LEFT_KNEE].position.set(0.19, 0.45, 0.06);
+    this.joints[PoseLandmark.RIGHT_KNEE].position.set(-0.19, 0.45, 0.06);
+    this.joints[PoseLandmark.LEFT_ANKLE].position.set(0.22, 0.08, -0.02);
+    this.joints[PoseLandmark.RIGHT_ANKLE].position.set(-0.22, 0.08, -0.02);
+    this.joints[PoseLandmark.LEFT_HEEL].position.set(0.22, 0.04, -0.06);
+    this.joints[PoseLandmark.RIGHT_HEEL].position.set(-0.22, 0.04, -0.06);
+    this.joints[PoseLandmark.LEFT_FOOT_INDEX].position.set(0.22, 0.00, 0.12);
+    this.joints[PoseLandmark.RIGHT_FOOT_INDEX].position.set(-0.22, 0.00, 0.12);
 
     // 2. Drive Only Upper Body with Webcam:
     // (1) Lateral spine tilt / torso lean from shoulder angle
@@ -3655,20 +3690,20 @@ export class Avatar3D {
     if (rawLeftSh && rawRightSh) {
       const pL = toThree(rawLeftSh);
       const pR = toThree(rawRightSh);
-      const rollAngle = Math.atan2(pR.y - pL.y, pR.x - pL.x);
+      const rollAngle = Math.atan2(pL.y - pR.y, pL.x - pR.x);
       clampedRoll = THREE.MathUtils.clamp(rollAngle, -0.35, 0.35); // Â±20 degrees torso roll
       spineLeanX = Math.sin(clampedRoll) * 0.20;
     }
 
     const baseShoulderY = 1.45;
     const leftShoulderTarget = new THREE.Vector3(
-      -0.24 * Math.cos(clampedRoll) + spineLeanX,
-      baseShoulderY - 0.24 * Math.sin(clampedRoll),
+      0.24 * Math.cos(clampedRoll) + spineLeanX,
+      baseShoulderY + 0.24 * Math.sin(clampedRoll),
       0
     );
     const rightShoulderTarget = new THREE.Vector3(
-      0.24 * Math.cos(clampedRoll) + spineLeanX,
-      baseShoulderY + 0.24 * Math.sin(clampedRoll),
+      -0.24 * Math.cos(clampedRoll) + spineLeanX,
+      baseShoulderY - 0.24 * Math.sin(clampedRoll),
       0
     );
     trackJoint(this.joints[PoseLandmark.LEFT_SHOULDER].position, leftShoulderTarget);
@@ -3688,20 +3723,20 @@ export class Avatar3D {
     }
 
     // (2) Arm IK: Shoulder -> Elbow -> Wrist -> Racket Head
-    // Dominant Right Arm (screen-right / +X):
+    // Dominant Right Arm (screen-right / -X):
     const rawRElbow = landmarks[PoseLandmark.RIGHT_ELBOW];
     const rawRWrist = landmarks[PoseLandmark.RIGHT_WRIST];
     if (rawRElbow && rawRightSh) {
       const relUpper = toThree(rawRElbow).sub(toThree(rawRightSh));
       const upperLen = THREE.MathUtils.clamp(relUpper.length(), 0.18, 0.35);
-      const upperDir = relUpper.length() > 0.01 ? relUpper.normalize() : new THREE.Vector3(0.3, -0.9, 0.1).normalize();
+      const upperDir = relUpper.length() > 0.01 ? relUpper.normalize() : new THREE.Vector3(-0.3, -0.9, 0.1).normalize();
       const targetElbow = this.joints[PoseLandmark.RIGHT_SHOULDER].position.clone().addScaledVector(upperDir, upperLen);
       trackJoint(this.joints[PoseLandmark.RIGHT_ELBOW].position, targetElbow);
 
       if (rawRWrist) {
         const relForearm = toThree(rawRWrist).sub(toThree(rawRElbow));
         const forearmLen = THREE.MathUtils.clamp(relForearm.length(), 0.18, 0.35);
-        const forearmDir = relForearm.length() > 0.01 ? relForearm.normalize() : new THREE.Vector3(0.2, 0.8, 0.5).normalize();
+        const forearmDir = relForearm.length() > 0.01 ? relForearm.normalize() : new THREE.Vector3(-0.2, 0.8, 0.5).normalize();
         const targetWrist = this.joints[PoseLandmark.RIGHT_ELBOW].position.clone().addScaledVector(forearmDir, forearmLen);
 
         trackJoint(this.joints[PoseLandmark.RIGHT_WRIST].position, targetWrist);
@@ -3710,20 +3745,20 @@ export class Avatar3D {
       }
     }
 
-    // Support Left Arm (screen-left / -X):
+    // Support Left Arm (screen-left / +X):
     const rawLElbow = landmarks[PoseLandmark.LEFT_ELBOW];
     const rawLWrist = landmarks[PoseLandmark.LEFT_WRIST];
     if (rawLElbow && rawLeftSh) {
       const relUpper = toThree(rawLElbow).sub(toThree(rawLeftSh));
       const upperLen = THREE.MathUtils.clamp(relUpper.length(), 0.18, 0.35);
-      const upperDir = relUpper.length() > 0.01 ? relUpper.normalize() : new THREE.Vector3(-0.3, -0.9, 0.1).normalize();
+      const upperDir = relUpper.length() > 0.01 ? relUpper.normalize() : new THREE.Vector3(0.3, -0.9, 0.1).normalize();
       const targetElbow = this.joints[PoseLandmark.LEFT_SHOULDER].position.clone().addScaledVector(upperDir, upperLen);
       trackJoint(this.joints[PoseLandmark.LEFT_ELBOW].position, targetElbow);
 
       if (rawLWrist) {
         const relForearm = toThree(rawLWrist).sub(toThree(rawLElbow));
         const forearmLen = THREE.MathUtils.clamp(relForearm.length(), 0.18, 0.35);
-        const forearmDir = relForearm.length() > 0.01 ? relForearm.normalize() : new THREE.Vector3(-0.2, 0.8, 0.5).normalize();
+        const forearmDir = relForearm.length() > 0.01 ? relForearm.normalize() : new THREE.Vector3(0.2, 0.8, 0.5).normalize();
         const targetWrist = this.joints[PoseLandmark.LEFT_ELBOW].position.clone().addScaledVector(forearmDir, forearmLen);
 
         trackJoint(this.joints[PoseLandmark.LEFT_WRIST].position, targetWrist);
@@ -6131,7 +6166,7 @@ export class BadmintonScene implements IGameScene {
       const liveHand = this.playerAvatar.getSupportHandWorldPosition();
       const avatarPos = this.playerAvatar.group.position;
       const isRightHanded = this.dominantHand === 'right';
-      const defaultX = avatarPos.x + (isRightHanded ? -0.15 : 0.15);
+      const defaultX = avatarPos.x + (isRightHanded ? 0.20 : -0.20);
       const defaultY = 1.25;
       const defaultZ = avatarPos.z + 0.35;
 
@@ -6214,11 +6249,11 @@ export class BadmintonScene implements IGameScene {
   private constrainLandingInCourt(origin: THREE.Vector3, vel: THREE.Vector3, towardOpponent: boolean): void {
     vel.x = THREE.MathUtils.clamp(vel.x, -0.60, 0.60);
     if (towardOpponent) {
-      vel.z = THREE.MathUtils.clamp(vel.z, 3.8, 7.8);
-      vel.y = THREE.MathUtils.clamp(vel.y, 4.0, 6.8);
+      vel.z = THREE.MathUtils.clamp(vel.z, 2.5, 9.5);
+      vel.y = THREE.MathUtils.clamp(vel.y, 2.2, 7.8);
     } else {
-      vel.z = THREE.MathUtils.clamp(vel.z, -11.0, -2.5);
-      vel.y = THREE.MathUtils.clamp(vel.y, 3.5, 7.5);
+      vel.z = THREE.MathUtils.clamp(vel.z, -11.0, -1.6);
+      vel.y = THREE.MathUtils.clamp(vel.y, 2.2, 7.5);
     }
   }
 
@@ -6264,6 +6299,7 @@ export class BadmintonScene implements IGameScene {
     this.shuttleTargetQuat.setFromUnitVectors(new THREE.Vector3(0, 1, 0), this.shuttleVel.clone().normalize());
 
     const speedKmh = Math.round(this.shuttleVel.length() * 3.6);
+    this.updateSpeedometer(speedKmh);
     this.triggerImpactFeedback(this.shuttlePos, 'serve', speedKmh);
     const serveQuality = serveRatio > 0.65 ? `ðŸ¸ POWER SERVE ${speedKmh} KM/H` : (serveRatio < 0.25 ? `ðŸ¸ SOFT SERVE ${speedKmh} KM/H` : `ðŸ¸ SERVE ${speedKmh} KM/H`);
     this.showHitQualityBadge(serveQuality, false);
@@ -6328,42 +6364,42 @@ export class BadmintonScene implements IGameScene {
     const speedRatio = THREE.MathUtils.clamp((rawRacketSpeed - 1.5) / 5.0, 0.0, 1.0);
 
     // Shot selection based on contact height & swing trajectory
-    const isOverheadSmash = contactY > 1.65 && rawRacketSpeed > 2.8 && (vySwing < 0.15 || !isUpward);
-    const isSoftDrop = !isOverheadSmash && rawRacketSpeed < 2.4 && contactY > 1.30 && !isUpward;
+    const isOverheadSmash = contactY > 1.60 && rawRacketSpeed > 3.0 && (vySwing < 0.20 || !isUpward);
+    const isSoftDrop = !isOverheadSmash && rawRacketSpeed < 2.2 && contactY > 1.25 && !isUpward;
     const isUnderhandLift = !isOverheadSmash && !isSoftDrop && (contactY < 1.30 || isUpward || vySwing > 0.35);
 
     if (isOverheadSmash) {
       shotType = 'smash';
-      speedZ = THREE.MathUtils.lerp(6.2, 8.4, speedRatio);
-      reqVy = THREE.MathUtils.lerp(3.4, 2.6, speedRatio);
+      speedZ = THREE.MathUtils.lerp(5.5, 9.5, speedRatio);
+      reqVy = THREE.MathUtils.lerp(3.2, 2.2, speedRatio);
       speedKmh = Math.round(speedZ * 11.5);
       badgeText = `ðŸ’¥ OVERHEAD SMASH ${speedKmh} KM/H`;
       badgeStyle = 'smash';
       this.audio.badmintonSmash();
     } else if (isSoftDrop) {
       shotType = 'drop';
-      speedZ = THREE.MathUtils.lerp(3.8, 4.5, rawRacketSpeed / 2.4);
-      reqVy = 4.6;
+      speedZ = THREE.MathUtils.lerp(2.8, 4.0, rawRacketSpeed / 2.2);
+      reqVy = 3.8;
       speedKmh = Math.round(speedZ * 7.0);
       badgeText = `ðŸ¸ SOFT DROP ${speedKmh} KM/H`;
       badgeStyle = 'lift';
-      this.audio.badmintonHit(55);
+      this.audio.badmintonHit(45);
     } else if (isUnderhandLift) {
       shotType = 'clear';
-      speedZ = THREE.MathUtils.lerp(4.8, 7.2, speedRatio);
-      reqVy = THREE.MathUtils.lerp(5.8, 7.2, speedRatio);
+      speedZ = THREE.MathUtils.lerp(4.0, 7.0, speedRatio);
+      reqVy = THREE.MathUtils.lerp(5.2, 7.8, speedRatio);
       speedKmh = Math.round(speedZ * 8.5);
       badgeText = `ðŸ¸ HIGH CLEAR ${speedKmh} KM/H`;
       badgeStyle = 'lift';
-      this.audio.badmintonHit(75);
+      this.audio.badmintonHit(70);
     } else {
       shotType = 'drive';
-      speedZ = THREE.MathUtils.lerp(4.8, 7.5, speedRatio);
-      reqVy = THREE.MathUtils.lerp(4.8, 3.8, speedRatio);
+      speedZ = THREE.MathUtils.lerp(4.2, 8.2, speedRatio);
+      reqVy = THREE.MathUtils.lerp(4.2, 3.2, speedRatio);
       speedKmh = Math.round(speedZ * 9.5);
       badgeText = rawRacketSpeed > 4.2 ? `âš¡ FAST DRIVE ${speedKmh} KM/H` : `ðŸ¸ DRIVE ${speedKmh} KM/H`;
       badgeStyle = rawRacketSpeed > 4.2 ? 'sweet' : 'drive';
-      this.audio.badmintonHit(rawRacketSpeed > 4.2 ? 90 : 70);
+      this.audio.badmintonHit(rawRacketSpeed > 4.2 ? 90 : 65);
     }
 
     if (rawRacketSpeed > 4.2 && !isOverheadSmash) {
@@ -6395,9 +6431,24 @@ export class BadmintonScene implements IGameScene {
     this.triggerPlayerSwing(racketPos.clone(), shotType === 'smash', 0.22);
     this.playerAvatar.pulseImpact(shotType === 'smash' ? 'smash' : 'hit');
     this.playerAvatar.flashStringBedWhite(0.06);
+    this.updateSpeedometer(speedKmh);
     this.triggerImpactFeedback(racketPos, shotType, speedKmh);
     this.showHitQualityBadge(badgeText, badgeStyle);
     this.notifyScore();
+  }
+
+  private updateSpeedometer(speedKmh: number): void {
+    const speedCard = document.querySelector('.stroke-speed');
+    if (speedCard) {
+      speedCard.textContent = `${Math.round(speedKmh)} KM/H`;
+      if (speedKmh > 75) speedCard.className = 'stroke-speed smash';
+      else if (speedKmh > 45) speedCard.className = 'stroke-speed fast';
+      else speedCard.className = 'stroke-speed';
+    }
+    const meterFill = document.querySelector('.meter-fill') as HTMLElement;
+    if (meterFill) {
+      meterFill.style.width = `${Math.min(100, (speedKmh / 120) * 100)}%`;
+    }
   }
 
   // â”€â”€â”€ Game Loop â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -6582,11 +6633,16 @@ export class BadmintonScene implements IGameScene {
     const motionSpeed = trackedWristVel
       ? Math.hypot(trackedWristVel.x, trackedWristVel.y, trackedWristVel.z)
       : 0;
+
+    const dbgEl = document.getElementById('debug-hand-display');
+    if (dbgEl) dbgEl.remove();
+
+
     const swingVy = trackedWristVel?.y || 0;
     const isUnderhandScoop = swingVy > 0.80 && this.shuttlePos.y < 1.30;
 
-    // Genuine physical swing requires intentional fast stroke (> 3.8 m/s / ~14 km/h)
-    const isPhysicalSwing = motionSpeed >= 3.8 || (this.isUsingMouse && this.mouseSpeed >= 3.5);
+    // Swing detection allows soft touches, normal swings, and power smashes
+    const isPhysicalSwing = motionSpeed >= 1.5 || (this.isUsingMouse && this.mouseSpeed >= 1.5);
     if (this.userSwingIntentTimer > 0 || isPhysicalSwing) {
       this.swingIntentTimer = 0.30; // 300ms window
     } else {
@@ -6612,7 +6668,8 @@ export class BadmintonScene implements IGameScene {
           this.swingIntentTimer = 0;
           this.userSwingIntentTimer = 0;
           const isUpwardOrScoop = isUpwardSwing || isUnderhandScoop || swingVy > 0.45 || this.shuttlePos.y < 1.30;
-          this.executePlayerHit(racketHeadPos, Math.max(motionSpeed, this.mouseSpeed, 3.5), isUpwardOrScoop);
+          const hitSpeed = Math.max(motionSpeed, this.isUsingMouse ? this.mouseSpeed : 0, 1.2);
+          this.executePlayerHit(racketHeadPos, hitSpeed, isUpwardOrScoop);
         }
       }
     }
@@ -6919,9 +6976,16 @@ export class BadmintonScene implements IGameScene {
 
           const oppRacketHead = this.opponentAvatar.getRacketHeadWorldPosition();
           const shotType = aiResult.shotType || (aiResult.isSmash ? 'smash' : 'clear');
+          let botSpeedKmh = 60;
+          if (shotType === 'smash') botSpeedKmh = 112;
+          else if (shotType === 'drive') botSpeedKmh = 76;
+          else if (shotType === 'drop') botSpeedKmh = 35;
+          else botSpeedKmh = 58;
+
+          this.updateSpeedometer(botSpeedKmh);
 
           // Spawn bright gold impact starburst at opponent's racket head
-          this.triggerImpactFeedback(oppRacketHead, shotType, aiResult.isSmash ? 115 : 75, true);
+          this.triggerImpactFeedback(oppRacketHead, shotType, botSpeedKmh, true);
 
           // Punchy, high-frequency racket string audio crack
           if (aiResult.isSmash) {
@@ -11512,7 +11576,7 @@ html, body {
   height: 100%;
   object-fit: cover;
   opacity: 0.85;
-  transform: scaleX(-1);
+  /* Real view by default (unmirrored) as requested */
 }
 
 .camera-canvas {
@@ -11522,7 +11586,7 @@ html, body {
   width: 100%;
   height: 100%;
   pointer-events: none;
-  transform: scaleX(-1);
+  /* Real view by default (unmirrored) as requested */
 }
 
 .pip-header-bar {
