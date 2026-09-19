@@ -483,7 +483,8 @@ export class Avatar3D {
   public poseArmsToTargets(
     dominantWorldTarget: THREE.Vector3,
     supportWorldTarget?: THREE.Vector3,
-    dominantArm: 'right' | 'left' = this.dominantArm
+    dominantArm: 'right' | 'left' = this.dominantArm,
+    racketVelocity: THREE.Vector3 = new THREE.Vector3(0, 0, 0)
   ): void {
     const upVector = new THREE.Vector3(0, 1, 0);
 
@@ -543,7 +544,8 @@ export class Avatar3D {
       this.racketGroup.visible = true;
       this.racketGroup.scale.set(1.0, 1.0, 1.0);
       this.racketGroup.traverse((child) => { child.visible = true; });
-      this.updateRacketTransform(wristPos, elbowPos, shoulderPos);
+      this.updateRacketTransform(wristPos, elbowPos, shoulderPos, racketVelocity);
+
     }
     if (this.paddleGroup && this.paddleGroup.visible) {
       this.paddleGroup.position.copy(wristPos);
@@ -597,7 +599,8 @@ export class Avatar3D {
   public updateRacketTransform(
     wristPos: THREE.Vector3,
     elbowPos: THREE.Vector3,
-    shoulderPos: THREE.Vector3
+    shoulderPos: THREE.Vector3,
+    velocityVector: THREE.Vector3 = new THREE.Vector3(0, 0, 0)
   ): void {
     if (!this.racketGroup) return;
 
@@ -609,44 +612,28 @@ export class Avatar3D {
 
     const forearmVec = new THREE.Vector3().subVectors(wristPos, elbowPos);
     const forearmDir = forearmVec.length() > 0.01
-      ? forearmVec.normalize()
-      : new THREE.Vector3(0, 0.4, 0.9).normalize();
+      ? forearmVec.clone().normalize()
+      : new THREE.Vector3(0, 0.45, 0.89);
 
-    const handElevation = wristPos.y - shoulderPos.y;
+    // Stable shaft direction aligned with forearm + natural forward court angle
+    const shaftDir = forearmDir.clone().lerp(new THREE.Vector3(0, 0.4, 0.9), 0.25).normalize();
 
-    // In avatar local space, forward towards the net is ALWAYS positive Z (+Z).
-    // The shaft vector points upward (+Y) and forward (+Z) into the court.
-    let shaftX = forearmDir.x * 0.35;
-    let shaftY = 0.82;
-    let shaftZ = 0.55;
-
-    if (wristPos.y <= 1.15 || handElevation < -0.30) {
-      // Underhand scoop / low drop: racket head dips down and forward
-      const pitchFactor = THREE.MathUtils.clamp((1.15 - wristPos.y) / 0.60, 0.0, 1.0);
-      shaftY = THREE.MathUtils.lerp(0.82, -0.65, pitchFactor);
-      shaftZ = THREE.MathUtils.lerp(0.55, 0.75, pitchFactor);
-    } else if (handElevation > 0.20) {
-      // Overhead smash / high clear: racket head extends high up and forward
-      shaftY = THREE.MathUtils.clamp(0.70 + forearmDir.y * 0.30, 0.60, 0.96);
-      shaftZ = Math.max(0.30, Math.abs(forearmDir.z) * 0.5 + 0.25);
-    } else {
-      // Mid-court drive / push: natural athletic forward angle
-      shaftY = THREE.MathUtils.clamp(0.75 + Math.max(0, forearmDir.y) * 0.25, 0.50, 0.90);
-      shaftZ = Math.max(0.40, Math.abs(forearmDir.z) * 0.6 + 0.35);
-    }
-
-    const shaftDir = new THREE.Vector3(shaftX, shaftY, shaftZ).normalize();
-
-    // String bed face normal faces forward (+Z in avatar space)
+    // Orthonormal basis with zero roll/fan spin
     const forwardRef = new THREE.Vector3(0, 0, 1);
-    let lateralX = new THREE.Vector3().crossVectors(shaftDir, forwardRef).normalize();
+    let lateralX = new THREE.Vector3().crossVectors(shaftDir, forwardRef);
     if (lateralX.lengthSq() < 0.001) {
-      lateralX = new THREE.Vector3(1, 0, 0);
+      lateralX.set(1, 0, 0);
+    } else {
+      lateralX.normalize();
+      if (lateralX.x < 0) lateralX.negate();
     }
     const normalZ = new THREE.Vector3().crossVectors(lateralX, shaftDir).normalize();
+    if (normalZ.z < 0) normalZ.negate();
 
-    const basisMatrix = new THREE.Matrix4().makeBasis(lateralX, shaftDir, normalZ);
-    this.racketGroup.setRotationFromMatrix(basisMatrix);
+    const targetQuat = new THREE.Quaternion().setFromRotationMatrix(
+      new THREE.Matrix4().makeBasis(lateralX, shaftDir, normalZ)
+    );
+    this.racketGroup.quaternion.slerp(targetQuat, 0.65);
   }
 
   /**
@@ -997,7 +984,7 @@ export class Avatar3D {
       this.racketGroup.visible = true;
       this.racketGroup.scale.set(1.0, 1.0, 1.0);
       this.racketGroup.traverse((child) => { child.visible = true; });
-      this.updateRacketTransform(wristPos, elbowPos, shoulderPos);
+      this.updateRacketTransform(wristPos, elbowPos, shoulderPos, this.smoothedRacketVel);
     }
 
     if (this.paddleGroup && this.paddleGroup.visible) {

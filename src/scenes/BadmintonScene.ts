@@ -95,6 +95,22 @@ export class BadmintonScene implements IGameScene {
   private incomingFlightStartTime = 0;
   private isIncomingReticleActive = false;
 
+  // 3D Incoming Flight Trajectory Arc
+  private incomingTrajectoryLine!: THREE.Line;
+  private incomingTrajectoryGeo!: THREE.BufferGeometry;
+  private readonly INCOMING_TRAJECTORY_POINTS = 36;
+  private lastPlayerShotSpeed = 6.0;
+  private lastPlayerShotForwardSpeed = 4.2;
+
+  // In-Flight Predictive Floor Landing Ring (Mario Tennis / Wii Sports Dynamic Target)
+  private incomingFloorRingGroup!: THREE.Group;
+  private incomingFloorOuterRingMesh!: THREE.Mesh;
+  private incomingFloorOuterRingMat!: THREE.MeshBasicMaterial;
+  private incomingFloorBullseyeMesh!: THREE.Mesh;
+  private incomingFloorBullseyeMat!: THREE.MeshBasicMaterial;
+  private incomingFloorLandingPos = new THREE.Vector3(0, 0.02, -3.4);
+  private isIncomingFloorRingActive = false;
+
   // Multi-layered visual impact feedback & procedural camera trauma
   private impactGroup!: THREE.Group;
   private impactParticles: { mesh: THREE.Mesh; velocity: THREE.Vector3 }[] = [];
@@ -296,8 +312,8 @@ export class BadmintonScene implements IGameScene {
     // Build dedicated first-person racket for court_level view
     this.buildFirstPersonRacket();
 
-    // Apply default camera preset: Court-level view (optimal for gameplay)
-    this.applyCameraPreset('court_level');
+    // Apply default camera preset: Olympic TV broadcast view
+    this.applyCameraPreset('broadcast');
 
     // Camera view toggle button
     this.buildCameraViewButton();
@@ -311,6 +327,8 @@ export class BadmintonScene implements IGameScene {
     this.buildShuttleFloorShadow();
     this.buildShuttleTrail();
     this.buildServeTrajectoryArc();
+    this.buildIncomingTrajectoryArc();
+    this.buildIncomingFloorRing();
     this.buildImpactFeedback();
     this.buildImpactReticle();
     this.buildChalkDecals();
@@ -603,6 +621,179 @@ export class BadmintonScene implements IGameScene {
     if (this.serveLandingReticle) this.serveLandingReticle.visible = false;
   }
 
+  // ─── 3D Incoming Trajectory Arc System ──────────────────────────────────────
+
+  private buildIncomingTrajectoryArc(): void {
+    const pointsCount = this.INCOMING_TRAJECTORY_POINTS;
+    const positions = new Float32Array(pointsCount * 3);
+    this.incomingTrajectoryGeo = new THREE.BufferGeometry();
+    this.incomingTrajectoryGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+    const mat = new THREE.LineDashedMaterial({
+      color: 0x00f2fe, // Vibrant radiant neon cyan arc
+      dashSize: 0.20,
+      gapSize: 0.10,
+      transparent: true,
+      opacity: 0.90
+    });
+
+    this.incomingTrajectoryLine = new THREE.Line(this.incomingTrajectoryGeo, mat);
+    this.incomingTrajectoryLine.computeLineDistances();
+    this.incomingTrajectoryLine.visible = false;
+    this.scene.add(this.incomingTrajectoryLine);
+  }
+
+  private updateIncomingTrajectory(origin: THREE.Vector3, velocity: THREE.Vector3, target?: { x: number; z: number }): void {
+    if (!this.incomingTrajectoryLine || !this.incomingTrajectoryGeo) return;
+
+    const pointsCount = this.INCOMING_TRAJECTORY_POINTS;
+    const posAttr = this.incomingTrajectoryGeo.attributes.position as THREE.BufferAttribute;
+
+    let simX = origin.x;
+    let simY = origin.y;
+    let simZ = origin.z;
+    let simVx = velocity.x;
+    let simVy = velocity.y;
+    let simVz = velocity.z;
+
+    const simDt = 0.045;
+    const DRAG_COEFFICIENT = 0.085;
+
+    for (let i = 0; i < pointsCount; i++) {
+      posAttr.setXYZ(i, simX, simY, simZ);
+
+      const speed = Math.hypot(simVx, simVy, simVz);
+      const dragMag = DRAG_COEFFICIENT * speed;
+      simVx -= dragMag * simVx * simDt;
+      simVy -= dragMag * simVy * simDt;
+      simVz -= dragMag * simVz * simDt;
+      simVy -= 9.81 * simDt;
+
+      simX += simVx * simDt;
+      simY += simVy * simDt;
+      simZ += simVz * simDt;
+
+      if (simY < 0.05) {
+        simY = 0.05;
+      }
+    }
+
+    posAttr.needsUpdate = true;
+    this.incomingTrajectoryLine.computeLineDistances();
+    this.incomingTrajectoryLine.visible = true;
+  }
+
+  private hideIncomingTrajectory(): void {
+    if (this.incomingTrajectoryLine) {
+      this.incomingTrajectoryLine.visible = false;
+    }
+  }
+
+  // ─── In-Flight Predictive Floor Landing Ring ──────────────────────────────
+
+  private buildIncomingFloorRing(): void {
+    this.incomingFloorRingGroup = new THREE.Group();
+
+    // Outer pulsing prediction ring on court floor
+    const outerGeo = new THREE.RingGeometry(0.28, 0.36, 32);
+    this.incomingFloorOuterRingMat = new THREE.MeshBasicMaterial({
+      color: 0x00f2fe, // Neon cyan
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.85
+    });
+    this.incomingFloorOuterRingMesh = new THREE.Mesh(outerGeo, this.incomingFloorOuterRingMat);
+    this.incomingFloorOuterRingMesh.rotation.x = -Math.PI / 2;
+    this.incomingFloorRingGroup.add(this.incomingFloorOuterRingMesh);
+
+    // Inner bright landing focal dot
+    const innerGeo = new THREE.CircleGeometry(0.08, 24);
+    this.incomingFloorBullseyeMat = new THREE.MeshBasicMaterial({
+      color: 0xff0077, // Vibrant neon magenta core
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.90
+    });
+    this.incomingFloorBullseyeMesh = new THREE.Mesh(innerGeo, this.incomingFloorBullseyeMat);
+    this.incomingFloorBullseyeMesh.rotation.x = -Math.PI / 2;
+    this.incomingFloorBullseyeMesh.position.y = 0.001;
+    this.incomingFloorRingGroup.add(this.incomingFloorBullseyeMesh);
+
+    this.incomingFloorRingGroup.position.set(0, 0.02, -3.4);
+    this.incomingFloorRingGroup.visible = false;
+    this.scene.add(this.incomingFloorRingGroup);
+  }
+
+  private spawnIncomingFloorRing(origin: THREE.Vector3, velocity: THREE.Vector3, target?: { x: number; z: number }): void {
+    if (!this.incomingFloorRingGroup) return;
+
+    // Numerical forward simulation to find exact floor landing coordinate (y <= 0.08m)
+    let simX = origin.x;
+    let simY = origin.y;
+    let simZ = origin.z;
+    let simVx = velocity.x;
+    let simVy = velocity.y;
+    let simVz = velocity.z;
+
+    const dt = 0.016; // 60 fps simulation
+    const DRAG_COEFFICIENT = 0.085;
+
+    for (let i = 0; i < 240; i++) {
+      const speed = Math.hypot(simVx, simVy, simVz);
+      const dragMag = DRAG_COEFFICIENT * speed;
+      simVx -= dragMag * simVx * dt;
+      simVy -= dragMag * simVy * dt;
+      simVz -= dragMag * simVz * dt;
+      simVy -= 9.81 * dt;
+
+      simX += simVx * dt;
+      simY += simVy * dt;
+      simZ += simVz * dt;
+
+      if (simY <= 0.08) {
+        break;
+      }
+    }
+
+    // Target fallback if simulation is out of range
+    const landingX = THREE.MathUtils.clamp(target ? target.x : simX, -this.singlesCourtWidth * 0.44, this.singlesCourtWidth * 0.44);
+    const landingZ = THREE.MathUtils.clamp(target ? target.z : simZ, -4.0, -1.8);
+
+    this.incomingFloorLandingPos.set(landingX, 0.02, landingZ);
+    this.incomingFloorRingGroup.position.copy(this.incomingFloorLandingPos);
+    this.incomingFloorRingGroup.scale.set(1.2, 1, 1.2);
+    this.incomingFloorRingGroup.visible = true;
+    this.isIncomingFloorRingActive = true;
+  }
+
+  private updateIncomingFloorRing(): void {
+    if (!this.incomingFloorRingGroup || !this.isIncomingFloorRingActive) return;
+
+    const isIncoming = this.rallyState === 'IN_PLAY' && this.lastHitter === 'opponent' && this.shuttleVel.z < -0.4;
+    if (!isIncoming) {
+      this.hideIncomingFloorRing();
+      return;
+    }
+
+    // Scale dynamically contracts from 1.3 down to 0.40 as shuttle descends toward floor (y: 2.8m -> 0.15m)
+    const altitude = Math.max(0.08, this.shuttlePos.y);
+    const scaleFactor = THREE.MathUtils.clamp(0.35 + altitude * 0.35, 0.35, 1.35);
+    const pulse = 1.0 + Math.sin(performance.now() * 0.012) * 0.08;
+    this.incomingFloorRingGroup.scale.set(scaleFactor * pulse, 1, scaleFactor * pulse);
+
+    // Increase opacity as shuttle descends
+    if (this.incomingFloorOuterRingMat) {
+      this.incomingFloorOuterRingMat.opacity = THREE.MathUtils.clamp(1.0 - altitude * 0.15, 0.65, 0.95);
+    }
+  }
+
+  private hideIncomingFloorRing(): void {
+    this.isIncomingFloorRingActive = false;
+    if (this.incomingFloorRingGroup) {
+      this.incomingFloorRingGroup.visible = false;
+    }
+  }
+
   // ─── Incoming Impact Reticle (Dynamic Timing Ring) ─────────────────────────
 
   private buildImpactReticle(): void {
@@ -669,6 +860,8 @@ export class BadmintonScene implements IGameScene {
     if (this.impactReticleGroup) {
       this.impactReticleGroup.visible = false;
     }
+    this.hideIncomingTrajectory();
+    this.hideIncomingFloorRing();
     if (this.swingNowCueEl) {
       this.swingNowCueEl.classList.remove('active');
     }
@@ -685,9 +878,9 @@ export class BadmintonScene implements IGameScene {
     const forwardSpeed = Math.abs(velocity.z);
     if (forwardSpeed < 0.5) return;
 
-    // Aerodynamic flight time: quadratic drag slows vz by ~40% across court length
+    // Aerodynamic flight time: quadratic drag slows vz by ~35% across court length
     const distanceZ = Math.abs(strikeZ - origin.z);
-    const estFlightTime = THREE.MathUtils.clamp(distanceZ / (forwardSpeed * 0.60), 1.25, 1.70);
+    const estFlightTime = THREE.MathUtils.clamp(distanceZ / (forwardSpeed * 0.78), 1.50, 3.20);
 
     // Hard clamp target strictly to inner court center (cannot hit sidelines)
     const targetX = target ? target.x : Math.max(-0.8, Math.min(0.8, (Math.random() - 0.5) * 1.6));
@@ -737,8 +930,9 @@ export class BadmintonScene implements IGameScene {
     const deltaZ = strikeZ - this.shuttlePos.z;
     const instantaneousTimeToArrival = Math.abs(deltaZ) / Math.max(0.1, Math.abs(this.shuttleVel.z));
 
-    if (tRemaining < -0.25 || instantaneousTimeToArrival > 3.0) {
+    if (tRemaining < -0.35 || instantaneousTimeToArrival > 3.5) {
       this.hideImpactReticle();
+      this.hideIncomingTrajectory();
       return;
     }
 
@@ -787,7 +981,7 @@ export class BadmintonScene implements IGameScene {
     this.cameraViewBtn = document.createElement('button');
     this.cameraViewBtn.className = 'icon-btn camera-view-toggle-btn glass-panel';
     this.cameraViewBtn.id = 'btn-bm-camera-view';
-    this.cameraViewBtn.innerHTML = '<span>📹</span><span>View: Court</span>';
+    this.cameraViewBtn.innerHTML = '<span>📹</span><span>View: Olympic TV</span>';
     this.cameraViewBtn.title = 'Switch Camera View [Key: C]';
     this.cameraViewBtn.onclick = () => this.cycleCameraView();
     this.container.appendChild(this.cameraViewBtn);
@@ -1543,10 +1737,10 @@ export class BadmintonScene implements IGameScene {
     feathers.rotation.x = Math.PI; // Flare skirt backwards
     this.shuttleGroup.add(feathers);
 
-    // Bright glow halo for tracking visibility and serve arming feedback
-    const haloGeo = new THREE.SphereGeometry(0.072, 8, 8);
+    // Bright solid glow halo for tracking visibility and serve arming feedback (solid, NOT wireframe so visible at 16m)
+    const haloGeo = new THREE.SphereGeometry(0.085, 16, 16);
     this.shuttleHaloMat = new THREE.MeshBasicMaterial({
-      color: 0xfbbf24, wireframe: true, transparent: true, opacity: 0.55
+      color: 0xffea00, wireframe: false, transparent: true, opacity: 0.75, depthWrite: false
     });
     this.shuttleHaloMesh = new THREE.Mesh(haloGeo, this.shuttleHaloMat);
     this.shuttleGroup.add(this.shuttleHaloMesh);
@@ -1882,31 +2076,36 @@ export class BadmintonScene implements IGameScene {
       this.fpFrameMat.emissiveIntensity = THREE.MathUtils.lerp(this.fpFrameMat.emissiveIntensity, 0.85, deltaTime * 8);
     }
 
-    // 3. Dynamic Third-Person Sports Tracking with Smooth Lerp
+    // 3. Dynamic Third-Person Sports Tracking with Smooth Camera Bias
+    const isOpponentInFlight = this.rallyState === 'IN_PLAY' && this.shuttleVel.z < -0.4 && this.lastHitter === 'opponent';
+    const lateralTrackingTarget = isOpponentInFlight
+      ? this.shuttlePos.x * 0.40
+      : (this.playerAvatar ? this.playerAvatar.group.position.x * 0.10 : 0);
+
     if (this.currentCameraPreset === 'broadcast' && this.playerAvatar) {
       const avX = this.playerAvatar.group.position.x;
       const targetCamX = avX * 0.20;
-      const targetLookX = avX * 0.10;
 
-      // Subtle lateral broadcast camera sway tracking player lateral position
+      // Subtle lateral broadcast camera sway tracking player lateral position & incoming shuttle
       this.baseCameraPos.x = THREE.MathUtils.lerp(this.baseCameraPos.x, targetCamX, 0.04);
       this.baseCameraPos.y = 7.8;
       this.baseCameraPos.z = -10.8;
-      this.baseCameraLook.x = THREE.MathUtils.lerp(this.baseCameraLook.x, targetLookX, 0.02);
+      this.baseCameraLook.x = THREE.MathUtils.lerp(this.baseCameraLook.x, lateralTrackingTarget, isOpponentInFlight ? 0.08 : 0.02);
       this.baseCameraLook.y = 1.1;
-      this.baseCameraLook.z = 0.2;
+      this.baseCameraLook.z = isOpponentInFlight ? THREE.MathUtils.lerp(this.baseCameraLook.z, THREE.MathUtils.clamp(this.shuttlePos.z * 0.25, -1.5, 0.5), 0.04) : 0.2;
     } else if (this.currentCameraPreset === 'over_shoulder' && this.playerAvatar) {
       const avX = this.playerAvatar.group.position.x;
       const targetCamX = avX * 0.35;
-      const targetLookX = avX * 0.15;
 
       // Smooth linear interpolation so camera glides seamlessly with player footwork/lunges
       this.baseCameraPos.x = THREE.MathUtils.lerp(this.baseCameraPos.x, targetCamX, 0.05);
       this.baseCameraPos.y = 2.35;
       this.baseCameraPos.z = -5.4;
-      this.baseCameraLook.x = THREE.MathUtils.lerp(this.baseCameraLook.x, targetLookX, 0.02);
+      this.baseCameraLook.x = THREE.MathUtils.lerp(this.baseCameraLook.x, lateralTrackingTarget, isOpponentInFlight ? 0.08 : 0.02);
       this.baseCameraLook.y = 1.25;
-      this.baseCameraLook.z = 0.5;
+      this.baseCameraLook.z = isOpponentInFlight ? THREE.MathUtils.lerp(this.baseCameraLook.z, THREE.MathUtils.clamp(this.shuttlePos.z * 0.30, -1.2, 0.8), 0.04) : 0.5;
+    } else if (this.currentCameraPreset === 'court_level' && this.playerAvatar) {
+      this.baseCameraLook.x = THREE.MathUtils.lerp(this.baseCameraLook.x, lateralTrackingTarget, isOpponentInFlight ? 0.08 : 0.02);
     }
 
     this.camera.up.set(0, 1, 0);
@@ -2201,15 +2400,15 @@ export class BadmintonScene implements IGameScene {
    * matching the in-play drag/gravity integrator.
    */
   private constrainLandingInCourt(origin: THREE.Vector3, vel: THREE.Vector3, towardOpponent: boolean): void {
-    vel.x = THREE.MathUtils.clamp(vel.x, -0.55, 0.55);
+    vel.x = THREE.MathUtils.clamp(vel.x, -0.60, 0.60);
     if (towardOpponent) {
-      // Player hitting toward opponent court: safe bounds inside opponent baseline (+2.2m to +5.8m)
-      vel.z = THREE.MathUtils.clamp(vel.z, 2.8, 8.2);
-      vel.y = THREE.MathUtils.clamp(vel.y, 2.5, 7.2);
+      // Player hitting toward opponent court: comfortable carry to mid/back court (3.5 to 8.5 m/s)
+      vel.z = THREE.MathUtils.clamp(vel.z, 3.5, 8.5);
+      vel.y = THREE.MathUtils.clamp(vel.y, 3.5, 7.5);
     } else {
-      // Opponent hitting toward player court: safe bounds inside player baseline (-5.2m to -2.3m)
-      vel.z = THREE.MathUtils.clamp(vel.z, -8.2, -2.2);
-      vel.y = THREE.MathUtils.clamp(vel.y, 2.2, 7.2);
+      // Opponent hitting toward player court: matches player's gentle rally pace (-5.2 to -2.8 m/s)
+      vel.z = THREE.MathUtils.clamp(vel.z, -5.2, -2.8);
+      vel.y = THREE.MathUtils.clamp(vel.y, 4.0, 7.5);
     }
   }
 
@@ -2246,6 +2445,9 @@ export class BadmintonScene implements IGameScene {
     this.shuttleVel.set(serveVX, serveVY, serveVZ);
     this.enforceNetClearance(this.shuttlePos.clone(), this.shuttleVel, 1.90);
     this.constrainLandingInCourt(this.shuttlePos.clone(), this.shuttleVel, true);
+    this.lastPlayerShotSpeed = this.shuttleVel.length();
+    this.lastPlayerShotForwardSpeed = Math.abs(this.shuttleVel.z);
+    this.hideIncomingTrajectory();
     this.prevShuttlePos.copy(this.shuttlePos);
     this.floorDropImmunityTimer = 0.6;
 
@@ -2326,59 +2528,65 @@ export class BadmintonScene implements IGameScene {
     let badgeText: string;
     let badgeStyle: 'smash' | 'drive' | 'lift' | 'sweet' = 'drive';
 
+    // ─── 3D Swipe-Vector Shot Mapping ────────────────────────────────────────────────────────
+    // Shot type and trajectory are determined from live racket velocity at contact frame.
+    // swipe direction drives both arc shape and outgoing angle — 1:1 directional binding.
+    //
+    //  swipeY > +0.25 m/s   = upward scoop/lift    → High Clear lob (vy=6.5–8.2, vz=3.5–6.0)
+    //  swipeY < -0.20 m/s   = downward slash        → Downward Smash  (vy=1.2–1.8, vz=7.5–9.5)
+    //  swipeY ≈ neutral, fast = flat horizontal push  → Drive           (vy=3.5–4.2, vz=5.5–8.5)
+    //  swipeY ≈ neutral, slow = gentle push           → Soft Drop       (vy=3.8,     vz=2.2–3.5)
+    //  swipeX               = cross-court angle binding: outVx = clamp(swipeX * 2.2, ±0.65)
+    const swipeY       = this.racketVelocity.y;
+    const swipeX       = this.racketVelocity.x;
+    const swipeSpeedXZ = Math.hypot(this.racketVelocity.x, this.racketVelocity.z);
     const rawRacketSpeed = Math.max(vSwing, this.racketVelocity.length());
-    // Continuous swing power scaling: 1.5 m/s (soft push) to 6.5+ m/s (full power smash/drive)
     const speedRatio = THREE.MathUtils.clamp((rawRacketSpeed - 1.5) / 5.0, 0.0, 1.0);
 
-    // Shot selection based on contact height & swing trajectory
-    const isOverheadSmash = contactY > 1.60 && rawRacketSpeed > 3.0 && (vySwing < 0.20 || !isUpward);
-    const isSoftDrop = !isOverheadSmash && rawRacketSpeed < 2.2 && contactY > 1.25 && !isUpward;
-    const isUnderhandLift = !isOverheadSmash && !isSoftDrop && (contactY < 1.30 || isUpward || vySwing > 0.35);
+    // Cross-court angle: lateral racket motion maps 1:1 to shuttlecock exit angle
+    const outVx = THREE.MathUtils.clamp(swipeX * 2.2, -0.65, 0.65);
 
-    if (isOverheadSmash) {
-      shotType = 'smash';
-      speedZ = THREE.MathUtils.lerp(5.5, 9.5, speedRatio);
-      reqVy = THREE.MathUtils.lerp(3.2, 2.2, speedRatio);
-      speedKmh = Math.round(speedZ * 11.5);
-      badgeText = `💥 OVERHEAD SMASH ${speedKmh} KM/H`;
+    const isUpwardSwipe   = swipeY > 0.25 || isUpward;
+    const isDownwardSlash = swipeY < -0.20 && rawRacketSpeed > 3.2;
+    const isFastFlat      = !isUpwardSwipe && !isDownwardSlash && swipeSpeedXZ > 2.2;
+
+    if (isDownwardSlash) {
+      shotType   = 'smash';
+      speedZ     = THREE.MathUtils.lerp(4.0, 5.0, speedRatio);
+      reqVy      = THREE.MathUtils.lerp(2.2, 1.6, speedRatio);
+      badgeText  = `💥 OVERHEAD SMASH`;
       badgeStyle = 'smash';
       this.audio.badmintonSmash();
-    } else if (isSoftDrop) {
-      shotType = 'drop';
-      speedZ = THREE.MathUtils.lerp(2.8, 4.0, rawRacketSpeed / 2.2);
-      reqVy = 3.8;
-      speedKmh = Math.round(speedZ * 7.0);
-      badgeText = `🏸 SOFT DROP ${speedKmh} KM/H`;
-      badgeStyle = 'lift';
-      this.audio.badmintonHit(45);
-    } else if (isUnderhandLift) {
-      shotType = 'clear';
-      speedZ = THREE.MathUtils.lerp(4.0, 7.0, speedRatio);
-      reqVy = THREE.MathUtils.lerp(5.2, 7.8, speedRatio);
-      speedKmh = Math.round(speedZ * 8.5);
-      badgeText = `🏸 HIGH CLEAR ${speedKmh} KM/H`;
+    } else if (isUpwardSwipe) {
+      shotType   = 'clear';
+      speedZ     = THREE.MathUtils.lerp(2.8, 4.2, speedRatio);
+      reqVy      = THREE.MathUtils.lerp(5.8, 7.2, speedRatio);
+      badgeText  = `🏘 HIGH CLEAR`;
       badgeStyle = 'lift';
       this.audio.badmintonHit(70);
+    } else if (isFastFlat) {
+      shotType   = 'drive';
+      speedZ     = THREE.MathUtils.lerp(3.5, 4.8, speedRatio);
+      reqVy      = THREE.MathUtils.lerp(3.8, 3.2, speedRatio);
+      badgeText  = swipeSpeedXZ > 4.0 ? `⚡ POWER DRIVE` : `🏘 DRIVE`;
+      badgeStyle = swipeSpeedXZ > 4.0 ? 'sweet' : 'drive';
+      this.audio.badmintonHit(swipeSpeedXZ > 4.0 ? 90 : 65);
     } else {
-      shotType = 'drive';
-      speedZ = THREE.MathUtils.lerp(4.2, 8.2, speedRatio);
-      reqVy = THREE.MathUtils.lerp(4.2, 3.2, speedRatio);
-      speedKmh = Math.round(speedZ * 9.5);
-      badgeText = rawRacketSpeed > 4.2 ? `⚡ FAST DRIVE ${speedKmh} KM/H` : `🏸 DRIVE ${speedKmh} KM/H`;
-      badgeStyle = rawRacketSpeed > 4.2 ? 'sweet' : 'drive';
-      this.audio.badmintonHit(rawRacketSpeed > 4.2 ? 90 : 65);
+      shotType   = 'drop';
+      speedZ     = THREE.MathUtils.lerp(2.0, 3.0, rawRacketSpeed / 2.2);
+      reqVy      = 3.4;
+      badgeText  = `🎯 SOFT DROP`;
+      badgeStyle = 'lift';
+      this.audio.badmintonHit(40);
     }
 
-    if (rawRacketSpeed > 4.2 && !isOverheadSmash) {
-      badgeText = `⚡ POWER STROKE (${speedKmh} KM/H)`;
-      badgeStyle = 'sweet';
-    }
+    this.shuttleVel.set(outVx, reqVy, speedZ);
 
-    // Returns travel straight forward without lateral slicing:
-    const returnX = THREE.MathUtils.clamp(vxSwing * 0.15, -0.40, 0.40);
-    this.shuttleVel.set(returnX, reqVy, speedZ);
     this.enforceNetClearance(this.shuttlePos.clone(), this.shuttleVel, 1.85);
     this.constrainLandingInCourt(this.shuttlePos.clone(), this.shuttleVel, true);
+    this.lastPlayerShotSpeed = this.shuttleVel.length();
+    this.lastPlayerShotForwardSpeed = Math.abs(this.shuttleVel.z);
+    this.hideIncomingTrajectory();
     this.floorDropImmunityTimer = 0.6; // Disable floor drop for 0.6s on return launch
 
     // ─── Req. 3: Actual post-collision velocity for all feedback readouts ────────────────
@@ -2570,13 +2778,13 @@ export class BadmintonScene implements IGameScene {
         const sideOffset = this.dominantHand === 'right' ? 0.15 : -0.15;
         const dominantTarget = Avatar3D.mapScreenToStrikePlane(this.camera, mouseNormX, mouseNormY, 0, false, 2.05, sideOffset, this.playerAvatar.group.position.z);
 
-        this.playerAvatar.poseArmsToTargets(dominantTarget, supportTarget, this.dominantHand);
+        this.playerAvatar.poseArmsToTargets(dominantTarget, supportTarget, this.dominantHand, this.racketVelocity);
         this.trackedSupportHandPos.copy(this.playerAvatar.getSupportHandWorldPosition());
       } else {
         // In rally: dominant arm reaches towards mouse target with racket on strike plane
         const sideOffset = this.dominantHand === 'right' ? 0.15 : -0.15;
         const dominantTarget = Avatar3D.mapScreenToStrikePlane(this.camera, mouseNormX, mouseNormY, 0, false, 2.05, sideOffset, this.playerAvatar.group.position.z);
-        this.playerAvatar.poseArmsToTargets(dominantTarget, undefined, this.dominantHand);
+        this.playerAvatar.poseArmsToTargets(dominantTarget, undefined, this.dominantHand, this.racketVelocity);
       }
     }
 
@@ -2601,16 +2809,16 @@ export class BadmintonScene implements IGameScene {
       oppRacketGroup.traverse((child) => { child.visible = true; });
     }
 
-    const racketPosition = this.playerAvatar.getRacketWorldPosition();
+    const wristPosition = this.playerAvatar.getDominantWristWorldPosition();
     const safeDelta = Math.max(0.008, frameDt);
-    const rawRacketVel = racketPosition.clone().sub(this.previousRacketPosition).divideScalar(safeDelta);
-    // Deadzone resting noise below 0.8 m/s (~2.9 km/h)
-    if (rawRacketVel.length() < 0.8) {
-      rawRacketVel.set(0, 0, 0);
+    const rawWristVel = wristPosition.clone().sub(this.previousRacketPosition).divideScalar(safeDelta);
+    // Deadzone resting noise below 0.3 m/s (~1.1 km/h)
+    if (rawWristVel.length() < 0.3) {
+      rawWristVel.set(0, 0, 0);
     }
     // EMA smoothing with alpha = 0.35 to swallow resting jitter
-    this.racketVelocity.lerp(rawRacketVel, 0.35);
-    this.previousRacketPosition.copy(racketPosition);
+    this.racketVelocity.lerp(rawWristVel, 0.35);
+    this.previousRacketPosition.copy(wristPosition);
 
     const motionSpeed = trackedWristVel
       ? Math.hypot(trackedWristVel.x, trackedWristVel.y, trackedWristVel.z)
@@ -2654,35 +2862,30 @@ export class BadmintonScene implements IGameScene {
           this.prevShuttlePos,    this.shuttlePos
         );
 
-        // ─── Momentum Transfer / Racket Direction Alignment check ─────────────────────────
-        // shuttleToRacket: direction from shuttle toward the racket swing arc.
-        // racketDir: normalised direction of the racket's current displacement.
-        // A genuine powered stroke requires BOTH speed and directional alignment.
-        const shuttleToRacket = currentRacketHead.clone().sub(this.shuttlePos).normalize();
+        // ─── Intentional Dynamic Strike Gate ──────────────────────────────────────────────
+        // Directional alignment: vector from racket to shuttle must align with swing displacement
+        const racketToShuttle = this.shuttlePos.clone().sub(currentRacketHead).normalize();
         const racketDir       = racketStepLen > 1e-4 ? racketStep.clone().normalize() : new THREE.Vector3();
-        const alignment       = shuttleToRacket.dot(racketDir); // -1..+1
+        const alignment       = racketToShuttle.dot(racketDir);
 
-        // isDynamicStroke: racket must be swinging TOWARD the shuttle at >= 3.2 m/s equivalent
-        const swingSpeedMps  = racketStepLen / Math.max(0.008, frameDt);
-        const isDynamicStroke = swingSpeedMps >= 3.2 && alignment > 0.35;
+        const directDist = currentRacketHead.distanceTo(this.shuttlePos);
+        const swingSpeedMps = racketStepLen / Math.max(0.008, frameDt);
+        const wristSpeed = this.racketVelocity.length();
+        const effectiveSpeed = Math.max(swingSpeedMps, wristSpeed, motionSpeed);
 
-        // Gate A: Swept-volume contact — genuine dynamic stroke
-        const isSweptContact = closestApproach <= 0.42 && isDynamicStroke;
+        // Generous physical stroke gate: accepts natural arm swings (>= 2.2 m/s) within 0.65m racket reach
+        const isDynamicSwing = effectiveSpeed >= 2.2 && (alignment > 0.30 || directDist <= 0.50) && closestApproach <= 0.65;
+        const isExplicitUserSwing = (this.userSwingIntentTimer > 0 || this.swingIntentTimer > 0) && directDist <= 0.90;
 
-        // Gate B: Explicit user intent (click / Space) with shuttle close to racket head
-        const directDist          = currentRacketHead.distanceTo(this.shuttlePos);
-        const isExplicitUserSwing = this.userSwingIntentTimer > 0 && directDist <= 0.85;
-
-        if (isSweptContact || isExplicitUserSwing) {
-          // ─── Powered return ────────────────────────────────────────────────────────────
-          // Direct kinetic speed mapping: slow push ≈ 2–3 m/s, hard swing ≈ 7–9 m/s
-          const outSpeed = THREE.MathUtils.clamp(racketStepLen * 1.8, 2.2, 9.5);
+        if (isDynamicSwing || isExplicitUserSwing) {
+          // Cap player return speed to gentle, trackable rally speed (3.5 to 7.0 m/s)
+          const outSpeed = THREE.MathUtils.clamp(Math.max(effectiveSpeed * 0.85, 3.5), 3.5, 7.0);
 
           this.hitStopTimer = 0.016;
           this.floorDropGraceTimer = 0;
           this.swingIntentTimer    = 0;
           this.userSwingIntentTimer = 0;
-          const isUpwardOrScoop = isUpwardSwing || isUnderhandScoop || swingVy > 0.45 || this.shuttlePos.y < 1.30;
+          const isUpwardOrScoop = isUpwardSwing || isUnderhandScoop || swingVy > 0.35 || this.shuttlePos.y < 1.35;
           this.executePlayerHit(currentRacketHead, outSpeed, isUpwardOrScoop);
         }
 
@@ -2780,16 +2983,27 @@ export class BadmintonScene implements IGameScene {
 
           this.shuttlePos.set(this.opponentAvatar.group.position.x, 1.4, this.opponentAvatar.group.position.z - 0.3);
           const target = getBotTarget('clear', this.currentDifficulty);
-          const launchVel = solveLaunchVelocity(this.shuttlePos, target, 'clear');
+          const launchVel = solveLaunchVelocity(
+            this.shuttlePos,
+            target,
+            'clear',
+            0.085,
+            9.81,
+            1.85,
+            this.opponentAI?.pacingProfile,
+            this.lastPlayerShotSpeed || 5.8
+          );
           this.shuttleVel.set(launchVel.x, launchVel.y, launchVel.z);
           this.constrainLandingInCourt(this.shuttlePos.clone(), this.shuttleVel, false);
           this.floorDropImmunityTimer = 0.6;
           this.prevShuttlePos.copy(this.shuttlePos);
           const oppRacketHead = this.opponentAvatar.getRacketHeadWorldPosition();
-          this.triggerImpactFeedback(oppRacketHead, 'serve', 32, true);
+          this.triggerImpactFeedback(oppRacketHead, 'serve', 30, true);
           this.audio.badmintonHit(90);
-          this.showHitQualityBadge('🏸 BOT HIT • HIGH SERVE', 'bot');
+          this.showHitQualityBadge('🏸 BOT HIT • GENTLE SERVE', 'bot');
           this.spawnIncomingInterceptReticle(this.shuttlePos, this.shuttleVel, target);
+          this.spawnIncomingFloorRing(this.shuttlePos, this.shuttleVel, target);
+          this.updateIncomingTrajectory(oppRacketHead, this.shuttleVel, target);
         }
       }
     }
@@ -2915,26 +3129,35 @@ export class BadmintonScene implements IGameScene {
         }
       }
 
-      // ─── Incoming Shot Visibility Boost ───────────────────────────────────────────────────────
-      // When the opponent's shot is in flight, scale the shuttlecock up and shift the halo to
-      // a high-contrast amber-orange so the player can track depth and speed against the dark arena.
-      // On outgoing (player's shot) restore to standard 1.25× scale and warm-gold halo.
+      // ─── Incoming Shot Visibility Boost + Distance Scaling ─────────────────────────────────────────
+      // When incoming from opponent across the court, scale up to 3.2x so it is instantly seen at 16m distance.
+      // Solid radiant electric-magenta warning (0xff0077, opacity 0.95) gives maximum contrast against dark court.
       const isOpponentInFlight = this.shuttleVel.z < 0 && this.lastHitter === 'opponent';
-      const incomingTargetScale = isOpponentInFlight ? 1.85 : 1.25;
-      this.shuttleGroup.scale.lerp(
-        new THREE.Vector3(incomingTargetScale, incomingTargetScale, incomingTargetScale), 0.15
-      );
+      const justCrossedNet     = this.prevShuttlePos.z > 0 && this.shuttlePos.z <= 0;
+
+      // Distance-aware scale: 3.2x when far away in opponent court (z > 0), transitioning to 2.0x near player
+      const incomingTargetScale = isOpponentInFlight
+        ? THREE.MathUtils.lerp(2.0, 3.2, THREE.MathUtils.clamp((this.shuttlePos.z + 1.0) / 4.5, 0, 1))
+        : 1.25;
+
+      this.shuttleGroup.scale.setScalar(incomingTargetScale);
+
       if (this.shuttleHaloMat && this.shuttleHaloMesh) {
-        if (isOpponentInFlight) {
-          // High-contrast amber-orange warning for incoming shot
-          this.shuttleHaloMat.color.setHex(0xff6600);
-          this.shuttleHaloMesh.scale.setScalar(1.0 + Math.sin(performance.now() * 0.008) * 0.15);
-          this.shuttleHaloMat.opacity = THREE.MathUtils.lerp(this.shuttleHaloMat.opacity, 0.88, 0.12);
+        if (justCrossedNet && isOpponentInFlight) {
+          // ⚡ Net-crossing flash: brilliant white flash burst for 1 frame
+          this.shuttleHaloMat.color.setHex(0xffffff);
+          this.shuttleHaloMesh.scale.setScalar(2.6);
+          this.shuttleHaloMat.opacity = 1.0;
+        } else if (isOpponentInFlight) {
+          // Radiant electric high-contrast warning (neon magenta/cyan core) while incoming
+          this.shuttleHaloMat.color.setHex(0xff0077);
+          this.shuttleHaloMesh.scale.setScalar(1.6 + Math.sin(performance.now() * 0.015) * 0.20);
+          this.shuttleHaloMat.opacity = 0.95;
         } else {
-          // Outgoing shot: reset to standard warm-gold
+          // Outgoing shot: warm gold
           this.shuttleHaloMat.color.setHex(0xfbbf24);
           this.shuttleHaloMesh.scale.set(1.0, 1.0, 1.0);
-          this.shuttleHaloMat.opacity = THREE.MathUtils.lerp(this.shuttleHaloMat.opacity, 0.55, 0.12);
+          this.shuttleHaloMat.opacity = 0.55;
         }
       }
 
@@ -2994,7 +3217,8 @@ export class BadmintonScene implements IGameScene {
           this.shuttlePos,
           this.shuttleVel,
           courtBounds,
-          this.scoreState.rallyCount
+          this.scoreState.rallyCount,
+          this.lastPlayerShotSpeed
         );
 
         this.opponentAvatar.group.position.x = this.opponentAI.position.x;
@@ -3020,30 +3244,30 @@ export class BadmintonScene implements IGameScene {
 
           const oppRacketHead = this.opponentAvatar.getRacketHeadWorldPosition();
           const shotType = aiResult.shotType || (aiResult.isSmash ? 'smash' : 'clear');
-          let botSpeedKmh = 60;
-          if (shotType === 'smash') botSpeedKmh = 112;
-          else if (shotType === 'drive') botSpeedKmh = 76;
-          else if (shotType === 'drop') botSpeedKmh = 35;
-          else botSpeedKmh = 58;
+          const botSpeedKmh = Math.round(this.shuttleVel.length() * 3.6);
 
           this.updateSpeedometer(botSpeedKmh);
 
           // Spawn bright gold impact starburst at opponent's racket head
           this.triggerImpactFeedback(oppRacketHead, shotType, botSpeedKmh, true);
 
-          // Punchy, high-frequency racket string audio crack
+          // Punchy, racket string audio crack
           if (aiResult.isSmash) {
             this.audio.badmintonSmash();
           } else {
-            this.audio.badmintonHit(90);
+            this.audio.badmintonHit(70);
           }
 
           // Top hit quality badge ONLY (no blocking floating banner)
-          const badgeText = aiResult.isSmash ? '💥 BOT HIT • OVERHEAD SMASH' : (shotType === 'drop' ? '🏸 BOT HIT • DROP SHOT' : '🏸 BOT HIT • HIGH CLEAR');
+          const badgeText = aiResult.isSmash
+            ? `💥 BOT HIT • SMASH ${botSpeedKmh} KM/H`
+            : (shotType === 'drop' ? `🏸 BOT HIT • DROP ${botSpeedKmh} KM/H` : `🏸 BOT HIT • CLEAR ${botSpeedKmh} KM/H`);
           this.showHitQualityBadge(badgeText, 'bot');
 
-          // Spawn full-flight intercept reticle at player's baseline
+          // Spawn full-flight intercept reticle at player's baseline and render 3D flight trajectory
           this.spawnIncomingInterceptReticle(this.shuttlePos, this.shuttleVel, aiResult.target);
+          this.spawnIncomingFloorRing(this.shuttlePos, this.shuttleVel, aiResult.target);
+          this.updateIncomingTrajectory(oppRacketHead, this.shuttleVel, aiResult.target);
         }
       }
 
@@ -3058,7 +3282,7 @@ export class BadmintonScene implements IGameScene {
         const distToRacket = racketHeadPos.distanceTo(this.shuttlePos);
         const isIncomingToPlayer = this.shuttleVel.z < 0 && this.shuttlePos.z <= -2.5 && this.lastHitter === 'opponent';
 
-        if (isIncomingToPlayer && distToRacket <= 0.80 && this.floorDropGraceTimer < 0.120) {
+        if (isIncomingToPlayer && distToRacket <= 1.10 && this.floorDropGraceTimer < 0.220) {
           this.floorDropGraceTimer += frameDt;
           // Hold at floor level during grace window so player can scoop it without premature fault
           this.shuttlePos.y = 0.08;
@@ -3123,8 +3347,9 @@ export class BadmintonScene implements IGameScene {
     // Update chalk floor impact decals
     this.updateChalkDecals(deltaTime);
 
-    // 5. Incoming Impact Reticle (projected onto strike plane)
+    // 5. Incoming Impact Reticle & Dynamic Floor Landing Target
     this.updateImpactReticle();
+    this.updateIncomingFloorRing();
 
     this.updateImpactFeedback(deltaTime);
 
@@ -3157,6 +3382,8 @@ export class BadmintonScene implements IGameScene {
     this.isShuttleInPlay = false;
     this.shuttleVel.set(0, 0, 0);
     this.hideImpactReticle();
+    this.hideIncomingTrajectory();
+    this.hideIncomingFloorRing();
 
     this.scoreState.lastPointWinner = winner;
     this.scoreState.lastPointReason = reason;
@@ -3359,6 +3586,12 @@ export class BadmintonScene implements IGameScene {
     }
     if (this.altitudeStemLine) {
       this.scene.remove(this.altitudeStemLine);
+    }
+    if (this.incomingTrajectoryLine) {
+      this.scene.remove(this.incomingTrajectoryLine);
+    }
+    if (this.incomingFloorRingGroup) {
+      this.scene.remove(this.incomingFloorRingGroup);
     }
     if (this.fpRacketGroup) {
       this.scene.remove(this.fpRacketGroup);

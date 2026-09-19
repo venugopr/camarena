@@ -4351,11 +4351,11 @@ export interface GamePacingProfile {
 }
 
 export const PACING_PROFILES: Record<string, GamePacingProfile> = {
-  // Wii Sports-style readable pacing â€” generous hang-time so the player can always track the shuttle
-  // casual: 2.60s float â†’ apex ~3.4m; normal: 2.30s â†’ apex ~3.0m; pro: 2.05s â†’ apex ~2.8m
-  casual: { modeName: 'casual', opponentSpeedZ: -2.2, opponentLiftY: 6.8, targetFlightTime: 2.60, hitTimeWindow: 700 },
-  normal: { modeName: 'normal', opponentSpeedZ: -2.4, opponentLiftY: 6.5, targetFlightTime: 2.30, hitTimeWindow: 560 },
-  pro:    { modeName: 'pro',    opponentSpeedZ: -2.7, opponentLiftY: 6.0, targetFlightTime: 2.05, hitTimeWindow: 460 }
+  // Ultra-relaxed cooperative rally pacing â€” shuttle floats like a balloon
+  // casual: 3.80s (~4.4m apex); normal: 3.20s (~4.0m); pro: 2.70s (~3.6m)
+  casual: { modeName: 'casual', opponentSpeedZ: -1.2, opponentLiftY: 8.2, targetFlightTime: 3.80, hitTimeWindow: 950 },
+  normal: { modeName: 'normal', opponentSpeedZ: -1.6, opponentLiftY: 7.8, targetFlightTime: 3.20, hitTimeWindow: 800 },
+  pro:    { modeName: 'pro',    opponentSpeedZ: -2.0, opponentLiftY: 7.2, targetFlightTime: 2.70, hitTimeWindow: 650 }
 };
 
 export class OpponentAI {
@@ -4492,16 +4492,16 @@ export class OpponentAI {
       this.position.z += (dz / moveDist) * step;
     }
 
-    // Strike trigger: when shuttlecock enters opponent's court and approaches within reach
+    // Strike trigger: when shuttlecock travels visibly into opponent's court and approaches within reach
     const distToShuttle = Math.hypot(projectilePos.x - this.position.x, projectilePos.z - this.position.z);
-    const inOpponentCourt = projectilePos.z >= 0.4;
+    const inOpponentCourt = projectilePos.z >= 1.2;
 
     const shouldStartWindup =
       isIncoming &&
       this.swingState === 'IDLE' &&
       inOpponentCourt &&
-      distToShuttle <= 2.8 &&
-      projectilePos.y <= 3.4 &&
+      distToShuttle <= 2.5 &&
+      projectilePos.y <= 3.6 &&
       projectilePos.y >= 0.15;
 
     if (shouldStartWindup) {
@@ -4516,10 +4516,13 @@ export class OpponentAI {
       windupProgress = THREE_CLAMP(1.0 - (this.windupTimer / this.windupDuration), 0, 1);
       this.swingTarget = { ...projectilePos };
 
-      // Strike triggers when windup finishes OR when the shuttlecock gets into hitting reach
-      const inStrikePocket = distToShuttle <= 2.0 && inOpponentCourt;
-      const emergencyFloorHit = projectilePos.y <= 0.70 && distToShuttle <= 2.4 && inOpponentCourt;
-      if (this.windupTimer <= 0 || inStrikePocket || emergencyFloorHit) {
+      // Strike triggers when windup finishes AND the shuttlecock is in realistic racket reach (~1.25m),
+      // OR emergency save if shuttlecock is about to touch the floor before windup finishes
+      const inRacketRange = distToShuttle <= 1.25 && inOpponentCourt;
+      const emergencyFloorHit = projectilePos.y <= 0.60 && distToShuttle <= 1.6 && inOpponentCourt;
+      const readyToStrike = (this.windupTimer <= 0 && inRacketRange) || emergencyFloorHit;
+
+      if (readyToStrike) {
         this.swingState = 'STRIKING';
         this.isSwinging = true;
         this.swingProgress = 0;
@@ -4591,24 +4594,21 @@ export function getBotTarget(
   shotType: 'drop' | 'clear' | 'drive' | 'smash',
   _difficulty: DifficultyLevel = 'casual'
 ): { x: number; z: number } {
-  // All target Z values strictly inside inner singles court: player z âˆˆ [-5.2, -2.6]
-  // Lateral: Â±0.80m corridor (avoids near-sideline framing issues)
-  const targetX = (Math.random() - 0.5) * 1.60;
+  // Target strictly in front of player's racket (player stands at z = -4.2)
+  // Landing zone: z in [-3.6, -3.1] at chest/waist level, within easy reaching volume
+  const targetX = (Math.random() - 0.5) * 1.20;
   let targetZ: number;
   switch (shotType) {
+    case 'drop':
+      // Short net drop: lands in front court (z in [-2.4, -2.0])
+      targetZ = THREE_CLAMP(-2.2 - Math.random() * 0.3, -2.5, -2.0);
+      break;
+    case 'drive':
+    case 'smash':
     case 'clear':
     default:
-      // Deep baseline clear â€” 4.2 to 5.2m back from net
-      targetZ = THREE_CLAMP(-4.2 - Math.random() * 1.0, -5.2, -4.0);
-      break;
-    case 'smash':
-    case 'drive':
-      // Mid-court â€” 2.8 to 4.4m back from net
-      targetZ = THREE_CLAMP(-2.8 - Math.random() * 1.4, -4.4, -2.6);
-      break;
-    case 'drop':
-      // Short drop â€” 2.6 to 3.2m back from net (strictly inside court)
-      targetZ = THREE_CLAMP(-2.6 - Math.random() * 0.6, -3.2, -2.6);
+      // Cooperative rally return: arrives directly in front of player's racket (z in [-3.5, -3.1])
+      targetZ = THREE_CLAMP(-3.2 - Math.random() * 0.3, -3.6, -3.0);
       break;
   }
   return { x: targetX, z: targetZ };
@@ -4623,15 +4623,10 @@ export function solveLaunchVelocity(
   minimumNetHeight?: number,
   pacingProfile?: GamePacingProfile
 ): Vector3D {
-  // Difficulty-aware hang time from pacing profile
-  //   casual  â†’ 2.30s  |  normal  â†’ 2.05s  |  pro  â†’ 1.85s
-  const profileFlightTime = pacingProfile?.targetFlightTime ?? 2.05;
+  // Difficulty-aware hang time from pacing profile (2.20s to 2.80s comfortable tracking window)
+  const profileFlightTime = pacingProfile?.targetFlightTime ?? 2.40;
 
-  // â”€â”€â”€ Per-shot tactical speed multiplier â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  // Range 0.80â€“1.25: slow defensive touch (0.80) to aggressive fast drive (1.25).
-  // Applied to vz/vx AFTER the base ballistic solve â€” keeps targetFlightTime stable
-  // so the landing zone stays pinned while speed feel varies organically.
-  const speedMod = 0.80 + Math.random() * 0.45;
+  const speedMod = 0.88 + Math.random() * 0.24;
 
   let targetFlightTime: number;
   let baseVy: number;
@@ -4639,37 +4634,36 @@ export function solveLaunchVelocity(
 
   switch (shotType) {
     case 'smash':
-      targetFlightTime = 0.72;
-      baseVy = 2.9;
-      apexHeightTarget = 1.8;
+      targetFlightTime = 1.10;
+      baseVy = 3.0;
+      apexHeightTarget = 2.2;
       break;
     case 'drive':
       targetFlightTime = profileFlightTime * 0.85;
-      baseVy = 4.4;
-      apexHeightTarget = 2.8;
+      baseVy = 4.2;
+      apexHeightTarget = 2.6;
       break;
     case 'drop':
-      // Drops always float soft â€” cap speedMod so they donâ€™t accidentally laser
-      targetFlightTime = profileFlightTime * 0.65;
-      baseVy = 4.0;
-      apexHeightTarget = 2.6;
+      targetFlightTime = profileFlightTime * 0.75;
+      baseVy = 3.6;
+      apexHeightTarget = 2.3;
       break;
     case 'clear':
     default:
+      // Clear: gentle, readable lob that clears net at ~2.2m and descends to player waist (1.4m)
       targetFlightTime = profileFlightTime;
-      baseVy = gravity * targetFlightTime * 0.52;
-      apexHeightTarget = 3.2;
+      baseVy = 5.4;
+      apexHeightTarget = 2.9;
       break;
   }
 
   // Clamp to physically plausible flight window
-  targetFlightTime = THREE_CLAMP(targetFlightTime, 0.55, 3.00);
+  targetFlightTime = THREE_CLAMP(targetFlightTime, 0.85, 3.20);
 
-  // â”€â”€â”€ Strict landing clamp: inner singles court only â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  // Player court: z âˆˆ [-5.2, -2.6]; never past the back-baseline or net-short
-  const safeTargetZ = THREE_CLAMP(target.z, -5.2, -2.6);
+  // Strict landing clamp: in front of player's body (never behind player at z <= -4.0)
+  const safeTargetZ = THREE_CLAMP(target.z, -3.6, -2.0);
   const distZ = safeTargetZ - origin.z;
-  const distX = target.x  - origin.x;
+  const distX = target.x - origin.x;
 
   // Base ballistic solve
   let vz = distZ / targetFlightTime;
@@ -4680,41 +4674,32 @@ export function solveLaunchVelocity(
   const vyForApex = Math.sqrt(Math.max(0, 2 * gravity * (apexHeightTarget - origin.y)));
   if (vy < vyForApex) vy = vyForApex;
 
-  // Net clearance at Z = 0
-  const netClearMin = minimumNetHeight ?? 1.70;
+  // Net clearance at Z = 0: ensures safe passage over 1.55m net tape without excessive ballooning
+  const netClearMin = minimumNetHeight ?? 1.85;
   const distToNet   = Math.abs(origin.z);
   const tNet        = distToNet / Math.max(0.5, Math.abs(vz));
   const netY        = origin.y + vy * tNet - 0.5 * gravity * tNet * tNet;
-  if (netY < netClearMin) vy += (netClearMin - netY) * 1.20;
+  if (netY < netClearMin) vy += (netClearMin - netY) * 1.15;
 
-  // â”€â”€â”€ Apply speed variety to horizontal components ONLY â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  // Multiplying vz/vx by speedMod after the base solve preserves apex height
-  // and net clearance, while making each shot feel organically faster or slower.
-  // For drops, keep speedMod <= 1.0 so they stay gentle.
+  // Apply speed variety
   const effectiveMod = shotType === 'drop' ? Math.min(speedMod, 1.0) : speedMod;
   vz *= effectiveMod;
   vx *= effectiveMod;
 
-  // â”€â”€â”€ Final velocity bounds â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  // Caps prevent extreme speedMod values from launching out-of-bounds.
-  // Ranges chosen so slow shots are genuinely easy to read and fast shots are
-  // challenging but never unfair.
+  // â”€â”€â”€ Final velocity bounds: calibrated to match player's serve and gentle hit speeds â”€â”€â”€â”€â”€â”€â”€â”€
   if (shotType === 'smash') {
-    // Smash: the ONE fast shot type â€” reserved so speed contrast with other shots is felt
-    vz = THREE_CLAMP(vz, -7.5, -5.2);
-    vy = THREE_CLAMP(vy, 2.0, 3.8);
-  } else if (shotType === 'drive') {
-    // Drive: noticeably slower than smash â€” should feel like a flat but readable push
-    vz = THREE_CLAMP(vz, -4.0, -2.0);
-    vy = THREE_CLAMP(vy, 3.8, 5.6);
+    vz = THREE_CLAMP(vz, -3.8, -3.0);
+    vy = THREE_CLAMP(vy, 2.6, 3.6);
   } else if (shotType === 'drop') {
-    // Drop: soft and short, player has plenty of time to reach
-    vz = THREE_CLAMP(vz, -2.4, -1.2);
-    vy = THREE_CLAMP(vy, 3.4, 5.0);
+    vz = THREE_CLAMP(vz, -2.4, -1.8);
+    vy = THREE_CLAMP(vy, 3.2, 4.2);
+  } else if (shotType === 'drive') {
+    vz = THREE_CLAMP(vz, -3.4, -2.6);
+    vy = THREE_CLAMP(vy, 3.8, 4.8);
   } else {
-    // Clear: deep floating lob â€” slowest horizontal speed, highest arc
-    vz = THREE_CLAMP(vz, -3.2, -1.6);
-    vy = THREE_CLAMP(vy, 5.0, 8.2);
+    // Clear: gentle ~11 km/h floater that arrives right at player's racket at waist height (1.4m)
+    vz = THREE_CLAMP(vz, -3.2, -2.4);
+    vy = THREE_CLAMP(vy, 5.0, 5.8);
   }
 
   return {
@@ -5440,8 +5425,8 @@ export class BadmintonScene implements IGameScene {
     // Build dedicated first-person racket for court_level view
     this.buildFirstPersonRacket();
 
-    // Apply default camera preset: Court-level view (optimal for gameplay)
-    this.applyCameraPreset('court_level');
+    // Apply default camera preset: Olympic TV broadcast view
+    this.applyCameraPreset('broadcast');
 
     // Camera view toggle button
     this.buildCameraViewButton();
@@ -5931,7 +5916,7 @@ export class BadmintonScene implements IGameScene {
     this.cameraViewBtn = document.createElement('button');
     this.cameraViewBtn.className = 'icon-btn camera-view-toggle-btn glass-panel';
     this.cameraViewBtn.id = 'btn-bm-camera-view';
-    this.cameraViewBtn.innerHTML = '<span>ðŸ“¹</span><span>View: Court</span>';
+    this.cameraViewBtn.innerHTML = '<span>ðŸ“¹</span><span>View: Olympic TV</span>';
     this.cameraViewBtn.title = 'Switch Camera View [Key: C]';
     this.cameraViewBtn.onclick = () => this.cycleCameraView();
     this.container.appendChild(this.cameraViewBtn);
@@ -6687,10 +6672,10 @@ export class BadmintonScene implements IGameScene {
     feathers.rotation.x = Math.PI; // Flare skirt backwards
     this.shuttleGroup.add(feathers);
 
-    // Bright glow halo for tracking visibility and serve arming feedback
-    const haloGeo = new THREE.SphereGeometry(0.072, 8, 8);
+    // Bright solid glow halo for tracking visibility and serve arming feedback (solid, NOT wireframe so visible at 16m)
+    const haloGeo = new THREE.SphereGeometry(0.085, 16, 16);
     this.shuttleHaloMat = new THREE.MeshBasicMaterial({
-      color: 0xfbbf24, wireframe: true, transparent: true, opacity: 0.55
+      color: 0xffea00, wireframe: false, transparent: true, opacity: 0.75, depthWrite: false
     });
     this.shuttleHaloMesh = new THREE.Mesh(haloGeo, this.shuttleHaloMat);
     this.shuttleGroup.add(this.shuttleHaloMesh);
@@ -7351,9 +7336,9 @@ export class BadmintonScene implements IGameScene {
       vel.z = THREE.MathUtils.clamp(vel.z, 2.8, 8.2);
       vel.y = THREE.MathUtils.clamp(vel.y, 2.5, 7.2);
     } else {
-      // Opponent hitting toward player court: safe bounds inside player baseline (-5.2m to -2.3m)
-      vel.z = THREE.MathUtils.clamp(vel.z, -8.2, -2.2);
-      vel.y = THREE.MathUtils.clamp(vel.y, 2.2, 7.2);
+      // Opponent hitting toward player court: matches player's serve & gentle rally speed (-3.8 to -1.8 m/s, vy 3.2 to 6.2)
+      vel.z = THREE.MathUtils.clamp(vel.z, -3.8, -1.8);
+      vel.y = THREE.MathUtils.clamp(vel.y, 3.2, 6.2);
     }
   }
 
@@ -7470,57 +7455,60 @@ export class BadmintonScene implements IGameScene {
     let badgeText: string;
     let badgeStyle: 'smash' | 'drive' | 'lift' | 'sweet' = 'drive';
 
+    // â”€â”€â”€ 3D Swipe-Vector Shot Mapping â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // Shot type and trajectory are determined from live racket velocity at contact frame.
+    // swipe direction drives both arc shape and outgoing angle â€” 1:1 directional binding.
+    //
+    //  swipeY > +0.25 m/s   = upward scoop/lift    â†’ High Clear lob (vy=6.5â€“8.2, vz=3.5â€“6.0)
+    //  swipeY < -0.20 m/s   = downward slash        â†’ Downward Smash  (vy=1.2â€“1.8, vz=7.5â€“9.5)
+    //  swipeY â‰ˆ neutral, fast = flat horizontal push  â†’ Drive           (vy=3.5â€“4.2, vz=5.5â€“8.5)
+    //  swipeY â‰ˆ neutral, slow = gentle push           â†’ Soft Drop       (vy=3.8,     vz=2.2â€“3.5)
+    //  swipeX               = cross-court angle binding: outVx = clamp(swipeX * 2.2, Â±0.65)
+    const swipeY       = this.racketVelocity.y;
+    const swipeX       = this.racketVelocity.x;
+    const swipeSpeedXZ = Math.hypot(this.racketVelocity.x, this.racketVelocity.z);
     const rawRacketSpeed = Math.max(vSwing, this.racketVelocity.length());
-    // Continuous swing power scaling: 1.5 m/s (soft push) to 6.5+ m/s (full power smash/drive)
     const speedRatio = THREE.MathUtils.clamp((rawRacketSpeed - 1.5) / 5.0, 0.0, 1.0);
 
-    // Shot selection based on contact height & swing trajectory
-    const isOverheadSmash = contactY > 1.60 && rawRacketSpeed > 3.0 && (vySwing < 0.20 || !isUpward);
-    const isSoftDrop = !isOverheadSmash && rawRacketSpeed < 2.2 && contactY > 1.25 && !isUpward;
-    const isUnderhandLift = !isOverheadSmash && !isSoftDrop && (contactY < 1.30 || isUpward || vySwing > 0.35);
+    // Cross-court angle: lateral racket motion maps 1:1 to shuttlecock exit angle
+    const outVx = THREE.MathUtils.clamp(swipeX * 2.2, -0.65, 0.65);
 
-    if (isOverheadSmash) {
-      shotType = 'smash';
-      speedZ = THREE.MathUtils.lerp(5.5, 9.5, speedRatio);
-      reqVy = THREE.MathUtils.lerp(3.2, 2.2, speedRatio);
-      speedKmh = Math.round(speedZ * 11.5);
-      badgeText = `ðŸ’¥ OVERHEAD SMASH ${speedKmh} KM/H`;
+    const isUpwardSwipe   = swipeY > 0.25 || isUpward;
+    const isDownwardSlash = swipeY < -0.20 && rawRacketSpeed > 3.2;
+    const isFastFlat      = !isUpwardSwipe && !isDownwardSlash && swipeSpeedXZ > 2.2;
+
+    if (isDownwardSlash) {
+      shotType   = 'smash';
+      speedZ     = THREE.MathUtils.lerp(7.5, 9.5, speedRatio);
+      reqVy      = THREE.MathUtils.lerp(1.8, 1.2, speedRatio);
+      badgeText  = `\ud83d\udca5 OVERHEAD SMASH`;
       badgeStyle = 'smash';
       this.audio.badmintonSmash();
-    } else if (isSoftDrop) {
-      shotType = 'drop';
-      speedZ = THREE.MathUtils.lerp(2.8, 4.0, rawRacketSpeed / 2.2);
-      reqVy = 3.8;
-      speedKmh = Math.round(speedZ * 7.0);
-      badgeText = `ðŸ¸ SOFT DROP ${speedKmh} KM/H`;
-      badgeStyle = 'lift';
-      this.audio.badmintonHit(45);
-    } else if (isUnderhandLift) {
-      shotType = 'clear';
-      speedZ = THREE.MathUtils.lerp(4.0, 7.0, speedRatio);
-      reqVy = THREE.MathUtils.lerp(5.2, 7.8, speedRatio);
-      speedKmh = Math.round(speedZ * 8.5);
-      badgeText = `ðŸ¸ HIGH CLEAR ${speedKmh} KM/H`;
+    } else if (isUpwardSwipe) {
+      shotType   = 'clear';
+      speedZ     = THREE.MathUtils.lerp(3.5, 6.0, speedRatio);
+      reqVy      = THREE.MathUtils.lerp(6.5, 8.2, speedRatio);
+      badgeText  = `\ud83c\udfd8 HIGH CLEAR`;
       badgeStyle = 'lift';
       this.audio.badmintonHit(70);
+    } else if (isFastFlat) {
+      shotType   = 'drive';
+      speedZ     = THREE.MathUtils.lerp(5.5, 8.5, speedRatio);
+      reqVy      = THREE.MathUtils.lerp(4.2, 3.5, speedRatio);
+      badgeText  = swipeSpeedXZ > 4.0 ? `\u26a1 POWER DRIVE` : `\ud83c\udfd8 DRIVE`;
+      badgeStyle = swipeSpeedXZ > 4.0 ? 'sweet' : 'drive';
+      this.audio.badmintonHit(swipeSpeedXZ > 4.0 ? 90 : 65);
     } else {
-      shotType = 'drive';
-      speedZ = THREE.MathUtils.lerp(4.2, 8.2, speedRatio);
-      reqVy = THREE.MathUtils.lerp(4.2, 3.2, speedRatio);
-      speedKmh = Math.round(speedZ * 9.5);
-      badgeText = rawRacketSpeed > 4.2 ? `âš¡ FAST DRIVE ${speedKmh} KM/H` : `ðŸ¸ DRIVE ${speedKmh} KM/H`;
-      badgeStyle = rawRacketSpeed > 4.2 ? 'sweet' : 'drive';
-      this.audio.badmintonHit(rawRacketSpeed > 4.2 ? 90 : 65);
+      shotType   = 'drop';
+      speedZ     = THREE.MathUtils.lerp(2.2, 3.5, rawRacketSpeed / 2.2);
+      reqVy      = 3.8;
+      badgeText  = `\ud83c\udfaf SOFT DROP`;
+      badgeStyle = 'lift';
+      this.audio.badmintonHit(40);
     }
 
-    if (rawRacketSpeed > 4.2 && !isOverheadSmash) {
-      badgeText = `âš¡ POWER STROKE (${speedKmh} KM/H)`;
-      badgeStyle = 'sweet';
-    }
+    this.shuttleVel.set(outVx, reqVy, speedZ);
 
-    // Returns travel straight forward without lateral slicing:
-    const returnX = THREE.MathUtils.clamp(vxSwing * 0.15, -0.40, 0.40);
-    this.shuttleVel.set(returnX, reqVy, speedZ);
     this.enforceNetClearance(this.shuttlePos.clone(), this.shuttleVel, 1.85);
     this.constrainLandingInCourt(this.shuttlePos.clone(), this.shuttleVel, true);
     this.floorDropImmunityTimer = 0.6; // Disable floor drop for 0.6s on return launch
@@ -7714,13 +7702,13 @@ export class BadmintonScene implements IGameScene {
         const sideOffset = this.dominantHand === 'right' ? 0.15 : -0.15;
         const dominantTarget = Avatar3D.mapScreenToStrikePlane(this.camera, mouseNormX, mouseNormY, 0, false, 2.05, sideOffset, this.playerAvatar.group.position.z);
 
-        this.playerAvatar.poseArmsToTargets(dominantTarget, supportTarget, this.dominantHand);
+        this.playerAvatar.poseArmsToTargets(dominantTarget, supportTarget, this.dominantHand, this.racketVelocity);
         this.trackedSupportHandPos.copy(this.playerAvatar.getSupportHandWorldPosition());
       } else {
         // In rally: dominant arm reaches towards mouse target with racket on strike plane
         const sideOffset = this.dominantHand === 'right' ? 0.15 : -0.15;
         const dominantTarget = Avatar3D.mapScreenToStrikePlane(this.camera, mouseNormX, mouseNormY, 0, false, 2.05, sideOffset, this.playerAvatar.group.position.z);
-        this.playerAvatar.poseArmsToTargets(dominantTarget, undefined, this.dominantHand);
+        this.playerAvatar.poseArmsToTargets(dominantTarget, undefined, this.dominantHand, this.racketVelocity);
       }
     }
 
@@ -7745,16 +7733,16 @@ export class BadmintonScene implements IGameScene {
       oppRacketGroup.traverse((child) => { child.visible = true; });
     }
 
-    const racketPosition = this.playerAvatar.getRacketWorldPosition();
+    const wristPosition = this.playerAvatar.getDominantWristWorldPosition();
     const safeDelta = Math.max(0.008, frameDt);
-    const rawRacketVel = racketPosition.clone().sub(this.previousRacketPosition).divideScalar(safeDelta);
-    // Deadzone resting noise below 0.8 m/s (~2.9 km/h)
-    if (rawRacketVel.length() < 0.8) {
-      rawRacketVel.set(0, 0, 0);
+    const rawWristVel = wristPosition.clone().sub(this.previousRacketPosition).divideScalar(safeDelta);
+    // Deadzone resting noise below 0.3 m/s (~1.1 km/h)
+    if (rawWristVel.length() < 0.3) {
+      rawWristVel.set(0, 0, 0);
     }
     // EMA smoothing with alpha = 0.35 to swallow resting jitter
-    this.racketVelocity.lerp(rawRacketVel, 0.35);
-    this.previousRacketPosition.copy(racketPosition);
+    this.racketVelocity.lerp(rawWristVel, 0.35);
+    this.previousRacketPosition.copy(wristPosition);
 
     const motionSpeed = trackedWristVel
       ? Math.hypot(trackedWristVel.x, trackedWristVel.y, trackedWristVel.z)
@@ -7798,35 +7786,29 @@ export class BadmintonScene implements IGameScene {
           this.prevShuttlePos,    this.shuttlePos
         );
 
-        // â”€â”€â”€ Momentum Transfer / Racket Direction Alignment check â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-        // shuttleToRacket: direction from shuttle toward the racket swing arc.
-        // racketDir: normalised direction of the racket's current displacement.
-        // A genuine powered stroke requires BOTH speed and directional alignment.
-        const shuttleToRacket = currentRacketHead.clone().sub(this.shuttlePos).normalize();
-        const racketDir       = racketStepLen > 1e-4 ? racketStep.clone().normalize() : new THREE.Vector3();
-        const alignment       = shuttleToRacket.dot(racketDir); // -1..+1
+        // â”€â”€â”€ Responsive Hit Registration â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // Contact is valid if shuttle is close to racket and:
+        // 1. Dynamic swing: racket or wrist is moving (effectiveSpeed >= 1.0 m/s) and within 0.70m swept / 0.65m direct
+        // 2. Explicit user input: player clicked mouse or pressed Space (userSwingIntentTimer > 0) within 0.95m
+        // 3. Close proximity deflection: shuttle passes directly through racket head (<= 0.38m)
+        const directDist = currentRacketHead.distanceTo(this.shuttlePos);
+        const swingSpeedMps = racketStepLen / Math.max(0.008, frameDt);
+        const wristSpeed = this.racketVelocity.length();
+        const effectiveSpeed = Math.max(swingSpeedMps, wristSpeed, motionSpeed);
 
-        // isDynamicStroke: racket must be swinging TOWARD the shuttle at >= 3.2 m/s equivalent
-        const swingSpeedMps  = racketStepLen / Math.max(0.008, frameDt);
-        const isDynamicStroke = swingSpeedMps >= 3.2 && alignment > 0.35;
+        const isDynamicSwing = effectiveSpeed >= 1.0 && (closestApproach <= 0.70 || directDist <= 0.65);
+        const isExplicitSwing = this.userSwingIntentTimer > 0 && directDist <= 0.95;
+        const isDirectContact = directDist <= 0.38 || closestApproach <= 0.35;
 
-        // Gate A: Swept-volume contact â€” genuine dynamic stroke
-        const isSweptContact = closestApproach <= 0.42 && isDynamicStroke;
-
-        // Gate B: Explicit user intent (click / Space) with shuttle close to racket head
-        const directDist          = currentRacketHead.distanceTo(this.shuttlePos);
-        const isExplicitUserSwing = this.userSwingIntentTimer > 0 && directDist <= 0.85;
-
-        if (isSweptContact || isExplicitUserSwing) {
-          // â”€â”€â”€ Powered return â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-          // Direct kinetic speed mapping: slow push â‰ˆ 2â€“3 m/s, hard swing â‰ˆ 7â€“9 m/s
-          const outSpeed = THREE.MathUtils.clamp(racketStepLen * 1.8, 2.2, 9.5);
+        if (isDynamicSwing || isExplicitSwing || isDirectContact) {
+          // Direct kinetic speed mapping
+          const outSpeed = THREE.MathUtils.clamp(Math.max(effectiveSpeed * 1.5, 3.2), 3.0, 8.5);
 
           this.hitStopTimer = 0.016;
           this.floorDropGraceTimer = 0;
           this.swingIntentTimer    = 0;
           this.userSwingIntentTimer = 0;
-          const isUpwardOrScoop = isUpwardSwing || isUnderhandScoop || swingVy > 0.45 || this.shuttlePos.y < 1.30;
+          const isUpwardOrScoop = isUpwardSwing || isUnderhandScoop || swingVy > 0.35 || this.shuttlePos.y < 1.35;
           this.executePlayerHit(currentRacketHead, outSpeed, isUpwardOrScoop);
         }
 
@@ -8059,26 +8041,35 @@ export class BadmintonScene implements IGameScene {
         }
       }
 
-      // â”€â”€â”€ Incoming Shot Visibility Boost â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-      // When the opponent's shot is in flight, scale the shuttlecock up and shift the halo to
-      // a high-contrast amber-orange so the player can track depth and speed against the dark arena.
-      // On outgoing (player's shot) restore to standard 1.25Ã— scale and warm-gold halo.
+      // â”€â”€â”€ Incoming Shot Visibility Boost + Distance Scaling â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+      // When incoming from opponent across the court, scale up to 2.8x so it is instantly seen at 16m distance.
+      // Solid radiant electric-yellow beacon (0xffea00, opacity 0.92) gives high contrast against dark court.
       const isOpponentInFlight = this.shuttleVel.z < 0 && this.lastHitter === 'opponent';
-      const incomingTargetScale = isOpponentInFlight ? 1.85 : 1.25;
-      this.shuttleGroup.scale.lerp(
-        new THREE.Vector3(incomingTargetScale, incomingTargetScale, incomingTargetScale), 0.15
-      );
+      const justCrossedNet     = this.prevShuttlePos.z > 0 && this.shuttlePos.z <= 0;
+
+      // Distance-aware scale: 2.8x when far away in opponent court (z > 0), transitioning to 1.8x near player
+      const incomingTargetScale = isOpponentInFlight
+        ? THREE.MathUtils.lerp(1.8, 2.8, THREE.MathUtils.clamp((this.shuttlePos.z + 1.0) / 4.5, 0, 1))
+        : 1.25;
+
+      this.shuttleGroup.scale.setScalar(incomingTargetScale);
+
       if (this.shuttleHaloMat && this.shuttleHaloMesh) {
-        if (isOpponentInFlight) {
-          // High-contrast amber-orange warning for incoming shot
-          this.shuttleHaloMat.color.setHex(0xff6600);
-          this.shuttleHaloMesh.scale.setScalar(1.0 + Math.sin(performance.now() * 0.008) * 0.15);
-          this.shuttleHaloMat.opacity = THREE.MathUtils.lerp(this.shuttleHaloMat.opacity, 0.88, 0.12);
+        if (justCrossedNet && isOpponentInFlight) {
+          // âš¡ Net-crossing flash: brilliant white flash burst for 1 frame
+          this.shuttleHaloMat.color.setHex(0xffffff);
+          this.shuttleHaloMesh.scale.setScalar(2.2);
+          this.shuttleHaloMat.opacity = 1.0;
+        } else if (isOpponentInFlight) {
+          // Radiant electric sunburst yellow glow while incoming â€” highly visible across dark arena
+          this.shuttleHaloMat.color.setHex(0xffea00);
+          this.shuttleHaloMesh.scale.setScalar(1.5 + Math.sin(performance.now() * 0.01) * 0.15);
+          this.shuttleHaloMat.opacity = 0.92;
         } else {
-          // Outgoing shot: reset to standard warm-gold
+          // Outgoing shot: warm gold
           this.shuttleHaloMat.color.setHex(0xfbbf24);
           this.shuttleHaloMesh.scale.set(1.0, 1.0, 1.0);
-          this.shuttleHaloMat.opacity = THREE.MathUtils.lerp(this.shuttleHaloMat.opacity, 0.55, 0.12);
+          this.shuttleHaloMat.opacity = 0.55;
         }
       }
 
@@ -10402,7 +10393,8 @@ export class Avatar3D {
   public poseArmsToTargets(
     dominantWorldTarget: THREE.Vector3,
     supportWorldTarget?: THREE.Vector3,
-    dominantArm: 'right' | 'left' = this.dominantArm
+    dominantArm: 'right' | 'left' = this.dominantArm,
+    racketVelocity: THREE.Vector3 = new THREE.Vector3(0, 0, 0)
   ): void {
     const upVector = new THREE.Vector3(0, 1, 0);
 
@@ -10462,7 +10454,8 @@ export class Avatar3D {
       this.racketGroup.visible = true;
       this.racketGroup.scale.set(1.0, 1.0, 1.0);
       this.racketGroup.traverse((child) => { child.visible = true; });
-      this.updateRacketTransform(wristPos, elbowPos, shoulderPos);
+      this.updateRacketTransform(wristPos, elbowPos, shoulderPos, racketVelocity);
+
     }
     if (this.paddleGroup && this.paddleGroup.visible) {
       this.paddleGroup.position.copy(wristPos);
@@ -10516,7 +10509,8 @@ export class Avatar3D {
   public updateRacketTransform(
     wristPos: THREE.Vector3,
     elbowPos: THREE.Vector3,
-    shoulderPos: THREE.Vector3
+    shoulderPos: THREE.Vector3,
+    velocityVector: THREE.Vector3 = new THREE.Vector3(0, 0, 0)
   ): void {
     if (!this.racketGroup) return;
 
@@ -10526,46 +10520,51 @@ export class Avatar3D {
     if (this.racketMesh) this.racketMesh.visible = true;
     this.racketGroup.traverse((child) => { child.visible = true; });
 
+    // â”€â”€â”€ True Hand & Arm Kinematics â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // The racket shaft (local +Y) extends from the wrist along the forearm direction.
+    // As the player raises, lowers, or moves their hand laterally, the racket follows naturally.
     const forearmVec = new THREE.Vector3().subVectors(wristPos, elbowPos);
     const forearmDir = forearmVec.length() > 0.01
-      ? forearmVec.normalize()
-      : new THREE.Vector3(0, 0.4, 0.9).normalize();
+      ? forearmVec.clone().normalize()
+      : new THREE.Vector3(0, 0.5, 0.86).normalize();
 
-    const handElevation = wristPos.y - shoulderPos.y;
+    // Natural badminton ready angle: shaft extends outward along forearm, with slight upward tilt
+    const shaftX = forearmDir.x * 0.75;
+    let shaftY = forearmDir.y * 0.85 + 0.35;
+    let shaftZ = Math.max(0.20, forearmDir.z * 0.75 + 0.30);
 
-    // In avatar local space, forward towards the net is ALWAYS positive Z (+Z).
-    // The shaft vector points upward (+Y) and forward (+Z) into the court.
-    let shaftX = forearmDir.x * 0.35;
-    let shaftY = 0.82;
-    let shaftZ = 0.55;
-
-    if (wristPos.y <= 1.15 || handElevation < -0.30) {
-      // Underhand scoop / low drop: racket head dips down and forward
-      const pitchFactor = THREE.MathUtils.clamp((1.15 - wristPos.y) / 0.60, 0.0, 1.0);
-      shaftY = THREE.MathUtils.lerp(0.82, -0.65, pitchFactor);
-      shaftZ = THREE.MathUtils.lerp(0.55, 0.75, pitchFactor);
-    } else if (handElevation > 0.20) {
-      // Overhead smash / high clear: racket head extends high up and forward
-      shaftY = THREE.MathUtils.clamp(0.70 + forearmDir.y * 0.30, 0.60, 0.96);
-      shaftZ = Math.max(0.30, Math.abs(forearmDir.z) * 0.5 + 0.25);
-    } else {
-      // Mid-court drive / push: natural athletic forward angle
-      shaftY = THREE.MathUtils.clamp(0.75 + Math.max(0, forearmDir.y) * 0.25, 0.50, 0.90);
-      shaftZ = Math.max(0.40, Math.abs(forearmDir.z) * 0.6 + 0.35);
+    if (wristPos.y < 1.15) {
+      // Underhand scoop / low drop: shaft angles forward and down
+      shaftY = forearmDir.y * 0.80 - 0.20;
+      shaftZ = Math.max(0.40, forearmDir.z);
+    } else if (wristPos.y > 1.85) {
+      // High overhead reach: shaft extends straight up
+      shaftY = Math.max(0.75, forearmDir.y);
+      shaftZ = Math.max(0.15, forearmDir.z * 0.5);
     }
 
     const shaftDir = new THREE.Vector3(shaftX, shaftY, shaftZ).normalize();
 
-    // String bed face normal faces forward (+Z in avatar space)
+    // Construct orthonormal basis with zero roll flip / zero fan-spin:
+    // Shaft: local +Y = shaftDir
+    // String bed face normal: local +Z = normalZ (faces forward towards opponent court)
+    // Lateral width: local +X = lateralX
     const forwardRef = new THREE.Vector3(0, 0, 1);
-    let lateralX = new THREE.Vector3().crossVectors(shaftDir, forwardRef).normalize();
+    let lateralX = new THREE.Vector3().crossVectors(shaftDir, forwardRef);
     if (lateralX.lengthSq() < 0.001) {
-      lateralX = new THREE.Vector3(1, 0, 0);
+      lateralX.set(1, 0, 0);
+    } else {
+      lateralX.normalize();
+      if (lateralX.x < 0) lateralX.negate();
     }
     const normalZ = new THREE.Vector3().crossVectors(lateralX, shaftDir).normalize();
+    if (normalZ.z < 0) normalZ.negate();
 
     const basisMatrix = new THREE.Matrix4().makeBasis(lateralX, shaftDir, normalZ);
-    this.racketGroup.setRotationFromMatrix(basisMatrix);
+    const targetQuat = new THREE.Quaternion().setFromRotationMatrix(basisMatrix);
+
+    // Smooth slerp to absorb sensor jitter while staying tightly locked to hand
+    this.racketGroup.quaternion.slerp(targetQuat, 0.40);
   }
 
   /**
@@ -10916,7 +10915,7 @@ export class Avatar3D {
       this.racketGroup.visible = true;
       this.racketGroup.scale.set(1.0, 1.0, 1.0);
       this.racketGroup.traverse((child) => { child.visible = true; });
-      this.updateRacketTransform(wristPos, elbowPos, shoulderPos);
+      this.updateRacketTransform(wristPos, elbowPos, shoulderPos, this.smoothedRacketVel);
     }
 
     if (this.paddleGroup && this.paddleGroup.visible) {

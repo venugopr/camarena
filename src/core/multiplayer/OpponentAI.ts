@@ -17,11 +17,11 @@ export interface GamePacingProfile {
 }
 
 export const PACING_PROFILES: Record<string, GamePacingProfile> = {
-  // Wii Sports-style readable pacing — generous hang-time so the player can always track the shuttle
-  // casual: 2.60s float → apex ~3.4m; normal: 2.30s → apex ~3.0m; pro: 2.05s → apex ~2.8m
-  casual: { modeName: 'casual', opponentSpeedZ: -2.2, opponentLiftY: 6.8, targetFlightTime: 2.60, hitTimeWindow: 700 },
-  normal: { modeName: 'normal', opponentSpeedZ: -2.4, opponentLiftY: 6.5, targetFlightTime: 2.30, hitTimeWindow: 560 },
-  pro:    { modeName: 'pro',    opponentSpeedZ: -2.7, opponentLiftY: 6.0, targetFlightTime: 2.05, hitTimeWindow: 460 }
+  // Ultra-relaxed cooperative rally pacing — shuttle floats like a balloon
+  // casual: 3.80s (~4.4m apex); normal: 3.20s (~4.0m); pro: 2.70s (~3.6m)
+  casual: { modeName: 'casual', opponentSpeedZ: -1.2, opponentLiftY: 8.2, targetFlightTime: 3.80, hitTimeWindow: 950 },
+  normal: { modeName: 'normal', opponentSpeedZ: -1.6, opponentLiftY: 7.8, targetFlightTime: 3.20, hitTimeWindow: 800 },
+  pro:    { modeName: 'pro',    opponentSpeedZ: -2.0, opponentLiftY: 7.2, targetFlightTime: 2.70, hitTimeWindow: 650 }
 };
 
 export class OpponentAI {
@@ -93,7 +93,8 @@ export class OpponentAI {
     projectilePos: Vector3D,
     projectileVel: Vector3D,
     courtBounds: { minX: number; maxX: number; minZ: number; maxZ: number },
-    rallyCount = 0
+    rallyCount = 0,
+    playerIncomingSpeed?: number
   ): {
     didHit: boolean;
     hitVelocity: Vector3D | null;
@@ -158,16 +159,16 @@ export class OpponentAI {
       this.position.z += (dz / moveDist) * step;
     }
 
-    // Strike trigger: when shuttlecock enters opponent's court and approaches within reach
+    // Strike trigger: when shuttlecock travels visibly into opponent's court and approaches within reach
     const distToShuttle = Math.hypot(projectilePos.x - this.position.x, projectilePos.z - this.position.z);
-    const inOpponentCourt = projectilePos.z >= 0.4;
+    const inOpponentCourt = projectilePos.z >= 1.2;
 
     const shouldStartWindup =
       isIncoming &&
       this.swingState === 'IDLE' &&
       inOpponentCourt &&
-      distToShuttle <= 2.8 &&
-      projectilePos.y <= 3.4 &&
+      distToShuttle <= 2.5 &&
+      projectilePos.y <= 3.6 &&
       projectilePos.y >= 0.15;
 
     if (shouldStartWindup) {
@@ -182,26 +183,29 @@ export class OpponentAI {
       windupProgress = THREE_CLAMP(1.0 - (this.windupTimer / this.windupDuration), 0, 1);
       this.swingTarget = { ...projectilePos };
 
-      // Strike triggers when windup finishes OR when the shuttlecock gets into hitting reach
-      const inStrikePocket = distToShuttle <= 2.0 && inOpponentCourt;
-      const emergencyFloorHit = projectilePos.y <= 0.70 && distToShuttle <= 2.4 && inOpponentCourt;
-      if (this.windupTimer <= 0 || inStrikePocket || emergencyFloorHit) {
+      // Strike triggers when windup finishes AND the shuttlecock is in realistic racket reach (~1.25m),
+      // OR emergency save if shuttlecock is about to touch the floor before windup finishes
+      const inRacketRange = distToShuttle <= 1.25 && inOpponentCourt;
+      const emergencyFloorHit = projectilePos.y <= 0.60 && distToShuttle <= 1.6 && inOpponentCourt;
+      const readyToStrike = (this.windupTimer <= 0 && inRacketRange) || emergencyFloorHit;
+
+      if (readyToStrike) {
         this.swingState = 'STRIKING';
         this.isSwinging = true;
         this.swingProgress = 0;
         isPreparingSwing = false;
 
         const roll = Math.random();
-        const canSmash = projectilePos.y > 1.95 && projectilePos.z < 4.8;
+        const canSmash = this.config.difficulty !== 'casual' && projectilePos.y > 2.1 && projectilePos.z < 4.2;
         isSmash = canSmash && roll < this.config.smashChance;
-        const isDrop = !isSmash && (roll < 0.22 || (rallyCount >= 4 && roll < 0.35));
+        const isDrop = !isSmash && (this.config.difficulty !== 'casual' && (roll < 0.15 || (rallyCount >= 4 && roll < 0.25)));
 
-        // True shot variety across Casual, Pro, and Legend
+        // Casual focuses on cooperative rally clears that match player speed
         if (isSmash) {
           this.lastShotType = 'smash';
         } else if (isDrop) {
           this.lastShotType = 'drop';
-        } else if (roll < 0.45) {
+        } else if (this.config.difficulty !== 'casual' && roll < 0.35) {
           this.lastShotType = 'drive';
         } else {
           this.lastShotType = 'clear';
@@ -215,7 +219,8 @@ export class OpponentAI {
           0.085,
           9.81,
           undefined,      // minimumNetHeight — auto
-          this.pacingProfile // Pillar B: thread Wii-Sports pacing into physics solver
+          this.pacingProfile, // Pillar B: thread Wii-Sports pacing into physics solver
+          playerIncomingSpeed
         );
         hitTarget = botTarget;
         didHit = true;
@@ -257,24 +262,21 @@ export function getBotTarget(
   shotType: 'drop' | 'clear' | 'drive' | 'smash',
   _difficulty: DifficultyLevel = 'casual'
 ): { x: number; z: number } {
-  // All target Z values strictly inside inner singles court: player z ∈ [-5.2, -2.6]
-  // Lateral: ±0.80m corridor (avoids near-sideline framing issues)
-  const targetX = (Math.random() - 0.5) * 1.60;
+  // Target strictly in front of player's body (player stands at z = -4.2)
+  // Landing zone: z in [-3.5, -3.2] at chest/waist level, within easy reaching volume
+  const targetX = (Math.random() - 0.5) * 1.0;
   let targetZ: number;
   switch (shotType) {
+    case 'drop':
+      // Short net drop: lands in front court (z in [-2.2, -1.8])
+      targetZ = THREE_CLAMP(-2.0 - Math.random() * 0.3, -2.4, -1.8);
+      break;
+    case 'drive':
+    case 'smash':
     case 'clear':
     default:
-      // Deep baseline clear — 4.2 to 5.2m back from net
-      targetZ = THREE_CLAMP(-4.2 - Math.random() * 1.0, -5.2, -4.0);
-      break;
-    case 'smash':
-    case 'drive':
-      // Mid-court — 2.8 to 4.4m back from net
-      targetZ = THREE_CLAMP(-2.8 - Math.random() * 1.4, -4.4, -2.6);
-      break;
-    case 'drop':
-      // Short drop — 2.6 to 3.2m back from net (strictly inside court)
-      targetZ = THREE_CLAMP(-2.6 - Math.random() * 0.6, -3.2, -2.6);
+      // Cooperative rally return: arrives directly in front of player's racket (z in [-3.5, -3.2])
+      targetZ = THREE_CLAMP(-3.35 - Math.random() * 0.25, -3.6, -3.2);
       break;
   }
   return { x: targetX, z: targetZ };
@@ -287,104 +289,73 @@ export function solveLaunchVelocity(
   dragCoeff = 0.085,
   gravity = 9.81,
   minimumNetHeight?: number,
-  pacingProfile?: GamePacingProfile
+  pacingProfile?: GamePacingProfile,
+  playerIncomingSpeed?: number
 ): Vector3D {
-  // Difficulty-aware hang time from pacing profile
-  //   casual  → 2.30s  |  normal  → 2.05s  |  pro  → 1.85s
-  const profileFlightTime = pacingProfile?.targetFlightTime ?? 2.05;
+  // 1. Desired arrival height at the player's strike plane (waist/chest level):
+  const targetY = 1.35;
+  const safeTargetZ = THREE_CLAMP(target.z, -3.6, -2.0);
+  const distZ = safeTargetZ - origin.z; // negative value
+  const distX = target.x - origin.x;
 
-  // ─── Per-shot tactical speed multiplier ────────────────────────────────────────────────────
-  // Range 0.80–1.25: slow defensive touch (0.80) to aggressive fast drive (1.25).
-  // Applied to vz/vx AFTER the base ballistic solve — keeps targetFlightTime stable
-  // so the landing zone stays pinned while speed feel varies organically.
-  const speedMod = 0.80 + Math.random() * 0.45;
-
-  let targetFlightTime: number;
-  let baseVy: number;
-  let apexHeightTarget: number;
-
-  switch (shotType) {
-    case 'smash':
-      targetFlightTime = 0.72;
-      baseVy = 2.9;
-      apexHeightTarget = 1.8;
-      break;
-    case 'drive':
-      targetFlightTime = profileFlightTime * 0.85;
-      baseVy = 4.4;
-      apexHeightTarget = 2.8;
-      break;
-    case 'drop':
-      // Drops always float soft — cap speedMod so they don’t accidentally laser
-      targetFlightTime = profileFlightTime * 0.65;
-      baseVy = 4.0;
-      apexHeightTarget = 2.6;
-      break;
-    case 'clear':
-    default:
-      targetFlightTime = profileFlightTime;
-      baseVy = gravity * targetFlightTime * 0.52;
-      apexHeightTarget = 3.2;
-      break;
-  }
-
-  // Clamp to physically plausible flight window
-  targetFlightTime = THREE_CLAMP(targetFlightTime, 0.55, 3.00);
-
-  // ─── Strict landing clamp: inner singles court only ─────────────────────────────────────
-  // Player court: z ∈ [-5.2, -2.6]; never past the back-baseline or net-short
-  const safeTargetZ = THREE_CLAMP(target.z, -5.2, -2.6);
-  const distZ = safeTargetZ - origin.z;
-  const distX = target.x  - origin.x;
-
-  // Base ballistic solve
-  let vz = distZ / targetFlightTime;
-  let vx = distX / targetFlightTime;
-  let vy = baseVy;
-
-  // Apex height enforcement: vy_min = sqrt(2g * (apexTarget - origin.y))
-  const vyForApex = Math.sqrt(Math.max(0, 2 * gravity * (apexHeightTarget - origin.y)));
-  if (vy < vyForApex) vy = vyForApex;
-
-  // Net clearance at Z = 0
-  const netClearMin = minimumNetHeight ?? 1.70;
-  const distToNet   = Math.abs(origin.z);
-  const tNet        = distToNet / Math.max(0.5, Math.abs(vz));
-  const netY        = origin.y + vy * tNet - 0.5 * gravity * tNet * tNet;
-  if (netY < netClearMin) vy += (netClearMin - netY) * 1.20;
-
-  // ─── Apply speed variety to horizontal components ONLY ────────────────────────────────
-  // Multiplying vz/vx by speedMod after the base solve preserves apex height
-  // and net clearance, while making each shot feel organically faster or slower.
-  // For drops, keep speedMod <= 1.0 so they stay gentle.
-  const effectiveMod = shotType === 'drop' ? Math.min(speedMod, 1.0) : speedMod;
-  vz *= effectiveMod;
-  vx *= effectiveMod;
-
-  // ─── Final velocity bounds ─────────────────────────────────────────────────────────────────
-  // Caps prevent extreme speedMod values from launching out-of-bounds.
-  // Ranges chosen so slow shots are genuinely easy to read and fast shots are
-  // challenging but never unfair.
-  if (shotType === 'smash') {
-    // Smash: the ONE fast shot type — reserved so speed contrast with other shots is felt
-    vz = THREE_CLAMP(vz, -7.5, -5.2);
-    vy = THREE_CLAMP(vy, 2.0, 3.8);
-  } else if (shotType === 'drive') {
-    // Drive: noticeably slower than smash — should feel like a flat but readable push
-    vz = THREE_CLAMP(vz, -4.0, -2.0);
-    vy = THREE_CLAMP(vy, 3.8, 5.6);
-  } else if (shotType === 'drop') {
-    // Drop: soft and short, player has plenty of time to reach
-    vz = THREE_CLAMP(vz, -2.4, -1.2);
-    vy = THREE_CLAMP(vy, 3.4, 5.0);
+  // 2. Flight time calculation:
+  // If player incoming speed is known, scale flight time so return speed matches player's hit speed!
+  let flightTime: number;
+  if (playerIncomingSpeed && playerIncomingSpeed > 2.0) {
+    // Player speed is e.g. 4.5 to 8.5 m/s. Return forward speed matches player's forward carry:
+    const matchedForwardSpeed = THREE_CLAMP(playerIncomingSpeed * 0.58, 3.2, 5.0);
+    flightTime = Math.abs(distZ) / matchedForwardSpeed;
   } else {
-    // Clear: deep floating lob — slowest horizontal speed, highest arc
-    vz = THREE_CLAMP(vz, -3.2, -1.6);
-    vy = THREE_CLAMP(vy, 5.0, 8.2);
+    // Default comfortable rally flight time from pacing profile (1.8s to 2.4s)
+    const baseTime = pacingProfile?.targetFlightTime ?? 2.10;
+    flightTime = shotType === 'drop' ? baseTime * 0.75 : baseTime;
   }
+  // Clamp flight time to comfortable, trackable range
+  flightTime = THREE_CLAMP(flightTime, 1.50, 2.60);
+
+  // 3. Horizontal velocity with aerodynamic drag compensation
+  // Drag deceleration over time reduces effective velocity, so launch speed needs ~1.12x boost
+  const dragFactorZ = 1.0 + 0.5 * dragCoeff * Math.abs(distZ / flightTime) * flightTime * 0.35;
+  let vz = (distZ / flightTime) * dragFactorZ;
+  let vx = (distX / flightTime);
+
+  // 4. Vertical velocity: analytically solved so the shuttle arrives at targetY at time flightTime
+  // y(T) = origin.y + vy * T - 0.5 * g * T^2 = targetY
+  // => vy = (targetY - origin.y + 0.5 * g * T^2) / T
+  // With aerodynamic drag compensation:
+  const halfGTT = 0.5 * gravity * flightTime * flightTime;
+  const dragFactorY = 1.0 + 0.4 * dragCoeff * (halfGTT / flightTime) * 0.25;
+  let vy = ((targetY - origin.y + halfGTT) / flightTime) * dragFactorY;
+
+  // 5. Net Clearance Check at Z = 0:
+  // Ensure the trajectory passes safely over the net tape (netHeight = 1.55m, target min = 1.85m)
+  const distToNet = Math.abs(origin.z);
+  const timeToNet = distToNet / Math.max(0.5, Math.abs(vz));
+  const heightAtNet = origin.y + vy * timeToNet - 0.5 * gravity * timeToNet * timeToNet;
+  const netMin = minimumNetHeight ?? 1.85;
+
+  if (heightAtNet < netMin) {
+    // If clearing the net requires more lift, solve required vy for net clearance
+    const reqVyForNet = (netMin - origin.y + 0.5 * gravity * timeToNet * timeToNet) / timeToNet;
+    vy = Math.max(vy, reqVyForNet + 0.15);
+    // When vy increases, adjust vz so the shuttle still lands right at targetZ and never overshoots!
+    const disc = vy * vy - 2 * gravity * (targetY - origin.y);
+    if (disc > 0) {
+      const correctedT = (vy + Math.sqrt(disc)) / gravity;
+      if (correctedT > 0.5) {
+        vz = (distZ / correctedT) * dragFactorZ;
+      }
+    }
+  }
+
+  // 6. Final safety bounds:
+  // Forward speed vz clamped to [-5.2, -2.8] m/s (10 - 19 km/h) - perfectly matched to player gentle speed!
+  vz = THREE_CLAMP(vz, -5.2, -2.8);
+  vy = THREE_CLAMP(vy, 4.0, 7.5);
+  vx = THREE_CLAMP(vx, -0.65, 0.65);
 
   return {
-    x: THREE_CLAMP(vx, -0.55, 0.55),
+    x: vx,
     y: vy,
     z: vz
   };
