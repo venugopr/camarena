@@ -172,6 +172,7 @@ export class BowlingScene implements IGameScene {
   private powerValEl!: HTMLElement;
   private impactFlashEl!: HTMLElement;
   private strikeBannerEl!: HTMLElement;
+  private lastDialogKey = '';
 
   // ── Score state ──
   private scoreState: GameScoreState = {
@@ -318,8 +319,7 @@ export class BowlingScene implements IGameScene {
     // Enforce Standing Posture Gate for Bowling Execution
     const isStanding = Avatar3D.isFullBodyStanding(motionFrame?.worldLandmarks || []);
     if (!isStanding && this.isPlayerTurn && !this.waitingForReset && !this.matchOver) {
-      this.turnIndicatorEl.innerHTML = '🪑 SEATED/LOW FRAME DETECTED — STAND UP AT APPROACH TO BOWL';
-      this.turnIndicatorEl.style.borderColor = 'rgba(239, 68, 68, 0.8)';
+      this.syncStatusDialog(false);
       this.bowlingPhase = 'IDLE';
       this.liveWindupPower = 0;
       this.updatePowerMeter(0);
@@ -422,6 +422,8 @@ export class BowlingScene implements IGameScene {
       this.camera.position.x += (Math.random() - 0.5) * traumaSq * 0.22;
       this.camera.position.y += (Math.random() - 0.5) * traumaSq * 0.22;
     }
+
+    this.syncStatusDialog(isStanding);
 
     this.renderer.render(this.scene, this.camera);
   }
@@ -970,27 +972,16 @@ export class BowlingScene implements IGameScene {
     this.strikeBannerEl.textContent = '⚡ STRIKE! ⚡';
     this.container.appendChild(this.strikeBannerEl);
 
-    // Turn indicator
+    // Turn indicator / Status Dialogue Box (docked top-right via #bowling-turn CSS)
     this.turnIndicatorEl = document.createElement('div');
     this.turnIndicatorEl.id = 'bowling-turn';
-    this.turnIndicatorEl.style.cssText = `
-      position: absolute; bottom: 100px; left: 50%; transform: translateX(-50%);
-      background: rgba(10, 0, 20, 0.92); border: 1px solid rgba(136, 0, 255, 0.5);
-      border-radius: 999px; padding: 10px 28px; font-family: 'Outfit', 'Inter', sans-serif;
-      font-size: 15px; color: #fff; font-weight: 600; letter-spacing: 1px;
-      backdrop-filter: blur(8px); z-index: 30; text-align: center; min-width: 280px;
-    `;
+    this.turnIndicatorEl.className = 'state-position';
     this.container.appendChild(this.turnIndicatorEl);
 
-    // Aim guide / controls hint (100% motion-driven, no keys)
+    // Aim guide / controls hint (hidden — replaced by top-right status dialogue)
     this.aimGuideEl = document.createElement('div');
     this.aimGuideEl.id = 'bowling-aim';
-    this.aimGuideEl.style.cssText = `
-      position: absolute; bottom: 160px; left: 50%; transform: translateX(-50%);
-      color: rgba(136, 0, 255, 0.85); font-family: 'Outfit', 'Inter', sans-serif;
-      font-size: 12px; letter-spacing: 2px; text-align: center; z-index: 30;
-    `;
-    this.aimGuideEl.textContent = '🔄 RAISE / PULL HAND BACK TO CHARGE BOWL';
+    this.aimGuideEl.style.display = 'none';
     this.container.appendChild(this.aimGuideEl);
 
     // Camera view button
@@ -1635,36 +1626,126 @@ export class BowlingScene implements IGameScene {
       </table>
     `;
 
-    if (this.readyWaitTimer > 0) {
-      const secs = Math.ceil(this.readyWaitTimer);
-      this.turnIndicatorEl.innerHTML = `⏳ GET READY (${secs}s) — POSITION & RESET STANCE`;
-      this.turnIndicatorEl.style.borderColor = 'rgba(245, 158, 11, 0.7)';
-    } else if (this.matchOver) {
+    this.syncStatusDialog();
+    this.updatePinRack();
+  }
+
+  private updateStatusDialog(
+    state: 'position' | 'ready' | 'cocked' | 'alert' | 'ai' | 'over',
+    title: string,
+    desc: string,
+    tag = 'BOWLER STATUS'
+  ): void {
+    if (!this.turnIndicatorEl) return;
+    const key = `${state}|${title}|${desc}|${tag}`;
+    if (this.lastDialogKey === key) return;
+    this.lastDialogKey = key;
+
+    this.turnIndicatorEl.className = `state-${state}`;
+    const dotColor =
+      state === 'ready' ? '#00f2fe' :
+      state === 'position' ? '#f59e0b' :
+      state === 'cocked' ? '#ec4899' :
+      state === 'alert' ? '#ef4444' :
+      state === 'ai' ? '#ff4488' : '#10b981';
+
+    this.turnIndicatorEl.innerHTML = `
+      <div class="bowling-status-tag">
+        <span class="status-dot" style="background: ${dotColor}; box-shadow: 0 0 8px ${dotColor};"></span>
+        <span>${tag}</span>
+      </div>
+      <div class="bowling-status-title">${title}</div>
+      <div class="bowling-status-desc">${desc}</div>
+    `;
+  }
+
+  private syncStatusDialog(isStanding = true): void {
+    if (this.matchOver) {
+      const { runningTotal: pt } = calcFrameScore(this.playerFrames);
+      const { runningTotal: at } = calcFrameScore(this.aiFrames);
       const pTotal = pt[pt.length - 1] ?? 0;
       const aTotal = at[at.length - 1] ?? 0;
       const won = pTotal > aTotal;
       const tied = pTotal === aTotal;
-      this.turnIndicatorEl.innerHTML = `
-        ${won ? '🏆' : tied ? '🤝' : '😔'} MATCH COMPLETE &nbsp;·&nbsp;
-        You: <strong>${pTotal}/300</strong> &nbsp;·&nbsp; AI: <strong>${aTotal}/300</strong>
-        &nbsp;·&nbsp; ${won ? '🎉 YOU WIN!' : tied ? 'TIE!' : '🤖 AI WINS'}
-      `;
-      this.turnIndicatorEl.style.borderColor = won ? 'rgba(68,255,136,0.6)' : tied ? 'rgba(200,200,60,0.6)' : 'rgba(255,68,68,0.6)';
-    } else if (this.startGraceTimer > 0) {
-      this.turnIndicatorEl.innerHTML = `🎯 GET READY &nbsp;·&nbsp; PULL BACK & SWEEP FORWARD TO BOWL`;
-      this.turnIndicatorEl.style.borderColor = 'rgba(0,242,254,0.7)';
-    } else if (!this.isPlayerTurn) {
-      const frameInfo = `Frame ${Math.min(this.currentFrame + 1, 10)} / 10`;
-      const phase = this.aiAimGroup !== null ? '🎯 AIMING...' : '⏳ STEPPING UP...';
-      this.turnIndicatorEl.innerHTML = `🤖 AI ${phase} &nbsp;·&nbsp; ${frameInfo} &nbsp;·&nbsp; ${this.pinsUpCount} pins up`;
-      this.turnIndicatorEl.style.borderColor = 'rgba(255,68,136,0.5)';
-    } else {
-      const frameInfo = `Frame ${Math.min(this.currentFrame + 1, 10)} / 10`;
-      const rollInfo = this.rollInFrame === 0 ? '1st Ball' : '2nd Ball';
-      this.turnIndicatorEl.innerHTML = `🎳 YOUR TURN &nbsp;·&nbsp; ${frameInfo} &nbsp;·&nbsp; ${rollInfo} &nbsp;·&nbsp; ${this.pinsUpCount} pins up`;
-      this.turnIndicatorEl.style.borderColor = 'rgba(136,0,255,0.5)';
+      this.updateStatusDialog(
+        'over',
+        won ? '🎉 YOU WIN!' : tied ? '🤝 TIE!' : '🤖 AI WINS',
+        `Final Score: You ${pTotal} / AI ${aTotal}`,
+        'MATCH COMPLETE'
+      );
+      return;
     }
 
-    this.updatePinRack();
+    if (!this.isPlayerTurn) {
+      const frameInfo = `Frame ${Math.min(this.currentFrame + 1, 10)} / 10`;
+      const phase = this.aiAimGroup !== null ? 'AI Aiming...' : 'AI Stepping Up...';
+      this.updateStatusDialog(
+        'ai',
+        'AI Turn',
+        `${phase} (${frameInfo}) · ${this.pinsUpCount} pins up`,
+        'OPPONENT'
+      );
+      return;
+    }
+
+    if (this.ball?.active) {
+      this.updateStatusDialog(
+        'ready',
+        'Ball In Play',
+        'Tracking ball down the lane toward pins...',
+        'IN PLAY'
+      );
+      return;
+    }
+
+    if (this.readyWaitTimer > 0 || this.waitingForReset) {
+      const secs = Math.ceil(this.readyWaitTimer);
+      this.updateStatusDialog(
+        'position',
+        'Take Position',
+        secs > 0 ? `Resetting pins... get ready in ${secs}s` : 'Step up to the approach & stand in position.',
+        'GET READY'
+      );
+      return;
+    }
+
+    if (this.startGraceTimer > 0) {
+      this.updateStatusDialog(
+        'position',
+        'Take Position',
+        'Step onto the approach and align your stance.',
+        'GET READY'
+      );
+      return;
+    }
+
+    if (!isStanding) {
+      this.updateStatusDialog(
+        'position',
+        'Take Position',
+        'Please stand up at the approach to bowl.',
+        'POSTURE REQUIRED'
+      );
+      return;
+    }
+
+    if (this.bowlingPhase === 'COCKED') {
+      this.updateStatusDialog(
+        'cocked',
+        'Swing Forward!',
+        'Arm cocked — sweep through forward and down to roll!',
+        'POWER LOADED'
+      );
+      return;
+    }
+
+    // Player standing, approach clear, ready to bowl!
+    const rollInfo = this.rollInFrame === 0 ? '1st Ball' : '2nd Ball';
+    this.updateStatusDialog(
+      'ready',
+      'Ready',
+      `Ready to roll the ball (${rollInfo}). Cock arm back & swing forward!`,
+      'READY TO BOWL'
+    );
   }
 }

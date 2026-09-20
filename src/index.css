@@ -1932,7 +1932,7 @@ html, body {
 }
 
 #btn-bowling-camera-view {
-  top: 88px;
+  top: 232px;
   right: 24px;
 }
 
@@ -1955,6 +1955,100 @@ html, body {
   box-shadow: 0 4px 30px rgba(136, 0, 255, 0.3);
   z-index: 30;
   box-sizing: border-box;
+}
+
+/* ─── Bowling Status / Dialogue Box (Top-Right) ────────────────────────── */
+#bowling-turn {
+  position: absolute;
+  top: 72px;
+  right: 24px;
+  width: 350px;
+  background: rgba(10, 0, 20, 0.92);
+  backdrop-filter: blur(16px);
+  border: 2px solid rgba(136, 0, 255, 0.5);
+  border-radius: 16px;
+  padding: 16px 20px;
+  box-shadow: 0 10px 36px rgba(0, 0, 0, 0.8), 0 0 24px rgba(136, 0, 255, 0.25);
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  user-select: none;
+  box-sizing: border-box;
+  transition: border-color 0.25s ease, box-shadow 0.25s ease;
+}
+
+#bowling-turn.state-position {
+  border-color: rgba(245, 158, 11, 0.85);
+  box-shadow: 0 10px 36px rgba(0, 0, 0, 0.8), 0 0 28px rgba(245, 158, 11, 0.35);
+}
+
+#bowling-turn.state-ready {
+  border-color: rgba(0, 242, 254, 0.9);
+  box-shadow: 0 10px 36px rgba(0, 0, 0, 0.8), 0 0 30px rgba(0, 242, 254, 0.4);
+  animation: readyGlowPulse 1.8s ease-in-out infinite alternate;
+}
+
+#bowling-turn.state-cocked {
+  border-color: rgba(236, 72, 153, 0.9);
+  box-shadow: 0 10px 36px rgba(0, 0, 0, 0.8), 0 0 30px rgba(236, 72, 153, 0.45);
+}
+
+#bowling-turn.state-alert {
+  border-color: rgba(239, 68, 68, 0.9);
+  box-shadow: 0 10px 36px rgba(0, 0, 0, 0.8), 0 0 24px rgba(239, 68, 68, 0.4);
+}
+
+#bowling-turn.state-ai {
+  border-color: rgba(255, 68, 136, 0.8);
+  box-shadow: 0 10px 36px rgba(0, 0, 0, 0.8), 0 0 26px rgba(255, 68, 136, 0.35);
+}
+
+#bowling-turn.state-over {
+  border-color: rgba(16, 185, 129, 0.9);
+  box-shadow: 0 10px 36px rgba(0, 0, 0, 0.8), 0 0 28px rgba(16, 185, 129, 0.4);
+}
+
+@keyframes readyGlowPulse {
+  0% { box-shadow: 0 10px 36px rgba(0, 0, 0, 0.8), 0 0 18px rgba(0, 242, 254, 0.3); }
+  100% { box-shadow: 0 10px 36px rgba(0, 0, 0, 0.8), 0 0 32px rgba(0, 242, 254, 0.6); }
+}
+
+.bowling-status-tag {
+  font-family: var(--font-mono, monospace);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 1.8px;
+  text-transform: uppercase;
+  color: rgba(216, 180, 254, 0.85);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.bowling-status-tag .status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--primary-cyan, #00f2fe);
+  box-shadow: 0 0 10px currentColor;
+}
+
+.bowling-status-title {
+  font-family: 'Outfit', 'Inter', sans-serif;
+  font-size: 32px;
+  font-weight: 900;
+  letter-spacing: 0.5px;
+  color: #fff;
+  line-height: 1.15;
+}
+
+.bowling-status-desc {
+  font-family: 'Outfit', 'Inter', sans-serif;
+  font-size: 16px;
+  font-weight: 500;
+  color: rgba(241, 245, 249, 0.92);
+  line-height: 1.4;
 }
 
 /* ─── Bowling 10-Pin Mini-Rack HUD (Centered Directly Over Bowling Track) ──── */
