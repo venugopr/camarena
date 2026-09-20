@@ -5,7 +5,7 @@ import {
   Landmark3D,
   PoseLandmark,
   Vector3D
-} from './Types';
+} from '../../common/Types';
 import { Math3D, LocalBodyBasis } from './VectorNormalizer';
 
 export interface ActionClassifierConfig {

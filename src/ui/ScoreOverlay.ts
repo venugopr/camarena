@@ -1,5 +1,5 @@
-import { GameScoreState } from '../core/scene/IGameScene';
-import { GameSceneManager } from '../core/scene/GameSceneManager';
+import { GameScoreState } from '../common/IGameScene';
+import { GameSceneManager } from '../common/GameSceneManager';
 
 export class ScoreOverlay {
   private container: HTMLElement;

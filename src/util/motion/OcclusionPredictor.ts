@@ -1,4 +1,4 @@
-import { Landmark3D, Vector3D, PoseLandmark } from './Types';
+import { Landmark3D, Vector3D, PoseLandmark } from '../../common/Types';
 import { Math3D } from './VectorNormalizer';
 
 interface TrackedJointState {

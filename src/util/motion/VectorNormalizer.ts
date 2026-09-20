@@ -3,7 +3,7 @@ import {
   Vector3D,
   PoseLandmark,
   BiomechanicalMetrics
-} from './Types';
+} from '../../common/Types';
 
 /**
  * 3D Vector Math Utilities

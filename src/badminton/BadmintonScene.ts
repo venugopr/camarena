@@ -1,10 +1,10 @@
 import * as THREE from 'three';
-import { IGameScene, GameScoreState } from '../core/scene/IGameScene';
-import { GameModeId, OpponentMode, DifficultyLevel, MotionFrame, ActionEvent } from '../core/motion/Types';
-import { SoundSynthesizer } from '../core/audio/SoundSynthesizer';
-import { Avatar3D } from './components/Avatar3D';
-import { OpponentAI, getBotTarget, solveLaunchVelocity } from '../core/multiplayer/OpponentAI';
-import { VectorNormalizer } from '../core/motion/VectorNormalizer';
+import { IGameScene, GameScoreState } from '../common/IGameScene';
+import { GameModeId, OpponentMode, DifficultyLevel, MotionFrame, ActionEvent } from '../common/Types';
+import { SoundSynthesizer } from '../util/audio/SoundSynthesizer';
+import { Avatar3D } from './Avatar3D';
+import { OpponentAI, getBotTarget, solveLaunchVelocity } from '../util/ai/OpponentAI';
+import { VectorNormalizer } from '../util/motion/VectorNormalizer';
 
 export class BadmintonScene implements IGameScene {
   public readonly id: GameModeId = 'badminton';

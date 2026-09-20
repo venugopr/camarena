@@ -1,17 +1,20 @@
 import './index.css';
-import { PoseTracker } from './core/motion/PoseTracker';
-import { SoundSynthesizer } from './core/audio/SoundSynthesizer';
-import { GameSceneManager } from './core/scene/GameSceneManager';
+import { PoseTracker } from './util/motion/PoseTracker';
+import { SoundSynthesizer } from './util/audio/SoundSynthesizer';
+import { GameSceneManager } from './common/GameSceneManager';
 import { MotionHUD } from './ui/MotionHUD';
 import { MenuUI } from './ui/MenuUI';
 import { ScoreOverlay } from './ui/ScoreOverlay';
 import { MainMenuUI } from './ui/MainMenuUI';
 
-// Scenes
-import { BadmintonScene } from './scenes/BadmintonScene';
-import { TableTennisScene } from './scenes/TableTennisScene';
+// Scenes — all sports
+import { BowlingScene } from './bowling/BowlingScene';
+import { BoxingScene } from './boxing/BoxingScene';
+import { TableTennisScene } from './tabletennis/TableTennisScene';
+import { TennisScene } from './tennis/TennisScene';
+import { BadmintonScene } from './badminton/BadmintonScene';
 import { SandboxScene } from './scenes/SandboxScene';
-import { MotionFrame } from './core/motion/Types';
+import { MotionFrame } from './common/Types';
 
 // ─── Playwright / Dev Debug Bridge ─────────────────────────────────────────────
 // window.__camarena is intentionally set in all environments so Playwright tests
@@ -40,10 +43,13 @@ async function bootstrap() {
   const tracker = new PoseTracker();
   const sceneManager = new GameSceneManager(viewportContainer, audio);
 
-  // 2. Register Game Scenes — keep a direct reference to badmintonScene for the debug bridge
+  // 2. Register Game Scenes — all 6 sports
   const badmintonScene = new BadmintonScene();
-  sceneManager.registerScene(badmintonScene);
+  sceneManager.registerScene(new BowlingScene());
+  sceneManager.registerScene(new BoxingScene());
   sceneManager.registerScene(new TableTennisScene());
+  sceneManager.registerScene(new TennisScene());
+  sceneManager.registerScene(badmintonScene);
   sceneManager.registerScene(new SandboxScene());
 
   // 3. Mount UI Layers
@@ -64,6 +70,7 @@ async function bootstrap() {
   });
 
   tracker.onGesturePause(() => {
+    if (sceneManager.getActiveSceneId() === 'bowling') return;
     sceneManager.togglePause();
   });
 
@@ -76,7 +83,7 @@ async function bootstrap() {
     () => motionHud.getVideoElement()
   );
 
-  // Show Main Menu immediately on boot
+  // Show Main Menu immediately on boot — Bowling is pre-selected as default
   mainMenu.show();
 
   // Listen for Return to Main Menu events
@@ -115,7 +122,7 @@ async function bootstrap() {
     tracker,
   };
 
-  console.log('⚡ CamArena Sports Motion Tracking Platform Initialized — Main Menu Active!');
+  console.log('⚡ CamArena Sports Motion Tracking Platform Initialized — Main Menu Active! (6 Sports Ready)');
 }
 
 window.addEventListener('DOMContentLoaded', bootstrap);

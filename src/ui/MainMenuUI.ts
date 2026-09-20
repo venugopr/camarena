@@ -1,7 +1,7 @@
-import { GameSceneManager } from '../core/scene/GameSceneManager';
-import { PoseTracker } from '../core/motion/PoseTracker';
-import { SoundSynthesizer } from '../core/audio/SoundSynthesizer';
-import { GameModeId, OpponentMode, DifficultyLevel } from '../core/motion/Types';
+import { GameSceneManager } from '../common/GameSceneManager';
+import { PoseTracker } from '../util/motion/PoseTracker';
+import { SoundSynthesizer } from '../util/audio/SoundSynthesizer';
+import { GameModeId, OpponentMode, DifficultyLevel } from '../common/Types';
 
 export interface MatchSelectionConfig {
   sport: GameModeId;
@@ -23,7 +23,7 @@ export class MainMenuUI {
   private overlayEl!: HTMLElement;
 
   // Selected State
-  private selectedSport: GameModeId = 'badminton';
+  private selectedSport: GameModeId = 'bowling';
   private selectedOpponent: OpponentMode = 'system';
   private selectedDifficulty: DifficultyLevel = 'casual';
   private selectedTargetScore: number = 11;
@@ -108,19 +108,36 @@ export class MainMenuUI {
           </div>
           <div class="sport-grid">
             
-            <div class="sport-card active" data-sport="badminton">
+            <div class="sport-card active" data-sport="bowling">
               <div class="sport-card-glow"></div>
               <div class="sport-icon-wrap">
-                <span class="sport-icon">🏸</span>
+                <span class="sport-icon">🎳</span>
               </div>
               <div class="sport-info">
                 <div class="sport-name-row">
-                  <h3 class="sport-name">Badminton 3D</h3>
-                  <span class="sport-status-badge">HIGH VELOCITY</span>
+                  <h3 class="sport-name">Arcade Bowling 3D</h3>
+                  <span class="sport-status-badge bowling">PHASE 1</span>
                 </div>
-                <p class="sport-desc">High-altitude smashes, drop shots, court mobility, and realistic 3D shuttlecock drag physics.</p>
+                <p class="sport-desc">Motion-controlled bowling with real gravity physics, 10-pin collisions, full frame scoring, and an AI opponent.</p>
                 <div class="sport-equipment-preview">
-                  <span class="equip-dot"></span> Virtual Isometric Racket on Hand
+                  <span class="equip-dot bowling"></span> Gesture-Released Bowling Ball
+                </div>
+              </div>
+            </div>
+
+            <div class="sport-card" data-sport="boxing">
+              <div class="sport-card-glow"></div>
+              <div class="sport-icon-wrap">
+                <span class="sport-icon">🥊</span>
+              </div>
+              <div class="sport-info">
+                <div class="sport-name-row">
+                  <h3 class="sport-name">Fitness Boxing</h3>
+                  <span class="sport-status-badge soon">PHASE 2</span>
+                </div>
+                <p class="sport-desc">Target-pad combo training with jab, cross, hook, and uppercut detection via full-body pose tracking.</p>
+                <div class="sport-equipment-preview">
+                  <span class="equip-dot soon"></span> Virtual Boxing Gloves — Coming Soon
                 </div>
               </div>
             </div>
@@ -138,6 +155,40 @@ export class MainMenuUI {
                 <p class="sport-desc">Lightning-fast table bounces, curved topspin deflections, and precision angle paddle placement.</p>
                 <div class="sport-equipment-preview">
                   <span class="equip-dot pingpong"></span> Virtual Rubber Blade Paddle on Hand
+                </div>
+              </div>
+            </div>
+
+            <div class="sport-card" data-sport="tennis">
+              <div class="sport-card-glow"></div>
+              <div class="sport-icon-wrap">
+                <span class="sport-icon">🎾</span>
+              </div>
+              <div class="sport-info">
+                <div class="sport-name-row">
+                  <h3 class="sport-name">Tennis 3D</h3>
+                  <span class="sport-status-badge soon">COURTSIDE</span>
+                </div>
+                <p class="sport-desc">Full-court rallies with serve mechanics, topspin physics, and a reactive AI opponent on a 3D hardcourt.</p>
+                <div class="sport-equipment-preview">
+                  <span class="equip-dot soon"></span> Virtual Tennis Racket — Coming Soon
+                </div>
+              </div>
+            </div>
+
+            <div class="sport-card" data-sport="badminton">
+              <div class="sport-card-glow"></div>
+              <div class="sport-icon-wrap">
+                <span class="sport-icon">🏸</span>
+              </div>
+              <div class="sport-info">
+                <div class="sport-name-row">
+                  <h3 class="sport-name">Badminton 3D Pro</h3>
+                  <span class="sport-status-badge">HIGH VELOCITY</span>
+                </div>
+                <p class="sport-desc">High-altitude smashes, drop shots, court mobility, and realistic 3D shuttlecock drag physics.</p>
+                <div class="sport-equipment-preview">
+                  <span class="equip-dot"></span> Virtual Isometric Racket on Hand
                 </div>
               </div>
             </div>
@@ -287,7 +338,7 @@ export class MainMenuUI {
         <!-- 3. LAUNCH FOOTER -->
         <footer class="menu-footer">
           <div class="menu-rules-reminder" id="menu-rules-summary">
-            📋 Selected: <strong>Badminton 3D</strong> • Vs. AI (Casual) • Target: 11 pts (Win by 2)
+            📋 Selected: <strong>Arcade Bowling 3D</strong> • Vs. AI (Casual) • Target: 10 frames
           </div>
           <button class="launch-btn" id="btn-launch-match">
             <span class="launch-glow"></span>
@@ -456,12 +507,15 @@ export class MainMenuUI {
     const summary = this.overlayEl.querySelector('#menu-rules-summary');
     if (!summary) return;
 
-    const sportLabel =
-      this.selectedSport === 'badminton'
-        ? 'Badminton 3D'
-        : this.selectedSport === 'tabletennis'
-          ? 'Table Tennis 3D'
-          : 'Motion Sandbox';
+    const sportLabels: Partial<Record<GameModeId, string>> = {
+      bowling:     'Arcade Bowling 3D',
+      boxing:      'Fitness Boxing',
+      tabletennis: 'Table Tennis 3D',
+      tennis:      'Tennis 3D',
+      badminton:   'Badminton 3D',
+      sandbox:     'Motion Mirror',
+    };
+    const sportLabel = sportLabels[this.selectedSport] ?? this.selectedSport;
 
     const oppLabel =
       this.selectedOpponent === 'system'
@@ -473,8 +527,13 @@ export class MainMenuUI {
     const handLabel = this.selectedHand === 'right' ? 'Right-Handed' : 'Left-Handed';
     const trackLabel = this.useWebcam ? 'Webcam Pose Tracking' : 'Motion Simulator';
 
+    const isBowling = this.selectedSport === 'bowling';
+    const scoreInfo = isBowling
+      ? '10 Frames'
+      : `Target: <strong>${this.selectedTargetScore} pts</strong> (Win by 2)`;
+
     summary.innerHTML = `
-      📋 Selected: <strong>${sportLabel}</strong> • ${oppLabel} • ${handLabel} • Target: <strong>${this.selectedTargetScore} pts</strong> (Win by 2) • ${trackLabel}
+      📋 Selected: <strong>${sportLabel}</strong> • ${oppLabel} • ${handLabel} • ${scoreInfo} • ${trackLabel}
     `;
   }
 
@@ -520,9 +579,16 @@ export class MainMenuUI {
     // 4. Update top nav tab buttons
     const navTabs = document.querySelectorAll('.game-tab-btn');
     navTabs.forEach((tab) => {
-      const isCurrent = tab.textContent?.toLowerCase().includes(
-        config.sport === 'badminton' ? 'badminton' : config.sport === 'tabletennis' ? 'table tennis' : 'motion mirror'
-      );
+      const tabSportMap: Record<string, string> = {
+        bowling:     'bowling',
+        boxing:      'boxing',
+        tabletennis: 'table tennis',
+        tennis:      'tennis 3d',
+        badminton:   'badminton',
+        sandbox:     'motion mirror',
+      };
+      const matchStr = tabSportMap[config.sport] ?? '';
+      const isCurrent = tab.textContent?.toLowerCase().includes(matchStr);
       if (isCurrent) {
         tab.classList.add('active');
       } else {

@@ -1,7 +1,7 @@
-import { MotionFrame, ActionEvent, PoseLandmark, GameModeId } from '../core/motion/Types';
-import { PoseTracker } from '../core/motion/PoseTracker';
-import { SKELETON_CONNECTIONS } from '../scenes/components/Avatar3D';
-import { GameSceneManager } from '../core/scene/GameSceneManager';
+import { MotionFrame, ActionEvent, PoseLandmark, GameModeId } from '../common/Types';
+import { PoseTracker } from '../util/motion/PoseTracker';
+import { SKELETON_CONNECTIONS } from '../badminton/Avatar3D';
+import { GameSceneManager } from '../common/GameSceneManager';
 
 export class MotionHUD {
   private container: HTMLElement;

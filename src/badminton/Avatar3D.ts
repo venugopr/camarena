@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { Landmark3D, PoseLandmark, Vector3D } from '../../core/motion/Types';
+import { Landmark3D, PoseLandmark, Vector3D } from '../common/Types';
 
 // Standard 33-landmark skeleton connection pairs
 export const SKELETON_CONNECTIONS: [number, number][] = [
@@ -646,21 +646,25 @@ export class Avatar3D {
     const rightHip = landmarks[PoseLandmark.RIGHT_HIP];
     const leftAnkle = landmarks[PoseLandmark.LEFT_ANKLE];
     const rightAnkle = landmarks[PoseLandmark.RIGHT_ANKLE];
+    const leftKnee = landmarks[PoseLandmark.LEFT_KNEE];
+    const rightKnee = landmarks[PoseLandmark.RIGHT_KNEE];
 
     // Visibility gate: hips must have good visibility
-    const hipVis = ((leftHip.visibility ?? 1) + (rightHip.visibility ?? 1)) * 0.5;
-    if (hipVis < 0.65) return false;
+    const hipVis = ((leftHip?.visibility ?? 1) + (rightHip?.visibility ?? 1)) * 0.5;
+    if (hipVis < 0.50) return false;
 
-    // Presence/visibility of lower body: if ankles are completely out of view, user is seated
+    // Presence/visibility of lower body: require confident ankle visibility
     const ankleVis = ((leftAnkle?.visibility ?? 0) + (rightAnkle?.visibility ?? 0)) * 0.5;
-    if (ankleVis < 0.25) return false;
+    if (ankleVis < 0.35) return false;
 
     // Close-up check: shoulder width in camera space
     const leftShoulder = landmarks[PoseLandmark.LEFT_SHOULDER];
     const rightShoulder = landmarks[PoseLandmark.RIGHT_SHOULDER];
-    const shoulderSpan = Math.abs(rightShoulder.x - leftShoulder.x);
-    // If shoulders span > 0.55 of the frame, user is sitting too close to camera
-    if (shoulderSpan > 0.55) return false;
+    if (leftShoulder && rightShoulder) {
+      const shoulderSpan = Math.abs(rightShoulder.x - leftShoulder.x);
+      // If shoulders span > 0.55 of the frame, user is sitting too close to camera
+      if (shoulderSpan > 0.55) return false;
+    }
 
     return true;
   }

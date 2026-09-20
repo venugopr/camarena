@@ -4,7 +4,7 @@ import {
   PoseLandmark,
   Vector3D,
   ActionEvent
-} from './Types';
+} from '../../common/Types';
 import { PoseFilterBank } from './OneEuroFilter';
 import { VectorNormalizer } from './VectorNormalizer';
 import { OcclusionPredictor } from './OcclusionPredictor';

@@ -1,4 +1,4 @@
-import { Vector3D } from './Types';
+import { Vector3D } from '../../common/Types';
 
 /**
  * Low-pass filter component for 1-Euro Filter

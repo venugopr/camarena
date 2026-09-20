@@ -1,7 +1,7 @@
-import { GameSceneManager } from '../core/scene/GameSceneManager';
-import { PoseTracker } from '../core/motion/PoseTracker';
-import { SoundSynthesizer } from '../core/audio/SoundSynthesizer';
-import { GameModeId, OpponentMode, DifficultyLevel } from '../core/motion/Types';
+import { GameSceneManager } from '../common/GameSceneManager';
+import { PoseTracker } from '../util/motion/PoseTracker';
+import { SoundSynthesizer } from '../util/audio/SoundSynthesizer';
+import { GameModeId, OpponentMode, DifficultyLevel } from '../common/Types';
 
 export class MenuUI {
   private container: HTMLElement;
@@ -72,23 +72,30 @@ export class MenuUI {
     // 1c. Current Sport Pill (shown in active match)
     this.currentSportPill = document.createElement('div');
     this.currentSportPill.className = 'current-sport-pill';
-    this.currentSportPill.innerHTML = '<span class="sport-icon">🏸</span><span class="sport-name">BADMINTON 3D</span>';
+    this.currentSportPill.innerHTML = '<span class="sport-icon">🎳</span><span class="sport-name">ARCADE BOWLING</span>';
     nav.appendChild(this.currentSportPill);
 
-    // 2. Game Mode Tabs
+    // 2. Game Mode Tabs — all 6 sports
     const tabs = document.createElement('div');
     tabs.className = 'game-tabs';
 
-    const gameOptions: { id: GameModeId; label: string; icon: string }[] = [
-      { id: 'badminton', label: 'Badminton 3D', icon: '🏸' },
-      { id: 'tabletennis', label: 'Table Tennis 3D', icon: '🏓' },
-      { id: 'sandbox', label: 'Motion Mirror', icon: '🪞' }
+    const gameOptions: { id: GameModeId; label: string; icon: string; badge?: string }[] = [
+      { id: 'bowling',     label: 'Bowling',      icon: '🎳', badge: 'NEW' },
+      { id: 'boxing',      label: 'Boxing',        icon: '🥊', badge: 'SOON' },
+      { id: 'tabletennis', label: 'Table Tennis',  icon: '🏓' },
+      { id: 'tennis',      label: 'Tennis 3D',     icon: '🎾', badge: 'SOON' },
+      { id: 'badminton',   label: 'Badminton',     icon: '🏸' },
+      { id: 'sandbox',     label: 'Motion Mirror', icon: '🪞' },
     ];
 
     for (const opt of gameOptions) {
       const btn = document.createElement('button');
-      btn.className = `game-tab-btn ${opt.id === 'badminton' ? 'active' : ''}`;
-      btn.innerHTML = `<span>${opt.icon}</span><span>${opt.label}</span>`;
+      btn.className = `game-tab-btn ${opt.id === 'bowling' ? 'active' : ''}`;
+      btn.innerHTML = `
+        <span>${opt.icon}</span>
+        <span>${opt.label}</span>
+        ${opt.badge ? `<span class="tab-badge ${opt.badge === 'SOON' ? 'tab-badge-soon' : 'tab-badge-new'}">${opt.badge}</span>` : ''}
+      `;
       btn.onclick = () => {
         this.selectGame(opt.id);
       };
@@ -267,6 +274,7 @@ export class MenuUI {
     this.sceneManager.onSceneChange((sceneId) => {
       this.isGameOver = false;
       this.updateSportPill(sceneId);
+      this.updateTabActive(sceneId);
       this.updateInMatchState();
     });
 
@@ -291,14 +299,24 @@ export class MenuUI {
     this.updateInMatchState();
   }
 
+  private readonly sportMeta: Record<GameModeId, { icon: string; name: string }> = {
+    bowling:     { icon: '🎳', name: 'ARCADE BOWLING' },
+    boxing:      { icon: '🥊', name: 'FITNESS BOXING' },
+    tabletennis: { icon: '🏓', name: 'TABLE TENNIS 3D' },
+    tennis:      { icon: '🎾', name: 'TENNIS 3D' },
+    badminton:   { icon: '🏸', name: 'BADMINTON 3D' },
+    sandbox:     { icon: '🪞', name: 'MOTION MIRROR' },
+  };
+
   private updateSportPill(sceneId: GameModeId): void {
     if (!this.currentSportPill) return;
-    if (sceneId === 'badminton') {
-      this.currentSportPill.innerHTML = '<span class="sport-icon">🏸</span><span class="sport-name">BADMINTON 3D</span>';
-    } else if (sceneId === 'tabletennis') {
-      this.currentSportPill.innerHTML = '<span class="sport-icon">🏓</span><span class="sport-name">TABLE TENNIS 3D</span>';
-    } else {
-      this.currentSportPill.innerHTML = '<span class="sport-icon">🪞</span><span class="sport-name">MOTION MIRROR</span>';
+    const meta = this.sportMeta[sceneId] ?? { icon: '🎮', name: sceneId.toUpperCase() };
+    this.currentSportPill.innerHTML = `<span class="sport-icon">${meta.icon}</span><span class="sport-name">${meta.name}</span>`;
+  }
+
+  private updateTabActive(sceneId: GameModeId): void {
+    for (const [id, btn] of this.tabButtons) {
+      btn.classList.toggle('active', id === sceneId);
     }
   }
 
@@ -322,7 +340,7 @@ export class MenuUI {
   private updateInMatchState(): void {
     if (!this.navEl) return;
     const activeId = this.sceneManager.getActiveSceneId();
-    const isCompetitive = activeId === 'badminton' || activeId === 'tabletennis';
+    const isCompetitive = activeId === 'badminton' || activeId === 'tabletennis' || activeId === 'bowling';
 
     const shouldBeInMatch = isCompetitive && !this.isPaused && !this.isGameOver && !this.isMainMenuOpen;
 
@@ -344,4 +362,3 @@ export class MenuUI {
     this.sceneManager.switchScene(gameId);
   }
 }
-

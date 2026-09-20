@@ -1,4 +1,4 @@
-import { ActionEvent, MotionFrame } from '../motion/Types';
+import { ActionEvent, MotionFrame } from './Types';
 
 export interface P2PPacket {
   type: 'motion' | 'action' | 'score' | 'ping' | 'ready';

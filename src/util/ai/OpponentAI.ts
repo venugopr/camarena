@@ -1,4 +1,4 @@
-import { DifficultyLevel, Vector3D } from '../motion/Types';
+import { DifficultyLevel, Vector3D } from '../../common/Types';
 
 export interface OpponentConfig {
   difficulty: DifficultyLevel;
@@ -33,7 +33,7 @@ export class OpponentAI {
   private homePosition: Vector3D;
   private moveReactionTimer = 0;
   private targetPosition: Vector3D;
-  private pacingProfile!: GamePacingProfile;
+  public pacingProfile!: GamePacingProfile;
 
   public swingTarget: Vector3D = { x: 0, y: 1.5, z: 4.0 };
   public lastShotType: 'smash' | 'drop' | 'clear' | 'drive' = 'drive';

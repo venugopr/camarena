@@ -355,4 +355,72 @@ export class SoundSynthesizer {
     osc.start(t);
     osc.stop(t + 0.22);
   }
+
+  public bowlingPinHit(intensity = 1.0): void {
+    if (this.isMuted) return;
+    const ctx = this.getContext();
+    if (!ctx) return;
+    const t = ctx.currentTime;
+
+    const osc = ctx.createOscillator();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(520 + Math.random() * 80, t);
+    osc.frequency.exponentialRampToValueAtTime(140, t + 0.06);
+
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.38 * Math.min(1.5, Math.max(0.2, intensity)), t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(t);
+    osc.stop(t + 0.09);
+  }
+
+  public bowlingStrikeShatter(): void {
+    if (this.isMuted) return;
+    const ctx = this.getContext();
+    if (!ctx) return;
+    const t = ctx.currentTime;
+
+    // 1. Initial powerful explosive impact crack
+    this.badmintonSmash();
+
+    // 2. Multi-pin staggered clatter (5 rapid pin collisions over 180ms)
+    for (let i = 0; i < 5; i++) {
+      const pinTime = t + 0.02 + i * 0.035;
+      const osc = ctx.createOscillator();
+      osc.type = 'triangle';
+      const f0 = 460 + Math.random() * 220;
+      osc.frequency.setValueAtTime(f0, pinTime);
+      osc.frequency.exponentialRampToValueAtTime(150, pinTime + 0.06);
+
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0.35 - i * 0.04, pinTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, pinTime + 0.07);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(pinTime);
+      osc.stop(pinTime + 0.08);
+    }
+
+    // 3. Low-end resonant lane thud
+    const subOsc = ctx.createOscillator();
+    subOsc.type = 'sine';
+    subOsc.frequency.setValueAtTime(110, t);
+    subOsc.frequency.exponentialRampToValueAtTime(36, t + 0.26);
+    const subGain = ctx.createGain();
+    subGain.gain.setValueAtTime(0.65, t);
+    subGain.gain.exponentialRampToValueAtTime(0.0001, t + 0.32);
+    subOsc.connect(subGain);
+    subGain.connect(ctx.destination);
+    subOsc.start(t);
+    subOsc.stop(t + 0.34);
+
+    // 4. Celebratory victory chime after 0.28s
+    setTimeout(() => {
+      this.scoreChime();
+    }, 280);
+  }
 }

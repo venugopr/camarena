@@ -110,6 +110,6 @@ export interface MotionFrame {
   lastActionEvent: ActionEvent | null;
 }
 
-export type GameModeId = 'badminton' | 'tabletennis' | 'sandbox';
+export type GameModeId = 'bowling' | 'boxing' | 'tabletennis' | 'tennis' | 'badminton' | 'sandbox';
 export type OpponentMode = 'system' | 'pvp' | 'practice';
 export type DifficultyLevel = 'casual' | 'pro' | 'legend';

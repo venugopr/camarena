@@ -4,8 +4,8 @@ import {
   DifficultyLevel,
   MotionFrame,
   ActionEvent
-} from '../motion/Types';
-import { SoundSynthesizer } from '../audio/SoundSynthesizer';
+} from './Types';
+import { SoundSynthesizer } from '../util/audio/SoundSynthesizer';
 
 export interface GameScoreState {
   player1Score: number;
