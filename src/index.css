@@ -1936,21 +1936,43 @@ html, body {
   right: 24px;
 }
 
-/* ─── Bowling 10-Pin Mini-Rack HUD ─────────────────────────────────────── */
-#bowling-pin-rack {
+/* ─── Bowling HUD Layout ───────────────────────────────────────────────── */
+#bowling-scorecard {
   position: absolute;
   top: 72px;
-  right: 170px;
+  left: 20px;
+  width: 320px;
+  max-height: 420px;
   background: rgba(10, 0, 20, 0.88);
   backdrop-filter: blur(12px);
-  border: 1px solid rgba(136, 0, 255, 0.45);
+  border: 1px solid rgba(136, 0, 255, 0.4);
   border-radius: 12px;
-  padding: 8px 14px;
+  padding: 8px 12px;
+  overflow-y: auto;
+  font-family: 'Outfit', 'Inter', monospace;
+  font-size: 11px;
+  color: #ddd;
+  box-shadow: 0 4px 30px rgba(136, 0, 255, 0.3);
+  z-index: 30;
+  box-sizing: border-box;
+}
+
+/* ─── Bowling 10-Pin Mini-Rack HUD (Centered Directly Over Bowling Track) ──── */
+#bowling-pin-rack {
+  position: absolute;
+  top: 68px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(8, 2, 18, 0.92);
+  backdrop-filter: blur(14px);
+  border: 1.5px solid rgba(0, 242, 254, 0.45);
+  border-radius: 14px;
+  padding: 8px 18px 10px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
-  box-shadow: 0 4px 24px rgba(136, 0, 255, 0.35);
+  gap: 5px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.75), 0 0 24px rgba(0, 242, 254, 0.22);
   z-index: 30;
   user-select: none;
 }
@@ -1958,28 +1980,29 @@ html, body {
 .pin-rack-header {
   font-family: 'Outfit', 'Inter', sans-serif;
   font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 1.5px;
-  color: rgba(216, 180, 254, 0.8);
+  font-weight: 800;
+  letter-spacing: 2px;
+  color: var(--primary-cyan, #00f2fe);
   margin-bottom: 2px;
+  text-shadow: 0 0 10px rgba(0, 242, 254, 0.6);
 }
 
 .pin-row {
   display: flex;
   justify-content: center;
-  gap: 6px;
+  gap: 8px;
 }
 
 .pin-dot {
-  width: 20px;
-  height: 20px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   font-family: 'Outfit', 'Inter', monospace;
-  font-size: 10px;
-  font-weight: 800;
+  font-size: 11px;
+  font-weight: 900;
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
@@ -2029,8 +2052,8 @@ html, body {
 /* ─── Bowling Power Meter, Impact Flash & Strike Juice ─────────────────── */
 .bowling-power-meter {
   position: absolute;
-  bottom: 85px;
-  right: 36px;
+  bottom: 24px;
+  right: 24px;
   display: flex;
   flex-direction: column;
   align-items: center;

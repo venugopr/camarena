@@ -18,7 +18,7 @@ import { SoundSynthesizer } from '../util/audio/SoundSynthesizer';
 import { Avatar3D } from '../badminton/Avatar3D';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
-const LANE_HALF_WIDTH = 0.85;     // Widened 1.7m arcade lane
+const LANE_HALF_WIDTH = 1.75;     // Super-wide 3.5m arcade cabinet lane
 const LANE_LENGTH = 18.0;          // foul line to pin deck
 const PIN_DECK_Z = 8.0;            // pin-deck centre z in world
 const APPROACH_Z = -10.0;          // foul line z
@@ -30,15 +30,16 @@ const PIN_HEIGHT = 0.38;           // standard pin height (metres)
 const BALL_RADIUS = 0.109;         // 10-pin bowling ball radius (metres)
 
 // Standard 10-pin triangular layout (Pin 1 Headpin at front apex facing bowler)
+// Screen Left is +X, Screen Right is -X (when camera looks towards +Z)
 const PIN_POSITIONS: [number, number][] = [
   // Pin 1 (Head pin - apex facing bowler at smallest Z)
   [0.0, -0.45],
-  // Pins 2, 3 (Row 2)
-  [-0.15, -0.15], [0.15, -0.15],
-  // Pins 4, 5, 6 (Row 3)
-  [-0.30, 0.15], [0.0, 0.15], [0.30, 0.15],
-  // Pins 7, 8, 9, 10 (Row 4 - back row)
-  [-0.45, 0.45], [-0.15, 0.45], [0.15, 0.45], [0.45, 0.45],
+  // Pins 2, 3 (Row 2: Pin 2 Left (+X), Pin 3 Right (-X))
+  [0.15, -0.15], [-0.15, -0.15],
+  // Pins 4, 5, 6 (Row 3: Pin 4 Left (+X), Pin 5 Center, Pin 6 Right (-X))
+  [0.30, 0.15], [0.0, 0.15], [-0.30, 0.15],
+  // Pins 7, 8, 9, 10 (Row 4: Pin 7 Far Left, Pin 8 Mid Left, Pin 9 Mid Right, Pin 10 Far Right)
+  [0.45, 0.45], [0.15, 0.45], [-0.15, 0.45], [-0.45, 0.45],
 ];
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -410,7 +411,7 @@ export class BowlingScene implements IGameScene {
     } else {
       // Camera gentle bob in broadcast view when ball is not in chase
       if (this.camera && this.currentCameraPreset === 'broadcast') {
-        this.camera.position.y = 4.4 + Math.sin(this.animT * 0.35) * 0.006;
+        this.camera.position.y = 3.8 + Math.sin(this.animT * 0.35) * 0.006;
       }
     }
 
@@ -478,8 +479,8 @@ export class BowlingScene implements IGameScene {
     this.scene.background = new THREE.Color(0x0a0010);
     this.scene.fog = new THREE.Fog(0x0a0010, 36, 90);
 
-    // Default to high-angle Olympic TV Broadcaster view
-    this.camera = new THREE.PerspectiveCamera(48, this.container.clientWidth / this.container.clientHeight, 0.1, 200);
+    // Default to dramatic 68° arcade cabinet perspective
+    this.camera = new THREE.PerspectiveCamera(68, this.container.clientWidth / this.container.clientHeight, 0.1, 200);
     this.applyCameraPreset('broadcast');
 
     // Ambient lighting
@@ -494,7 +495,7 @@ export class BowlingScene implements IGameScene {
     this.scene.add(overhead);
 
     // Dedicated High-Power Pin Deck Spotlight
-    const pinDeckSpot = new THREE.SpotLight(0xffffff, 4.8, 22, Math.PI / 3, 0.25, 1.2);
+    const pinDeckSpot = new THREE.SpotLight(0xffffff, 5.5, 26, Math.PI / 2.6, 0.25, 1.2);
     pinDeckSpot.position.set(0, 5.5, PIN_DECK_Z);
     pinDeckSpot.target.position.set(0, 0, PIN_DECK_Z);
     pinDeckSpot.castShadow = true;
@@ -760,15 +761,15 @@ export class BowlingScene implements IGameScene {
         pinGroup.add(ring);
       }
 
-      const worldX = ox;
+      const worldX = ox * 2.1;
       const worldZ = PIN_DECK_Z + oz;
       pinGroup.position.set(worldX, 0, worldZ);
-      pinGroup.scale.set(1.28, 1.28, 1.28);
+      pinGroup.scale.set(1.9, 1.9, 1.9);
 
       this.laneGroup.add(pinGroup);
 
       // In-world ground target beacon under pin
-      const beaconGeo = new THREE.RingGeometry(0.08, 0.15, 24);
+      const beaconGeo = new THREE.RingGeometry(0.12, 0.24, 24);
       const beaconMat = new THREE.MeshBasicMaterial({
         color: 0x00f2fe,
         side: THREE.DoubleSide,
@@ -804,6 +805,7 @@ export class BowlingScene implements IGameScene {
       emissiveIntensity: 0.35,
     });
     this.ballTemplate = new THREE.Mesh(geo, mat);
+    this.ballTemplate.scale.setScalar(1.15);
     this.ballTemplate.castShadow = true;
   }
 
@@ -830,7 +832,7 @@ export class BowlingScene implements IGameScene {
     panel.position.set(0, 1.4, PIN_DECK_Z + 1.5);
     this.scene.add(panel);
 
-    const backGeo = new THREE.PlaneGeometry(3.5, 4.5);
+    const backGeo = new THREE.PlaneGeometry(LANE_HALF_WIDTH * 2 + 1.2, 4.5);
     const backMat = new THREE.MeshStandardMaterial({ color: 0x0d001a });
     const backWall = new THREE.Mesh(backGeo, backMat);
     backWall.position.set(0, 1.5, PIN_DECK_Z + 2.5);
@@ -849,8 +851,8 @@ export class BowlingScene implements IGameScene {
 
     this.camera.position.copy(targetPos);
     this.camera.lookAt(targetLook);
-    // Wide broadcast vs intimate over-shoulder vs low approach stance
-    this.camera.fov = preset === 'broadcast' ? 52 : preset === 'over_shoulder' ? 68 : 74;
+    // Wide arcade cabinet broadcast vs intimate over-shoulder vs low approach stance
+    this.camera.fov = preset === 'broadcast' ? 68 : preset === 'over_shoulder' ? 68 : 74;
     this.camera.updateProjectionMatrix();
 
     if (this.cameraViewBtn) {
@@ -861,7 +863,7 @@ export class BowlingScene implements IGameScene {
 
   private getPresetCameraPos(): THREE.Vector3 {
     if (this.currentCameraPreset === 'broadcast') {
-      return new THREE.Vector3(0, 6.2, APPROACH_Z - 6.5); // High wide TV broadcast stadium perspective
+      return new THREE.Vector3(0, 3.8, APPROACH_Z - 1.2); // Closer, dramatic eye-level arcade cabinet perspective
     } else if (this.currentCameraPreset === 'over_shoulder') {
       return new THREE.Vector3(this.playerStanceX * 0.8, 1.95, APPROACH_Z - 1.4); // Tight 3rd-person behind bowler shoulder
     } else {
@@ -871,7 +873,7 @@ export class BowlingScene implements IGameScene {
 
   private getPresetCameraLook(): THREE.Vector3 {
     if (this.currentCameraPreset === 'broadcast') {
-      return new THREE.Vector3(0, 0.3, 4.5); // Broad view across entire lane surface
+      return new THREE.Vector3(0, 0.40, PIN_DECK_Z * 0.7); // Down the wider board with direct focus on pins
     } else if (this.currentCameraPreset === 'over_shoulder') {
       return new THREE.Vector3(this.playerStanceX * 0.3, 0.40, PIN_DECK_Z * 0.55); // Down-the-board tracking framing
     } else {
@@ -904,17 +906,9 @@ export class BowlingScene implements IGameScene {
   // ─────────────────────────────────────────────────────────────────────────
 
   private buildHUD(): void {
-    // Scorecard
+    // Scorecard (docked top-left via #bowling-scorecard CSS)
     this.scorecardEl = document.createElement('div');
     this.scorecardEl.id = 'bowling-scorecard';
-    this.scorecardEl.style.cssText = `
-      position: absolute; top: 72px; left: 50%; transform: translateX(-50%);
-      background: rgba(10, 0, 20, 0.88); backdrop-filter: blur(12px);
-      border: 1px solid rgba(136, 0, 255, 0.4); border-radius: 12px;
-      padding: 10px 16px; min-width: 680px; max-width: 92vw; overflow-x: auto;
-      font-family: 'Outfit', 'Inter', monospace; font-size: 11px; color: #ddd;
-      box-shadow: 0 4px 30px rgba(136,0,255,0.3); z-index: 30;
-    `;
     this.container.appendChild(this.scorecardEl);
 
     // 10-Pin Mini-Rack HUD
@@ -1050,12 +1044,12 @@ export class BowlingScene implements IGameScene {
 
     // Lateral stance adjustments via keyboard
     if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
-      this.playerStanceX = Math.max(-0.65, this.playerStanceX - 0.08);
+      this.playerStanceX = Math.max(-LANE_HALF_WIDTH + BALL_RADIUS, this.playerStanceX - 0.08);
       if (this.stanceReticleGroup) this.stanceReticleGroup.position.x = this.playerStanceX;
       return;
     }
     if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
-      this.playerStanceX = Math.min(0.65, this.playerStanceX + 0.08);
+      this.playerStanceX = Math.min(LANE_HALF_WIDTH - BALL_RADIUS, this.playerStanceX + 0.08);
       if (this.stanceReticleGroup) this.stanceReticleGroup.position.x = this.playerStanceX;
       return;
     }
@@ -1255,7 +1249,7 @@ export class BowlingScene implements IGameScene {
       const dx = bp.x - pin.mesh.position.x;
       const dz = bp.z - pin.mesh.position.z;
       const dist = Math.sqrt(dx * dx + dz * dz);
-      if (dist < BALL_RADIUS + PIN_RADIUS) {
+      if (dist < (BALL_RADIUS * 1.25) + (PIN_RADIUS * 1.8)) {
         // Knock pin down
         pin.isDown = true;
         const knockDir = new THREE.Vector3(dx, 0, dz).normalize();
@@ -1284,9 +1278,9 @@ export class BowlingScene implements IGameScene {
         const dz = pin.mesh.position.z - sourcePin.mesh.position.z;
         const dist = Math.sqrt(dx * dx + dz * dz);
         
-        // Proximity-weighted cascade threshold (0.35m covers adjacent triangular rack spacing)
-        if (dist < 0.35) {
-          const fallChance = dist < 0.24 ? 0.90 : 0.60;
+        // Proximity-weighted cascade threshold (scaled to wide pin deck spread)
+        if (dist < 0.58) {
+          const fallChance = dist < 0.38 ? 0.92 : 0.65;
           if (Math.random() < fallChance) {
             pin.isDown = true;
             processed.add(pin.pinNumber);
