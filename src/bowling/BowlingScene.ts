@@ -145,6 +145,7 @@ export class BowlingScene implements IGameScene {
   private gestureCooldown = 0.8;
   private startGraceTimer = 0.35; // Warmup grace timer to kill ghost rolls on start
   private readyWaitTimer = 0;     // Inter-play 2.0s Get Ready wait timer
+  private hipBaselineX: number | null = null; // Tared standing baseline X
 
   // ── Scoring / Game State ──
   private playerFrames: FrameRolls[] = [];   // 10 frames
@@ -216,6 +217,7 @@ export class BowlingScene implements IGameScene {
     this.waitingForReset = false;
     this.matchOver = false;
     this.pinsUpCount = 10;
+    this.hipBaselineX = null;
   }
 
   public start(): void {
@@ -239,6 +241,7 @@ export class BowlingScene implements IGameScene {
     this.startGraceTimer = 0.35;
     this.gestureCooldown = 0.8;
     this.readyWaitTimer = 0;
+    this.hipBaselineX = null;
     this.playerStanceX = 0;
     this.isChaseCamActive = false;
     this.cameraShakeTrauma = 0;
@@ -274,21 +277,26 @@ export class BowlingScene implements IGameScene {
       }
     }
 
-    // Track lateral player stance from motion frame
-    if (motionFrame) {
-      const hipX = motionFrame.metrics?.hipCenterWorld?.x;
-      const weightShift = motionFrame.metrics?.lateralWeightShift;
-      let lateralOffset = 0;
-
-      if (typeof hipX === 'number' && !isNaN(hipX) && Math.abs(hipX) > 0.03) {
-        lateralOffset = hipX * 1.4;
-      } else if (typeof weightShift === 'number' && !isNaN(weightShift)) {
-        lateralOffset = weightShift * 0.45;
-      }
-
-      if (lateralOffset !== 0) {
-        const targetStanceX = THREE.MathUtils.clamp(lateralOffset, -0.65, 0.65);
-        this.playerStanceX += (targetStanceX - this.playerStanceX) * Math.min(1.0, dt * 8);
+    // Universal screen-space torso tracking for responsive lateral approach control
+    if (motionFrame && motionFrame.rawLandmarks && motionFrame.rawLandmarks.length > 24) {
+      const lSh = motionFrame.rawLandmarks[PoseLandmark.LEFT_SHOULDER];
+      const rSh = motionFrame.rawLandmarks[PoseLandmark.RIGHT_SHOULDER];
+      const lHip = motionFrame.rawLandmarks[PoseLandmark.LEFT_HIP];
+      const rHip = motionFrame.rawLandmarks[PoseLandmark.RIGHT_HIP];
+      
+      const hasShoulders = lSh && rSh && (lSh.visibility ?? 1) > 0.3 && (rSh.visibility ?? 1) > 0.3;
+      const hasHips = lHip && rHip && (lHip.visibility ?? 1) > 0.3 && (rHip.visibility ?? 1) > 0.3;
+      
+      if (hasShoulders || hasHips) {
+        const topX = hasShoulders ? (lSh.x + rSh.x) * 0.5 : 0.5;
+        const botX = hasHips ? (lHip.x + rHip.x) * 0.5 : 0.5;
+        const screenTorsoX = hasShoulders && hasHips ? (topX * 0.6 + botX * 0.4) : (hasShoulders ? topX : botX);
+        
+        // Direct linear mapping: screen > 0.5 (right side of camera view) -> positive lane X (+X right)
+        // If movement feels inverted relative to your room setup, flip the sign on (screenTorsoX - 0.5)
+        const normalizedOffset = (screenTorsoX - 0.5) * 3.2; 
+        const targetStanceX = THREE.MathUtils.clamp(normalizedOffset, -LANE_HALF_WIDTH + BALL_RADIUS, LANE_HALF_WIDTH - BALL_RADIUS);
+        this.playerStanceX += (targetStanceX - this.playerStanceX) * Math.min(1.0, dt * 14);
       }
     }
 
@@ -1160,7 +1168,7 @@ export class BowlingScene implements IGameScene {
     this.ball = {
       mesh,
       pos: mesh.position.clone(),
-      vel: new THREE.Vector3(lateralBias, 0, forwardSpeed),
+      vel: new THREE.Vector3(lateralBias * 1.2, 0, forwardSpeed),
       active: true,
       hookAccelX,
       isAI,
@@ -1263,21 +1271,38 @@ export class BowlingScene implements IGameScene {
     }
   }
 
-  private checkPinChain(knockedPin: PinState): void {
-    for (const pin of this.pins) {
-      if (pin.isDown) continue;
-      const dx = pin.mesh.position.x - knockedPin.mesh.position.x;
-      const dz = pin.mesh.position.z - knockedPin.mesh.position.z;
-      if (Math.sqrt(dx * dx + dz * dz) < 0.24) {
-        if (Math.random() < 0.50) {
-          pin.isDown = true;
-          pin.fallVel.set(dx * 1.8, 2.0, dz * 1.8);
-          pin.fallAngVel = (Math.random() - 0.5) * 6;
-          this.pinsUpCount = this.pins.filter(p => !p.isDown).length;
-          this.updatePinRack();
+  private checkPinChain(initialKnockedPin: PinState): void {
+    const queue: PinState[] = [initialKnockedPin];
+    const processed = new Set<number>([initialKnockedPin.pinNumber]);
+
+    while (queue.length > 0) {
+      const sourcePin = queue.shift()!;
+      for (const pin of this.pins) {
+        if (pin.isDown || processed.has(pin.pinNumber)) continue;
+        
+        const dx = pin.mesh.position.x - sourcePin.mesh.position.x;
+        const dz = pin.mesh.position.z - sourcePin.mesh.position.z;
+        const dist = Math.sqrt(dx * dx + dz * dz);
+        
+        // Proximity-weighted cascade threshold (0.35m covers adjacent triangular rack spacing)
+        if (dist < 0.35) {
+          const fallChance = dist < 0.24 ? 0.90 : 0.60;
+          if (Math.random() < fallChance) {
+            pin.isDown = true;
+            processed.add(pin.pinNumber);
+            queue.push(pin); // Propagate to next wave of neighbors
+            
+            // Propagate dynamic directional scatter from the falling source pin
+            const knockDir = new THREE.Vector3(dx, 0.25, dz).normalize();
+            pin.fallVel.set(knockDir.x * 1.9, 2.3, knockDir.z * 1.9);
+            pin.fallAngVel = (Math.random() - 0.5) * 9;
+          }
         }
       }
     }
+    
+    this.pinsUpCount = this.pins.filter(p => !p.isDown).length;
+    this.updatePinRack();
   }
 
   // ─────────────────────────────────────────────────────────────────────────
