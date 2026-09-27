@@ -117,8 +117,21 @@ async function bootstrap() {
 
   // 8. Expose window.__camarena debug bridge for Playwright automated tests
   window.__camarena = {
-    getDebugState: () => badmintonScene.getDebugState(),
-    debugServe: () => badmintonScene.debugServe(),
+    getDebugState: () => {
+      const active = sceneManager.getActiveScene();
+      if (active && typeof (active as any).getDebugState === 'function') {
+        return (active as any).getDebugState();
+      }
+      return badmintonScene.getDebugState();
+    },
+    debugServe: () => {
+      const active = sceneManager.getActiveScene();
+      if (active && typeof (active as any).debugServe === 'function') {
+        (active as any).debugServe();
+      } else {
+        badmintonScene.debugServe();
+      }
+    },
     tracker,
   };
 

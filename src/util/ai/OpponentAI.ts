@@ -41,6 +41,9 @@ export class OpponentAI {
   public windupTimer = 0;
   public windupDuration = 0.22;
 
+  public willInterceptThisFlight = true;
+  private hasRolledInterceptionForFlight = false;
+
   constructor(difficulty: DifficultyLevel = 'casual', homePos: Vector3D = { x: 0, y: 0.9, z: 4.0 }) {
     this.homePosition = { ...homePos };
     this.position = { ...homePos };
@@ -66,7 +69,7 @@ export class OpponentAI {
           difficulty: diff,
           reactionTimeSec: 0.10,
           speed: 4.5,
-          accuracy: 0.85,
+          accuracy: 0.65, // Strictly 65% interception success (35% player winner window)
           smashChance: 0.0
         };
       case 'pro':
@@ -74,7 +77,7 @@ export class OpponentAI {
           difficulty: diff,
           reactionTimeSec: 0.06,
           speed: 5.5,
-          accuracy: 0.94,
+          accuracy: 0.90, // Strictly 90% interception success (10% miss window)
           smashChance: 0.15
         };
       case 'legend':
@@ -82,7 +85,7 @@ export class OpponentAI {
           difficulty: diff,
           reactionTimeSec: 0.02,
           speed: 6.8,
-          accuracy: 0.98,
+          accuracy: 0.95,
           smashChance: 0.30
         };
     }
@@ -114,6 +117,10 @@ export class OpponentAI {
     const isIncoming = projectileVel.z > 0.15;
 
     if (isIncoming) {
+      if (!this.hasRolledInterceptionForFlight) {
+        this.hasRolledInterceptionForFlight = true;
+        this.willInterceptThisFlight = Math.random() < this.config.accuracy;
+      }
       this.moveReactionTimer += dt;
       if (this.moveReactionTimer >= this.config.reactionTimeSec) {
         const g = 9.81;
@@ -139,6 +146,8 @@ export class OpponentAI {
         }
       }
     } else {
+      this.hasRolledInterceptionForFlight = false;
+      this.willInterceptThisFlight = true;
       this.moveReactionTimer = 0;
       this.targetPosition.x = this.homePosition.x;
       this.targetPosition.z = this.homePosition.z;
@@ -190,6 +199,21 @@ export class OpponentAI {
       const readyToStrike = (this.windupTimer <= 0 && inRacketRange) || emergencyFloorHit;
 
       if (readyToStrike) {
+        if (!this.willInterceptThisFlight) {
+          // AI fails interception: whiffs and misses strike cleanly
+          this.swingState = 'IDLE';
+          this.isSwinging = false;
+          return {
+            didHit: false,
+            hitVelocity: null,
+            target: undefined,
+            isSmash: false,
+            shotType: this.lastShotType,
+            isPreparingSwing: false,
+            windupProgress: 0
+          };
+        }
+
         this.swingState = 'STRIKING';
         this.isSwinging = true;
         this.swingProgress = 0;
@@ -255,6 +279,8 @@ export class OpponentAI {
     this.moveReactionTimer = 0;
     this.swingState = 'IDLE';
     this.windupTimer = 0;
+    this.hasRolledInterceptionForFlight = false;
+    this.willInterceptThisFlight = true;
   }
 }
 

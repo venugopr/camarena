@@ -467,24 +467,24 @@ export class PoseTracker {
 
     // Handle interactive strokes
     if (this.syntheticAction === 'forehand') {
-      const progress = Math.min(1.0, animT / 0.38);
-      if (progress < 0.28) {
-        const p = progress / 0.28;
+      const progress = Math.min(1.0, animT / 0.52);
+      if (progress < 0.35) {
+        const p = progress / 0.35;
         rightArmX = 0.35 + p * 0.40;
         rightArmY = 0.75 - p * 0.12;
-        rightArmZ = 0.25 - p * 0.50;
-        hipX = 0.15;
-      } else if (progress < 0.55) {
-        const p = (progress - 0.28) / 0.27;
+        rightArmZ = 0.25 - p * 0.60;
+        hipX = 0.02;
+      } else if (progress < 0.65) {
+        const p = (progress - 0.35) / 0.30;
         rightArmX = 0.75 - p * 1.05;
         rightArmY = 0.63 + p * 0.45;
-        rightArmZ = -0.25 + p * 1.05;
-        hipX = -0.18;
+        rightArmZ = -0.35 + p * 1.25;
+        hipX = -0.02;
       } else {
-        const p = (progress - 0.55) / 0.45;
+        const p = (progress - 0.65) / 0.35;
         rightArmX = -0.30 + p * 0.65;
         rightArmY = 1.08 - p * 0.28;
-        rightArmZ = 0.80 - p * 0.55;
+        rightArmZ = 0.90 - p * 0.65;
       }
       if (progress >= 1.0) this.syntheticAction = 'idle';
     } else if (this.syntheticAction === 'smash') {

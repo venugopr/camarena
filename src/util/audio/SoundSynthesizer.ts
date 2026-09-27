@@ -288,25 +288,77 @@ export class SoundSynthesizer {
     osc.stop(t + 0.07);
   }
 
-  public tableTennisPaddleHit(): void {
+  public tableTennisPaddleHit(power = 1.0): void {
     if (this.isMuted) return;
     const ctx = this.getContext();
     if (!ctx) return;
 
     const t = ctx.currentTime;
+    const vol = Math.min(0.65, 0.32 + Math.min(power, 3.0) * 0.10);
+
+    // Layer 1: Wood core resonant pop
     const osc = ctx.createOscillator();
     osc.type = 'triangle';
-    osc.frequency.setValueAtTime(620, t);
-    osc.frequency.exponentialRampToValueAtTime(180, t + 0.04);
+    osc.frequency.setValueAtTime(680 + Math.min(power, 3.0) * 60, t);
+    osc.frequency.exponentialRampToValueAtTime(200, t + 0.04);
 
     const gain = ctx.createGain();
-    gain.gain.setValueAtTime(0.4, t);
+    gain.gain.setValueAtTime(vol, t);
     gain.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
 
     osc.connect(gain);
     gain.connect(ctx.destination);
     osc.start(t);
     osc.stop(t + 0.06);
+
+    // Layer 2: Rubber impact surface snap
+    const dur = 0.022;
+    const noise = this.makeNoiseSource(ctx, dur);
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'highpass';
+    filter.frequency.setValueAtTime(2200, t);
+    const noiseGain = ctx.createGain();
+    noiseGain.gain.setValueAtTime(vol * 0.75, t);
+    noiseGain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    noise.connect(filter);
+    filter.connect(noiseGain);
+    noiseGain.connect(ctx.destination);
+    noise.start(t);
+    noise.stop(t + dur);
+  }
+
+  public tableTennisNetClip(): void {
+    if (this.isMuted) return;
+    const ctx = this.getContext();
+    if (!ctx) return;
+
+    const t = ctx.currentTime;
+    const dur = 0.032;
+    const noise = this.makeNoiseSource(ctx, dur);
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.setValueAtTime(1600, t);
+    filter.Q.value = 2.2;
+    const noiseGain = ctx.createGain();
+    noiseGain.gain.setValueAtTime(0.28, t);
+    noiseGain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    noise.connect(filter);
+    filter.connect(noiseGain);
+    noiseGain.connect(ctx.destination);
+    noise.start(t);
+    noise.stop(t + dur);
+
+    const osc = ctx.createOscillator();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(440, t);
+    osc.frequency.exponentialRampToValueAtTime(180, t + 0.04);
+    const oscGain = ctx.createGain();
+    oscGain.gain.setValueAtTime(0.22, t);
+    oscGain.gain.exponentialRampToValueAtTime(0.001, t + 0.045);
+    osc.connect(oscGain);
+    oscGain.connect(ctx.destination);
+    osc.start(t);
+    osc.stop(t + 0.05);
   }
 
   public scoreChime(): void {

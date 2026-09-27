@@ -139,7 +139,8 @@ export class BowlingScene implements IGameScene {
   private aiTargetStartX = 0;    // lateral start of AI hook path
   private aiHookAccelX = 0;      // hook acceleration queued for next AI ball
 
-  // ── Two-Phase Bowling Delivery State Machine ──
+  // ── Two-Phase Bowling Delivery State Machine & Stance Gating ──
+  private dominantHand: 'right' | 'left' = 'right';
   private bowlingPhase: 'IDLE' | 'COCKED' | 'SWEEPING' = 'IDLE';
   private cockingDuration = 0;
   private liveWindupPower = 0;   // 0.0 - 1.0 for HUD power meter
@@ -147,6 +148,14 @@ export class BowlingScene implements IGameScene {
   private startGraceTimer = 0.35; // Warmup grace timer to kill ghost rolls on start
   private readyWaitTimer = 0;     // Inter-play 2.0s Get Ready wait timer
   private hipBaselineX: number | null = null; // Tared standing baseline X
+  private stableStanceTimer = 0;
+  private isBowlingArmed = false;
+  private isStanceRepositioning = false;
+  private currentHipSpeed = 0;
+  private prevWristWorld = new THREE.Vector3();
+  private prevShoulderWorld = new THREE.Vector3();
+  private prevHipCenterWorld = new THREE.Vector3();
+  private hasPrevBodyLandmarks = false;
 
   // ── Scoring / Game State ──
   private playerFrames: FrameRolls[] = [];   // 10 frames
@@ -194,13 +203,14 @@ export class BowlingScene implements IGameScene {
   // ─────────────────────────────────────────────────────────────────────────
 
   public init(container: HTMLElement, audio: SoundSynthesizer, config?: {
-    opponentMode: OpponentMode; difficulty: DifficultyLevel;
+    opponentMode?: OpponentMode; difficulty?: DifficultyLevel; dominantHand?: 'right' | 'left';
   }): void {
     this.container = container;
     this.audio = audio;
     if (config) {
-      this.opponentMode = config.opponentMode;
-      this.difficulty = config.difficulty;
+      if (config.opponentMode) this.opponentMode = config.opponentMode;
+      if (config.difficulty) this.difficulty = config.difficulty;
+      if (config.dominantHand) this.dominantHand = config.dominantHand;
     }
     this.startGraceTimer = 0.35;
     this.gestureCooldown = 0.8;
@@ -220,6 +230,11 @@ export class BowlingScene implements IGameScene {
     this.matchOver = false;
     this.pinsUpCount = 10;
     this.hipBaselineX = null;
+    this.stableStanceTimer = 0;
+    this.isBowlingArmed = false;
+    this.isStanceRepositioning = false;
+    this.currentHipSpeed = 0;
+    this.hasPrevBodyLandmarks = false;
   }
 
   public start(): void {
@@ -323,6 +338,9 @@ export class BowlingScene implements IGameScene {
       this.bowlingPhase = 'IDLE';
       this.liveWindupPower = 0;
       this.updatePowerMeter(0);
+      this.stableStanceTimer = 0;
+      this.isBowlingArmed = false;
+      this.isStanceRepositioning = false;
       return;
     }
 
@@ -1061,52 +1079,140 @@ export class BowlingScene implements IGameScene {
     if (this.startGraceTimer > 0 || this.gestureCooldown > 0 || this.readyWaitTimer > 0) return;
     if (!frame.worldLandmarks || frame.worldLandmarks.length < 17) return;
 
+    // 1. Mandatory Stance-Settling Buffer (Post-Repositioning Gate):
+    // Track torso/hip velocity across frames (hipCenterWorld / torso translation).
+    const lHip = frame.worldLandmarks[PoseLandmark.LEFT_HIP];
+    const rHip = frame.worldLandmarks[PoseLandmark.RIGHT_HIP];
+    const lSh = frame.worldLandmarks[PoseLandmark.LEFT_SHOULDER];
+    const rSh = frame.worldLandmarks[PoseLandmark.RIGHT_SHOULDER];
+
+    let hipCenterWorld: THREE.Vector3 | null = null;
+    if (lHip && rHip) {
+      hipCenterWorld = new THREE.Vector3((lHip.x + rHip.x) * 0.5, (lHip.y + rHip.y) * 0.5, (lHip.z + rHip.z) * 0.5);
+    } else if (lHip) {
+      hipCenterWorld = new THREE.Vector3(lHip.x, lHip.y, lHip.z);
+    } else if (rHip) {
+      hipCenterWorld = new THREE.Vector3(rHip.x, rHip.y, rHip.z);
+    } else if (lSh && rSh) {
+      hipCenterWorld = new THREE.Vector3((lSh.x + rSh.x) * 0.5, (lSh.y + rSh.y) * 0.5, (lSh.z + rSh.z) * 0.5);
+    }
+
+    const safeDt = Math.max(0.008, dt);
+    let torsoSpeed = 0;
+    if (hipCenterWorld && this.hasPrevBodyLandmarks) {
+      const hipVel = hipCenterWorld.clone().sub(this.prevHipCenterWorld).divideScalar(safeDt);
+      torsoSpeed = hipVel.length();
+    }
+    this.currentHipSpeed = torsoSpeed;
+
+    // Gate: Player must NOT be moving front or back (walking/stepping artifact protection)
+    const torsoVelZ = hipCenterWorld && this.hasPrevBodyLandmarks ? Math.abs((hipCenterWorld.z - this.prevHipCenterWorld.z) / safeDt) : 0;
+    const isMovingFrontOrBack = torsoVelZ > 0.32 || torsoSpeed > 0.38;
+
+    if (isMovingFrontOrBack) {
+      this.isStanceRepositioning = true;
+      this.isBowlingArmed = false;
+      this.stableStanceTimer = 0;
+      this.bowlingPhase = 'IDLE';
+      this.cockingDuration = 0;
+      this.liveWindupPower = 0;
+      this.updatePowerMeter(0);
+    } else {
+      // Standing and not moving front/back: arm delivery smoothly
+      this.stableStanceTimer += dt;
+      if (this.stableStanceTimer >= 0.50) {
+        this.isBowlingArmed = true;
+        this.isStanceRepositioning = false;
+      }
+    }
+
+    // 2. Measure Arm Velocity Relative to Torso (Isolate Whole-Body Walking Artifacts):
     const rightWrist = frame.worldLandmarks[PoseLandmark.RIGHT_WRIST];
     const leftWrist = frame.worldLandmarks[PoseLandmark.LEFT_WRIST];
     const rightShoulder = frame.worldLandmarks[PoseLandmark.RIGHT_SHOULDER];
     const leftShoulder = frame.worldLandmarks[PoseLandmark.LEFT_SHOULDER];
     if (!rightWrist && !leftWrist) return;
 
-    const rightVel = frame.velocities ? frame.velocities[PoseLandmark.RIGHT_WRIST] : (frame.metrics?.rightWristVelocity || { x: 0, y: 0, z: 0 });
-    const leftVel = frame.velocities ? frame.velocities[PoseLandmark.LEFT_WRIST] : (frame.metrics?.leftWristVelocity || { x: 0, y: 0, z: 0 });
+    const isLeftCocked = leftWrist && leftShoulder && (leftWrist.y > leftShoulder.y + 0.08);
+    const isRightCocked = rightWrist && rightShoulder && (rightWrist.y > rightShoulder.y + 0.08);
+    const isLeft = (this.dominantHand === 'left') || (isLeftCocked && !isRightCocked);
 
-    const rSpeed = Math.hypot(rightVel.x, rightVel.y, rightVel.z);
-    const lSpeed = Math.hypot(leftVel.x, leftVel.y, leftVel.z);
-    const isLeft = lSpeed > rSpeed * 1.2 && lSpeed > 1.2;
     const wrist = isLeft ? leftWrist : rightWrist;
     const shoulder = isLeft ? leftShoulder : rightShoulder;
-    const wristVel = isLeft ? leftVel : rightVel;
-
     if (!wrist || !shoulder) return;
 
-    const speedMag = Math.hypot(wristVel.x, wristVel.y, wristVel.z);
-    const isCockedHighOrBack = wrist.y > shoulder.y + 0.08;
+    const currentWrist = new THREE.Vector3(wrist.x, wrist.y, wrist.z);
+    const currentShoulder = new THREE.Vector3(shoulder.x, shoulder.y, shoulder.z);
+
+    // Arm velocity strictly relative to the dominant shoulder:
+    // const relativeWristVel = (currentWrist - currentShoulder) - (prevWrist - prevShoulder) / dt;
+    let relativeWristVel = new THREE.Vector3();
+    let relativeArmSpeed = 0;
+
+    if (this.hasPrevBodyLandmarks) {
+      relativeWristVel = currentWrist.clone().sub(currentShoulder).sub(
+        this.prevWristWorld.clone().sub(this.prevShoulderWorld)
+      ).divideScalar(safeDt);
+      relativeArmSpeed = relativeWristVel.length();
+    }
+
+    this.prevWristWorld.copy(currentWrist);
+    this.prevShoulderWorld.copy(currentShoulder);
+    if (hipCenterWorld) {
+      this.prevHipCenterWorld.copy(hipCenterWorld);
+    }
+    this.hasPrevBodyLandmarks = true;
+
+    // 3. Bowling Delivery State Machine Hardening:
+    // Do NOT enter COCKED state if the player's hips/feet are moving.
+    const isCockedPose = (wrist.y > shoulder.y + 0.08) || ((currentWrist.z - currentShoulder.z) < -0.15);
+    const isHipsStill = torsoSpeed < 0.20 && this.isBowlingArmed && !this.isStanceRepositioning;
 
     // Phase 1: Cocking / Setup pose (hand raised/set)
-    if (isCockedHighOrBack && this.bowlingPhase === 'IDLE') {
+    if (this.bowlingPhase === 'IDLE' && isHipsStill && isCockedPose) {
       this.bowlingPhase = 'COCKED';
       this.cockingDuration = 0;
     }
 
     if (this.bowlingPhase === 'COCKED') {
+      // Abort back to IDLE if player begins moving hips/feet during windup
+      if (torsoSpeed >= 0.25 || this.isStanceRepositioning || !this.isBowlingArmed) {
+        this.bowlingPhase = 'IDLE';
+        this.cockingDuration = 0;
+        this.liveWindupPower = 0;
+        this.updatePowerMeter(0);
+        return;
+      }
+
       this.cockingDuration += dt;
-      this.liveWindupPower = THREE.MathUtils.lerp(this.liveWindupPower, Math.min(1.0, this.cockingDuration / 0.6), dt * 6);
+      this.liveWindupPower = THREE.MathUtils.lerp(
+        this.liveWindupPower,
+        Math.min(1.0, this.cockingDuration / 0.6),
+        dt * 6
+      );
       this.updatePowerMeter(this.liveWindupPower);
 
       if (this.aimGuideEl) {
-        this.aimGuideEl.textContent = '🟢 COCKED — SWEEP ARM FORWARD/DOWN TO RELEASE BOWL';
-        this.aimGuideEl.style.color = '#39ff14';
+        if (this.cockingDuration < 0.35) {
+          const holdSec = Math.max(0, 0.35 - this.cockingDuration).toFixed(2);
+          this.aimGuideEl.textContent = `🟡 HOLD WINDUP STEADY (${holdSec}s)...`;
+          this.aimGuideEl.style.color = '#facc15';
+        } else {
+          this.aimGuideEl.textContent = '🟢 COCKED — SWEEP ARM FORWARD/DOWN (> 4.8 m/s) TO RELEASE BOWL';
+          this.aimGuideEl.style.color = '#39ff14';
+        }
       }
 
-      // Phase 2: Ballistic forward/downward bowling delivery stroke
-      // Requires high-energy forward/downward velocity (> 4.8 m/s total / > 3.4 m/s forward-down thrust)
-      const forwardDownThrust = Math.max(wristVel.z, -wristVel.y, Math.hypot(wristVel.z, wristVel.y));
-      if (forwardDownThrust > 3.4 && speedMag > 4.6 && this.cockingDuration > 0.20) {
+      // Phase 2: Forward/downward delivery stroke
+      const forwardDownThrust = Math.max(-relativeWristVel.y, relativeWristVel.z, Math.hypot(relativeWristVel.z, -relativeWristVel.y));
+      const isReleaseTriggered = this.cockingDuration >= 0.25 && (relativeArmSpeed > 3.8 || forwardDownThrust > 2.8);
+
+      if (isReleaseTriggered) {
         const shoulderMidX = (leftShoulder && rightShoulder) ? (leftShoulder.x + rightShoulder.x) / 2 : shoulder.x;
         const deltaX = wrist.x - shoulderMidX;
         const hookAccelX = THREE.MathUtils.clamp(deltaX * -1.6, -1.4, 1.4);
         const lateralBias = THREE.MathUtils.clamp(deltaX * 0.25, -0.3, 0.3);
-        const releaseSpeed = THREE.MathUtils.clamp(speedMag * 1.2, 5.0, 9.2);
+        const releaseSpeed = THREE.MathUtils.clamp(relativeArmSpeed * 1.25, 5.2, 9.5);
 
         this.releaseBall(releaseSpeed, lateralBias, hookAccelX, false);
         this.audio.badmintonWhoosh(releaseSpeed * 0.6);
@@ -1117,6 +1223,8 @@ export class BowlingScene implements IGameScene {
         this.updatePowerMeter(0);
         this.startGraceTimer = 0.6;
         this.gestureCooldown = 1.2;
+        this.isBowlingArmed = false;
+        this.stableStanceTimer = 0;
       } else if (this.cockingDuration > 3.5) {
         // Timeout reset if holding cocked pose too long
         this.bowlingPhase = 'IDLE';
@@ -1126,8 +1234,17 @@ export class BowlingScene implements IGameScene {
       }
     } else {
       if (this.aimGuideEl) {
-        this.aimGuideEl.textContent = '🔄 COCK ARM BACK OR UP TO PREPARE DELIVERY';
-        this.aimGuideEl.style.color = 'rgba(136, 0, 255, 0.85)';
+        if (this.isStanceRepositioning || this.currentHipSpeed > 0.35) {
+          this.aimGuideEl.textContent = '⚠️ STANCE REPOSITIONING — STEP INTO POSITION';
+          this.aimGuideEl.style.color = '#f59e0b';
+        } else if (!this.isBowlingArmed) {
+          const remain = Math.max(0, 0.8 - this.stableStanceTimer).toFixed(1);
+          this.aimGuideEl.textContent = `⏳ SETTLING STANCE (${remain}s)... REMAIN STATIONARY`;
+          this.aimGuideEl.style.color = '#facc15';
+        } else {
+          this.aimGuideEl.textContent = '🔄 COCK ARM BACK OR UP TO PREPARE DELIVERY';
+          this.aimGuideEl.style.color = 'rgba(136, 0, 255, 0.85)';
+        }
       }
     }
   }
@@ -1302,12 +1419,16 @@ export class BowlingScene implements IGameScene {
     const knocked = 10 - this.pinsUpCount;
     this.recordRoll(knocked);
 
-    // Enforce 2-second cooldown / get ready wait period
+    // Enforce cooldown / get ready wait period
     this.readyWaitTimer = 3.0;
     this.bowlingPhase = 'IDLE';
     this.cockingDuration = 0;
     this.liveWindupPower = 0;
     this.updatePowerMeter(0);
+    this.isBowlingArmed = false;
+    this.stableStanceTimer = 0;
+    this.isStanceRepositioning = false;
+    this.hasPrevBodyLandmarks = false;
   }
 
   private recordRoll(knocked: number): void {
@@ -1729,13 +1850,44 @@ export class BowlingScene implements IGameScene {
       return;
     }
 
-    if (this.bowlingPhase === 'COCKED') {
+    if (this.isStanceRepositioning || this.currentHipSpeed > 0.35) {
       this.updateStatusDialog(
-        'cocked',
-        'Swing Forward!',
-        'Arm cocked — sweep through forward and down to roll!',
-        'POWER LOADED'
+        'position',
+        'Stance Repositioning',
+        'Player moving — step into stance and hold still to bowl.',
+        'STANCE REPOSITIONING'
       );
+      return;
+    }
+
+    if (!this.isBowlingArmed) {
+      const remain = Math.max(0, 0.8 - this.stableStanceTimer).toFixed(1);
+      this.updateStatusDialog(
+        'position',
+        'Settling Stance',
+        `Hold still to arm delivery (${remain}s remaining)...`,
+        'SETTLING'
+      );
+      return;
+    }
+
+    if (this.bowlingPhase === 'COCKED') {
+      if (this.cockingDuration < 0.35) {
+        const holdSec = Math.max(0, 0.35 - this.cockingDuration).toFixed(2);
+        this.updateStatusDialog(
+          'cocked',
+          'Hold Windup',
+          `Holding cocked pose steady (${holdSec}s)...`,
+          'WINDUP'
+        );
+      } else {
+        this.updateStatusDialog(
+          'cocked',
+          'Swing Forward!',
+          'Arm cocked — sweep through forward and down (> 4.8 m/s) to roll!',
+          'POWER LOADED'
+        );
+      }
       return;
     }
 
@@ -1747,5 +1899,21 @@ export class BowlingScene implements IGameScene {
       `Ready to roll the ball (${rollInfo}). Cock arm back & swing forward!`,
       'READY TO BOWL'
     );
+  }
+
+  public getDebugState(): any {
+    return {
+      currentFrame: this.currentFrame,
+      rollInFrame: this.rollInFrame,
+      isPlayerTurn: this.isPlayerTurn,
+      bowlingPhase: this.bowlingPhase,
+      cockingDuration: this.cockingDuration,
+      isBowlingArmed: this.isBowlingArmed,
+      isStanceRepositioning: this.isStanceRepositioning,
+      stableStanceTimer: this.stableStanceTimer,
+      currentHipSpeed: this.currentHipSpeed,
+      pinsUpCount: this.pinsUpCount,
+      ballActive: this.ball?.active ?? false
+    };
   }
 }

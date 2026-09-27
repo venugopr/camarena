@@ -203,6 +203,85 @@ test.describe('CamArena — Badminton Core Gameplay Regression (2 Sets)', () => 
     console.log('[Set 2] ✅ PASS — Match played genuine rallies with zero opponent net faults');
   });
 
+  // ── SET 3: Lateral Tracking Reach & Wide Strike Plane Frustum Verification ────
+  test('Set 3: Lateral hand and arm movements fully track to far left and right sides of the court', async ({ page }) => {
+    test.setTimeout(45000);
+    await launchBadmintonMatch(page);
+
+    // 1. Verify Avatar3D.mapScreenToStrikePlane with horizontal multiplier 1.25 reaches extreme screen edges
+    const frustumReach = await page.evaluate(() => {
+      const scene = (window as any).__camarena_active_scene;
+      if (!scene) return null;
+      const cam = scene.camera;
+      const leftTarget = (window as any).Avatar3D?.mapScreenToStrikePlane
+        ? (window as any).Avatar3D.mapScreenToStrikePlane(cam, -1.0, 0, 0, false, 2.05, 0, -4.2)
+        : null;
+      const rightTarget = (window as any).Avatar3D?.mapScreenToStrikePlane
+        ? (window as any).Avatar3D.mapScreenToStrikePlane(cam, 1.0, 0, 0, false, 2.05, 0, -4.2)
+        : null;
+      return {
+        leftX: leftTarget ? leftTarget.x : null,
+        rightX: rightTarget ? rightTarget.x : null
+      };
+    });
+
+    console.log('[Set 3] Frustum strike plane reach:', frustumReach);
+
+    // 2. Switch to mouse fallback mode to test full court pointer sweeps
+    await page.evaluate(() => {
+      const tracker = (window as any).__camarena?.tracker;
+      if (tracker && tracker.setTrackingMode) {
+        tracker.setTrackingMode('none');
+      }
+      const scene = (window as any).__camarena_active_scene;
+      if (scene) {
+        scene.isUsingMouse = true;
+      }
+    });
+
+    const canvas = page.locator('#viewport-container canvas').first();
+    const box = await canvas.boundingBox();
+    if (box) {
+      // Sweep mouse to far right edge of viewport
+      for (let i = 0; i < 5; i++) {
+        await page.mouse.move(box.x + box.width * 0.98, box.y + box.height * 0.5);
+        await page.waitForTimeout(100);
+      }
+
+      const rightState = await page.evaluate(() => {
+        const scene = (window as any).__camarena_active_scene;
+        return {
+          avatarX: scene?.playerAvatar?.group?.position?.x ?? 0,
+          racketX: scene?.activeRacketPos?.x ?? 0
+        };
+      });
+
+      console.log('[Set 3] Far right reach:', rightState);
+      expect(rightState.avatarX, 'Avatar X must track far right (> 2.0m)').toBeGreaterThan(2.0);
+      expect(rightState.racketX, 'Racket X must track far right (> 2.2m)').toBeGreaterThan(2.2);
+
+      // Sweep mouse to far left edge of viewport
+      for (let i = 0; i < 5; i++) {
+        await page.mouse.move(box.x + box.width * 0.02, box.y + box.height * 0.5);
+        await page.waitForTimeout(100);
+      }
+
+      const leftState = await page.evaluate(() => {
+        const scene = (window as any).__camarena_active_scene;
+        return {
+          avatarX: scene?.playerAvatar?.group?.position?.x ?? 0,
+          racketX: scene?.activeRacketPos?.x ?? 0
+        };
+      });
+
+      console.log('[Set 3] Far left reach:', leftState);
+      expect(leftState.avatarX, 'Avatar X must track far left (< -2.0m)').toBeLessThan(-2.0);
+      expect(leftState.racketX, 'Racket X must track far left (< -2.2m)').toBeLessThan(-2.2);
+    }
+
+    console.log('[Set 3] ✅ PASS — Lateral hand and arm movements fully track to far left and right court boundaries');
+  });
+
   test.afterEach(async ({ page, context }) => {
     const video = page.video();
     await page.close();

@@ -455,43 +455,43 @@ html, body {
   pointer-events: auto;
 }
 
-/* Crisp Sports Arcade Callouts (top 14% of screen) */
+/* Crisp Sports Arcade Callouts (Relocated to Upper-Left Flank to clear central flight corridor) */
 .arcade-callout {
   position: fixed;
-  top: 14%;
-  left: 50%;
-  transform: translate(-50%, -50%);
+  top: 120px;
+  left: 28px;
+  transform: none;
   z-index: 45;
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 28px;
+  padding: 8px 24px;
   border-radius: var(--radius-md);
   font-family: var(--font-sans);
-  font-size: 1.55rem;
+  font-size: 1.35rem;
   font-weight: 900;
-  letter-spacing: 0.10em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: #fff;
   pointer-events: none;
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.75);
-  animation: arcadePop 0.22s cubic-bezier(0.18, 0.89, 0.32, 1.28);
+  animation: arcadePopSide 0.22s cubic-bezier(0.18, 0.89, 0.32, 1.28);
   transition: opacity 0.25s ease, transform 0.25s ease;
 }
 
-@keyframes arcadePop {
-  0% { opacity: 0; transform: translate(-50%, -40%) scale(0.85); }
-  60% { opacity: 1; transform: translate(-50%, -52%) scale(1.05); }
-  100% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+@keyframes arcadePopSide {
+  0% { opacity: 0; transform: translateY(-8px) scale(0.92); }
+  60% { opacity: 1; transform: translateY(2px) scale(1.02); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 .arcade-callout.out {
   background: linear-gradient(135deg, rgba(220, 20, 60, 0.95), rgba(150, 0, 30, 0.95));
   border: 1.5px solid rgba(255, 0, 85, 0.9);
   box-shadow: 0 0 35px rgba(255, 0, 85, 0.7);
-  animation: arcadePop 0.22s cubic-bezier(0.18, 0.89, 0.32, 1.28), shake 0.35s ease-in-out;
+  animation: arcadePopSide 0.22s cubic-bezier(0.18, 0.89, 0.32, 1.28), shakeSide 0.35s ease-in-out;
 }
 
 .arcade-callout.net-fault {
@@ -513,12 +513,12 @@ html, body {
   color: #000;
 }
 
-@keyframes shake {
-  0%, 100% { transform: translate(-50%, -50%); }
-  20% { transform: translate(-53%, -50%); }
-  40% { transform: translate(-47%, -50%); }
-  60% { transform: translate(-52%, -50%); }
-  80% { transform: translate(-48%, -50%); }
+@keyframes shakeSide {
+  0%, 100% { transform: translateY(0); }
+  20% { transform: translateY(-4px) scale(1.02); }
+  40% { transform: translateY(4px) scale(1.02); }
+  60% { transform: translateY(-2px) scale(1); }
+  80% { transform: translateY(2px) scale(1); }
 }
 
 /* Transparent Rules & Target Banner */
@@ -1925,15 +1925,247 @@ html, body {
   }
 }
 
-/* Badminton camera view button uses same class but has own ID for specificity override */
 #btn-bm-camera-view {
   top: 88px;
   right: 24px;
 }
 
-#btn-bowling-camera-view {
+#btn-bowling-camera-view,
+#btn-tt-camera-view {
   top: 232px;
   right: 24px;
+}
+
+/* ─── Table Tennis Status / Dialogue Box (Top-Right) ─────────────────── */
+#tt-status-box {
+  position: absolute;
+  top: 72px;
+  right: 24px;
+  width: 350px;
+  background: rgba(10, 0, 20, 0.92);
+  backdrop-filter: blur(16px);
+  border: 2px solid rgba(0, 242, 254, 0.5);
+  border-radius: 16px;
+  padding: 16px 20px;
+  box-shadow: 0 10px 36px rgba(0, 0, 0, 0.8), 0 0 24px rgba(0, 242, 254, 0.2);
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  user-select: none;
+  box-sizing: border-box;
+  transition: border-color 0.25s ease, box-shadow 0.25s ease;
+}
+
+#tt-status-box.state-position {
+  border-color: rgba(245, 158, 11, 0.85);
+  box-shadow: 0 10px 36px rgba(0, 0, 0, 0.8), 0 0 28px rgba(245, 158, 11, 0.35);
+}
+
+#tt-status-box.state-ready {
+  border-color: rgba(0, 242, 254, 0.9);
+  box-shadow: 0 10px 36px rgba(0, 0, 0, 0.8), 0 0 30px rgba(0, 242, 254, 0.4);
+  animation: readyGlowPulse 1.8s ease-in-out infinite alternate;
+}
+
+#tt-status-box.state-active {
+  border-color: rgba(52, 211, 153, 0.9);
+  box-shadow: 0 10px 36px rgba(0, 0, 0, 0.8), 0 0 26px rgba(52, 211, 153, 0.35);
+}
+
+#tt-status-box.state-over {
+  border-color: rgba(16, 185, 129, 0.9);
+  box-shadow: 0 10px 36px rgba(0, 0, 0, 0.8), 0 0 28px rgba(16, 185, 129, 0.4);
+}
+
+.tt-status-tag {
+  font-family: var(--font-mono, monospace);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 1.8px;
+  text-transform: uppercase;
+  color: rgba(216, 180, 254, 0.85);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tt-status-tag .status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--primary-cyan, #00f2fe);
+  box-shadow: 0 0 10px currentColor;
+}
+
+.tt-status-title {
+  font-family: 'Outfit', 'Inter', sans-serif;
+  font-size: 30px;
+  font-weight: 900;
+  letter-spacing: 0.5px;
+  color: #fff;
+  line-height: 1.15;
+}
+
+.tt-status-desc {
+  font-family: 'Outfit', 'Inter', sans-serif;
+  font-size: 15px;
+  font-weight: 500;
+  color: rgba(241, 245, 249, 0.92);
+  line-height: 1.4;
+}
+
+/* ─── Table Tennis Posture Gate Modal ─────────────────────────────────────── */
+#tt-posture-modal {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(3, 7, 18, 0.85);
+  backdrop-filter: blur(24px);
+  z-index: 999;
+  user-select: none;
+  pointer-events: auto;
+  transition: opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1), transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+#tt-posture-modal.hidden {
+  opacity: 0;
+  pointer-events: none;
+  transform: scale(0.96);
+}
+
+.tt-posture-card {
+  max-width: 520px;
+  width: 90%;
+  background: linear-gradient(135deg, rgba(15, 23, 42, 0.95), rgba(30, 27, 75, 0.92));
+  border: 2px solid rgba(245, 158, 11, 0.85);
+  border-radius: 24px;
+  padding: 32px 36px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 16px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.85), 0 0 40px rgba(245, 158, 11, 0.3);
+  animation: postureModalPulse 2.4s ease-in-out infinite alternate;
+}
+
+@keyframes postureModalPulse {
+  0% { box-shadow: 0 20px 60px rgba(0, 0, 0, 0.85), 0 0 30px rgba(245, 158, 11, 0.25); }
+  100% { box-shadow: 0 20px 60px rgba(0, 0, 0, 0.85), 0 0 50px rgba(245, 158, 11, 0.5); }
+}
+
+.tt-posture-icon {
+  font-size: 52px;
+  filter: drop-shadow(0 0 16px rgba(245, 158, 11, 0.8));
+}
+
+.tt-posture-title {
+  font-family: 'Outfit', 'Inter', sans-serif;
+  font-size: 22px;
+  font-weight: 900;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: #fbbf24;
+  line-height: 1.2;
+}
+
+.tt-posture-desc {
+  font-family: 'Inter', sans-serif;
+  font-size: 15px;
+  font-weight: 500;
+  color: #e2e8f0;
+  line-height: 1.5;
+}
+
+.tt-posture-hint {
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(148, 163, 184, 0.9);
+  background: rgba(0, 0, 0, 0.4);
+  padding: 6px 14px;
+  border-radius: 9999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* ─── Table Tennis 3D Bounce Decal Callout Badge ──────────────────────────── */
+/* ─── Table Tennis 3D Bounce Decal Callout Badge (Relocated to Side Flank) ─ */
+.tt-bounce-callout {
+  position: absolute;
+  top: 172px;
+  left: 28px;
+  pointer-events: none;
+  user-select: none;
+  z-index: 45;
+  font-family: 'Outfit', 'Inter', sans-serif;
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: 1.1px;
+  text-transform: uppercase;
+  padding: 8px 18px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transform: scale(1);
+  transition: opacity 0.3s ease, transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.7);
+}
+
+.tt-bounce-callout.hidden {
+  opacity: 0;
+  transform: translateY(-6px) scale(0.92);
+}
+
+.tt-bounce-callout.your-side {
+  background: rgba(127, 29, 29, 0.92);
+  border: 2px solid #ef4444;
+  color: #fee2e2;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.7), 0 0 24px rgba(239, 68, 68, 0.55);
+}
+
+.tt-bounce-callout.opponent-side {
+  background: rgba(6, 78, 59, 0.92);
+  border: 2px solid #10b981;
+  color: #d1fae5;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.7), 0 0 24px rgba(16, 185, 129, 0.55);
+}
+
+/* ─── Table Tennis Fault Banner (Relocated to Side Flank) ─────────────────── */
+.tt-fault-banner {
+  position: absolute;
+  top: 120px;
+  left: 28px;
+  transform: none;
+  background: linear-gradient(135deg, rgba(220, 38, 38, 0.95), rgba(153, 27, 27, 0.92));
+  border: 2px solid #f87171;
+  border-radius: 14px;
+  padding: 10px 22px;
+  font-family: 'Outfit', 'Inter', sans-serif;
+  font-size: 14px;
+  font-weight: 900;
+  letter-spacing: 0.8px;
+  color: #fff;
+  z-index: 50;
+  user-select: none;
+  pointer-events: none;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.8), 0 0 30px rgba(239, 68, 68, 0.6);
+  animation: faultBannerSidePop 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: opacity 0.4s ease, transform 0.4s ease;
+}
+
+.tt-fault-banner.hidden {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-8px);
+}
+
+@keyframes faultBannerSidePop {
+  0% { transform: translateY(-8px) scale(0.92); opacity: 0; }
+  100% { transform: translateY(0) scale(1); opacity: 1; }
 }
 
 /* ─── Bowling HUD Layout ───────────────────────────────────────────────── */
@@ -2334,16 +2566,16 @@ html, body {
 
 .bm-line-call-badge {
   position: absolute;
-  top: 24px;
-  left: 50%;
-  transform: translateX(-50%) scale(0.9);
+  top: 120px;
+  left: 28px;
+  transform: scale(0.92);
   font-family: var(--font-sans);
-  font-size: 1.3rem;
+  font-size: 1.15rem;
   font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: #fff;
-  padding: 6px 24px;
+  padding: 6px 20px;
   border-radius: var(--radius-md);
   background: rgba(10, 15, 29, 0.92);
   backdrop-filter: blur(14px);
@@ -2369,7 +2601,7 @@ html, body {
 
 .bm-line-call-badge.visible {
   opacity: 1;
-  transform: translateX(-50%) scale(1.0);
+  transform: scale(1.0);
 }
 
 /* ─── Main Menu — always on top ─────────────────────────────────────────────── */
@@ -2441,18 +2673,42 @@ html, body {
   padding: 5px 16px !important;
 }
 
-/* ─── Net Hit Banner: Flash Entry Animation ───────────────────────────────────── */
-@keyframes netHitFlash {
-  0%   { opacity: 0; transform: translateX(-50%) scale(0.85); }
-  15%  { opacity: 1; transform: translateX(-50%) scale(1.08); }
-  30%  { transform: translateX(-50%) scale(1.0); }
+/* ─── Net Hit Banner: Upper-Left Flank Entry Animation ───────────────────────── */
+@keyframes netHitFlashSide {
+  0%   { opacity: 0; transform: translateY(-6px) scale(0.92); }
+  15%  { opacity: 1; transform: translateY(0) scale(1.02); }
+  30%  { transform: scale(1.0); }
   80%  { opacity: 1; }
-  100% { opacity: 0; transform: translateX(-50%) scale(0.96); }
+  100% { opacity: 0; transform: translateY(-4px) scale(0.96); }
+}
+
+#tt-net-hit-banner,
+#bm-net-hit-banner {
+  position: absolute !important;
+  top: 120px !important;
+  left: 28px !important;
+  transform: none !important;
+  background: rgba(255, 30, 30, 0.22);
+  border: 2px solid rgba(255, 60, 60, 0.85);
+  border-radius: 14px;
+  padding: 10px 24px;
+  color: #ff4444;
+  font-family: 'Outfit', 'Inter', sans-serif;
+  font-size: 16px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-align: left;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  pointer-events: none;
+  z-index: 50;
+  text-shadow: 0 0 16px rgba(255, 60, 60, 0.8);
+  box-shadow: 0 0 24px rgba(255, 30, 30, 0.4);
 }
 
 #tt-net-hit-banner[style*='display: block'],
 #bm-net-hit-banner[style*='display: block'] {
-  animation: netHitFlash 1.4s ease-out forwards;
+  animation: netHitFlashSide 1.4s ease-out forwards !important;
 }
 
 /* ─── Scene Transition: Smooth Fade ───────────────────────────────────────────── */
@@ -2476,5 +2732,6 @@ html, body {
   letter-spacing: 0.1em !important;
   text-shadow: 0 0 12px rgba(251, 191, 36, 0.6);
 }
+
 
 

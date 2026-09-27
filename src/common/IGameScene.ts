@@ -37,6 +37,8 @@ export interface IGameScene {
   resume(): void;
   reset(): void;
   setTargetScore?(score: number): void;
+  setDominantHand?(hand: 'right' | 'left'): void;
+  setDominantArm?(arm: 'right' | 'left'): void;
 
   update(deltaTime: number, motionFrame: MotionFrame | null): void;
   onAction(event: ActionEvent): void;

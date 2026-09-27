@@ -94,6 +94,9 @@ export class GameSceneManager {
 
   public setDominantHand(hand: 'right' | 'left'): void {
     this.dominantHand = hand;
+    if (this.activeScene && 'setDominantHand' in this.activeScene) {
+      (this.activeScene as any).setDominantHand(hand);
+    }
     if (this.activeSceneId) {
       this.switchScene(this.activeSceneId);
     }

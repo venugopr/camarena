@@ -42,6 +42,7 @@ export class Avatar3D {
   private racketGroup: THREE.Group | null = null;
   public racketMesh?: THREE.Mesh;
   private paddleGroup: THREE.Group | null = null;
+  public currentEquipment: 'badminton' | 'tabletennis' | 'none' = 'badminton';
   private headMesh: THREE.Mesh;
   private readonly jointSmoothing = 0.18;
 
@@ -266,83 +267,80 @@ export class Avatar3D {
   private buildTableTennisPaddle(): void {
     this.paddleGroup = new THREE.Group();
 
-    // Flared ergonomic wooden handle
-    const handleGeo = new THREE.CylinderGeometry(0.018, 0.024, 0.18, 16);
-    const handleMat = new THREE.MeshStandardMaterial({
-      color: 0xb45309,
-      roughness: 0.5,
-      metalness: 0.1
-    });
-    const handle = new THREE.Mesh(handleGeo, handleMat);
-    handle.position.y = 0.09;
-    this.paddleGroup.add(handle);
+    // 1. Blade Group — Positioned DOWNWARDS towards the table, red rubber facing table (+Z)
+    const bladeGroup = new THREE.Group();
+    bladeGroup.position.set(0, -0.10, 0.05);
+    bladeGroup.rotation.x = -0.22; // Natural closed topspin pitch toward table surface
 
-    // Grip neck collar
-    const collarGeo = new THREE.CylinderGeometry(0.022, 0.022, 0.025, 16);
-    const collarMat = new THREE.MeshStandardMaterial({ color: 0x78350f });
-    const collar = new THREE.Mesh(collarGeo, collarMat);
-    collar.position.y = 0.17;
-    this.paddleGroup.add(collar);
-
-    // Multi-ply wood blade base (diameter 26cm)
-    const bladeGeo = new THREE.CylinderGeometry(0.13, 0.13, 0.014, 36);
+    // Multi-ply wood blade base (diameter 16.4cm, radius 0.082m)
+    const bladeGeo = new THREE.CylinderGeometry(0.082, 0.082, 0.009, 36);
     const bladeMat = new THREE.MeshStandardMaterial({ color: 0xd97706, roughness: 0.4 });
     const blade = new THREE.Mesh(bladeGeo, bladeMat);
-    blade.position.y = 0.27;
     blade.rotation.x = Math.PI / 2;
-    this.paddleGroup.add(blade);
+    bladeGroup.add(blade);
 
-    // High-contrast white edge tape perimeter
-    const edgeTapeGeo = new THREE.TorusGeometry(0.13, 0.009, 8, 36);
+    // High-contrast white edge tape perimeter with glow
+    const edgeTapeGeo = new THREE.TorusGeometry(0.082, 0.005, 8, 36);
     const edgeTapeMat = new THREE.MeshStandardMaterial({
       color: 0xffffff,
       emissive: 0xffffff,
-      emissiveIntensity: 0.35,
-      roughness: 0.3
+      emissiveIntensity: 0.4,
+      roughness: 0.2
     });
     const edgeTape = new THREE.Mesh(edgeTapeGeo, edgeTapeMat);
-    edgeTape.position.y = 0.27;
-    this.paddleGroup.add(edgeTape);
+    bladeGroup.add(edgeTape);
 
-    // Vibrant red forehand rubber sheet
-    const redRubberGeo = new THREE.CylinderGeometry(0.125, 0.125, 0.006, 36);
+    // Vibrant Red Forehand Rubber — FACING THE TABLE SIDE (+Z)
+    const redRubberGeo = new THREE.CylinderGeometry(0.079, 0.079, 0.003, 36);
     const redRubberMat = new THREE.MeshStandardMaterial({
-      color: 0xef4444,
-      roughness: 0.2,
-      emissive: 0xdc2626,
-      emissiveIntensity: 0.4
+      color: 0xdc2626,
+      roughness: 0.8,
+      emissive: 0x991b1b,
+      emissiveIntensity: 0.25
     });
     const redRubber = new THREE.Mesh(redRubberGeo, redRubberMat);
-    redRubber.position.set(0, 0.27, 0.008);
     redRubber.rotation.x = Math.PI / 2;
-    this.paddleGroup.add(redRubber);
+    redRubber.position.z = 0.0055; // Facing table side (+Z)
+    bladeGroup.add(redRubber);
 
     // White sweet-spot center badge
-    const spotGeo = new THREE.CircleGeometry(0.028, 16);
+    const spotGeo = new THREE.CircleGeometry(0.018, 16);
     const spotMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 });
     const spot = new THREE.Mesh(spotGeo, spotMat);
-    spot.position.set(0, 0.27, 0.012);
-    this.paddleGroup.add(spot);
+    spot.position.z = 0.0075;
+    bladeGroup.add(spot);
 
-    // Sleek black backhand rubber sheet
-    const blackRubberMat = new THREE.MeshStandardMaterial({
-      color: 0x18181b,
-      roughness: 0.25,
-      emissive: 0x27272a,
-      emissiveIntensity: 0.15
-    });
+    // Sleek Black Backhand Rubber — FACING THE PLAYER (-Z)
+    const blackRubberMat = new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.85 });
     const blackRubber = new THREE.Mesh(redRubberGeo, blackRubberMat);
-    blackRubber.position.set(0, 0.27, -0.008);
     blackRubber.rotation.x = Math.PI / 2;
-    this.paddleGroup.add(blackRubber);
+    blackRubber.position.z = -0.0055; // Facing player (-Z)
+    bladeGroup.add(blackRubber);
+
+    this.paddleGroup.add(bladeGroup);
+
+    // 2. Flared ergonomic wooden handle held in hand at the wrist
+    const handleGeo = new THREE.CylinderGeometry(0.013, 0.016, 0.11, 16);
+    const handleMat = new THREE.MeshStandardMaterial({ color: 0xb45309, roughness: 0.45, metalness: 0.1 });
+    const handle = new THREE.Mesh(handleGeo, handleMat);
+    handle.position.set(0, 0.015, 0.01);
+    handle.rotation.x = -0.22;
+    this.paddleGroup.add(handle);
 
     this.paddleGroup.visible = false;
     this.group.add(this.paddleGroup);
   }
 
   public setEquipment(type: 'badminton' | 'tabletennis' | 'none'): void {
-    if (this.racketGroup) this.racketGroup.visible = type === 'badminton';
-    if (this.paddleGroup) this.paddleGroup.visible = type === 'tabletennis';
+    this.currentEquipment = type;
+    if (this.racketGroup) {
+      this.racketGroup.visible = type === 'badminton';
+      this.racketGroup.traverse((c) => { c.visible = type === 'badminton'; });
+    }
+    if (this.paddleGroup) {
+      this.paddleGroup.visible = type === 'tabletennis';
+      this.paddleGroup.traverse((c) => { c.visible = type === 'tabletennis'; });
+    }
     this.applyDefaultPose(type === 'none' ? 'tabletennis' : type);
   }
 
@@ -512,9 +510,9 @@ export class Avatar3D {
 
     // Dynamic Torso Lean & Lateral Reach Expansion
     const reachOffset = localTarget.x;
-    if (Math.abs(reachOffset) > 0.45) {
-      const spineRoll = THREE.MathUtils.clamp(reachOffset / 1.2, -0.28, 0.28);
-      const shoulderShift = THREE.MathUtils.clamp((reachOffset - Math.sign(reachOffset) * 0.45) * 0.5, -0.25, 0.25);
+    if (Math.abs(reachOffset) > 0.40) {
+      const spineRoll = THREE.MathUtils.clamp(reachOffset / 1.1, -0.32, 0.32);
+      const shoulderShift = THREE.MathUtils.clamp((reachOffset - Math.sign(reachOffset) * 0.40) * 0.5, -0.35, 0.35);
       shoulderPos.x += shoulderShift;
       this.joints[sShoulderIdx].position.x += (dominantArm === 'right' ? -shoulderShift * 0.6 : shoulderShift * 0.6);
       this.joints[sShoulderIdx].position.y += Math.sin(spineRoll) * 0.24;
@@ -524,7 +522,7 @@ export class Avatar3D {
     }
 
     const armVector = new THREE.Vector3().subVectors(localTarget, shoulderPos);
-    const armLength = Math.min(0.92, Math.max(0.28, armVector.length()));
+    const armLength = Math.min(1.05, Math.max(0.28, armVector.length()));
     const armDir = armVector.normalize();
 
     const wristPos = new THREE.Vector3().copy(shoulderPos).addScaledVector(armDir, armLength);
@@ -540,17 +538,23 @@ export class Avatar3D {
     const forearmDir = new THREE.Vector3().subVectors(wristPos, elbowPos).normalize();
 
     if (this.racketGroup) {
-      this.racketGroup.position.copy(wristPos);
-      this.racketGroup.visible = true;
-      this.racketGroup.scale.set(1.0, 1.0, 1.0);
-      this.racketGroup.traverse((child) => { child.visible = true; });
-      this.updateRacketTransform(wristPos, elbowPos, shoulderPos, racketVelocity);
-
+      if (this.currentEquipment === 'badminton') {
+        this.racketGroup.position.copy(wristPos);
+        this.racketGroup.visible = true;
+        this.racketGroup.scale.set(1.0, 1.0, 1.0);
+        this.racketGroup.traverse((child) => { child.visible = true; });
+        this.updateRacketTransform(wristPos, elbowPos, shoulderPos, racketVelocity);
+      } else {
+        this.racketGroup.visible = false;
+        this.racketGroup.traverse((child) => { child.visible = false; });
+      }
     }
-    if (this.paddleGroup && this.paddleGroup.visible) {
+    if (this.paddleGroup && this.currentEquipment === 'tabletennis') {
       this.paddleGroup.position.copy(wristPos);
-      const quat = new THREE.Quaternion().setFromUnitVectors(upVector, forearmDir);
-      this.paddleGroup.setRotationFromQuaternion(quat);
+      this.paddleGroup.visible = true;
+      this.paddleGroup.rotation.set(-0.22, dominantArm === 'left' ? 0.15 : -0.15, 0);
+    } else if (this.paddleGroup) {
+      this.paddleGroup.visible = false;
     }
 
     // 2. Support arm (cradling/holding shuttlecock or athletic balance)
@@ -602,7 +606,7 @@ export class Avatar3D {
     shoulderPos: THREE.Vector3,
     velocityVector: THREE.Vector3 = new THREE.Vector3(0, 0, 0)
   ): void {
-    if (!this.racketGroup) return;
+    if (!this.racketGroup || this.currentEquipment !== 'badminton') return;
 
     this.racketGroup.position.copy(wristPos);
     this.racketGroup.visible = true;
@@ -636,12 +640,19 @@ export class Avatar3D {
     this.racketGroup.quaternion.slerp(targetQuat, 0.65);
   }
 
+  // Temporal debounce state for isFullBodyStanding (15 consecutive frames ~250ms)
+  private static standingDebounced = true;
+  private static standingCandidate = true;
+  private static standingCandidateFrames = 0;
+
   /**
    * Validates if full-body standing pose is confident enough for footwork court mapping.
-   * Prevents tracking collapse during seated desk testing.
+   * Prevents tracking collapse during seated desk testing while fully allowing athletic stances and lunges.
    */
   public static isFullBodyStanding(landmarks: Landmark3D[]): boolean {
-    if (!landmarks || landmarks.length < 33) return false;
+    if (!landmarks || landmarks.length < 33) {
+      return Avatar3D.updateStandingDebounce(false);
+    }
     const leftHip = landmarks[PoseLandmark.LEFT_HIP];
     const rightHip = landmarks[PoseLandmark.RIGHT_HIP];
     const leftAnkle = landmarks[PoseLandmark.LEFT_ANKLE];
@@ -649,24 +660,99 @@ export class Avatar3D {
     const leftKnee = landmarks[PoseLandmark.LEFT_KNEE];
     const rightKnee = landmarks[PoseLandmark.RIGHT_KNEE];
 
-    // Visibility gate: hips must have good visibility
-    const hipVis = ((leftHip?.visibility ?? 1) + (rightHip?.visibility ?? 1)) * 0.5;
-    if (hipVis < 0.50) return false;
+    // Visibility gate: hips must have basic visibility
+    const hipVis = ((leftHip?.visibility ?? 0) + (rightHip?.visibility ?? 0)) * 0.5;
+    if (hipVis < 0.25) return Avatar3D.updateStandingDebounce(false);
 
-    // Presence/visibility of lower body: require confident ankle visibility
-    const ankleVis = ((leftAnkle?.visibility ?? 0) + (rightAnkle?.visibility ?? 0)) * 0.5;
-    if (ankleVis < 0.35) return false;
+    // Leg & Knee visibility check
+    const leftKneeVis = leftKnee?.visibility ?? 0;
+    const rightKneeVis = rightKnee?.visibility ?? 0;
+    const leftAnkleVis = leftAnkle?.visibility ?? 0;
+    const rightAnkleVis = rightAnkle?.visibility ?? 0;
 
-    // Close-up check: shoulder width in camera space
-    const leftShoulder = landmarks[PoseLandmark.LEFT_SHOULDER];
-    const rightShoulder = landmarks[PoseLandmark.RIGHT_SHOULDER];
-    if (leftShoulder && rightShoulder) {
-      const shoulderSpan = Math.abs(rightShoulder.x - leftShoulder.x);
-      // If shoulders span > 0.55 of the frame, user is sitting too close to camera
-      if (shoulderSpan > 0.55) return false;
+    const hasKneesVisible = leftKneeVis >= 0.30 || rightKneeVis >= 0.30;
+    if (!hasKneesVisible) return Avatar3D.updateStandingDebounce(false);
+
+    // Vertical femur drop calculation (support both camera and world coordinate sign conventions):
+    const leftDrop = Math.max(leftKnee.y - leftHip.y, leftHip.y - leftKnee.y, Math.abs(leftHip.y - leftKnee.y));
+    const rightDrop = Math.max(rightKnee.y - rightHip.y, rightHip.y - rightKnee.y, Math.abs(rightHip.y - rightKnee.y));
+    const verticalDrop = Math.max(leftDrop, rightDrop);
+
+    // Helper: angle between Knee -> Hip and Knee -> Ankle
+    const calcKneeAngle = (hip: Landmark3D, knee: Landmark3D, ankle: Landmark3D): number => {
+      const ax = hip.x - knee.x;
+      const ay = hip.y - knee.y;
+      const az = (hip.z ?? 0) - (knee.z ?? 0);
+
+      const bx = ankle.x - knee.x;
+      const by = ankle.y - knee.y;
+      const bz = (ankle.z ?? 0) - (knee.z ?? 0);
+
+      const dot = ax * bx + ay * by + az * bz;
+      const lenA = Math.hypot(ax, ay, az);
+      const lenB = Math.hypot(bx, by, bz);
+      if (lenA < 1e-4 || lenB < 1e-4) return 180;
+      const cosAngle = Math.max(-1, Math.min(1, dot / (lenA * lenB)));
+      return (Math.acos(cosAngle) * 180) / Math.PI;
+    };
+
+    // If verticalDrop >= 0.20m, the player is standing upright (even with bent athletic knees)
+    if (verticalDrop >= 0.20) {
+      let rawStanding = true;
+      const leftShoulder = landmarks[PoseLandmark.LEFT_SHOULDER];
+      const rightShoulder = landmarks[PoseLandmark.RIGHT_SHOULDER];
+      if (leftShoulder && rightShoulder) {
+        const shoulderSpan = Math.abs(rightShoulder.x - leftShoulder.x);
+        if (shoulderSpan > 0.70) rawStanding = false;
+      }
+      return Avatar3D.updateStandingDebounce(rawStanding);
     }
 
-    return true;
+    // Only flag sitting if verticalDrop < 0.16m (horizontal thighs) AND both knee angles are < 105°
+    if (verticalDrop < 0.16) {
+      if (leftKneeVis >= 0.30 && rightKneeVis >= 0.30 && leftAnkleVis >= 0.25 && rightAnkleVis >= 0.25) {
+        const leftAngle = calcKneeAngle(leftHip, leftKnee, leftAnkle);
+        const rightAngle = calcKneeAngle(rightHip, rightKnee, rightAnkle);
+        if (leftAngle < 105 && rightAngle < 105) {
+          return Avatar3D.updateStandingDebounce(false);
+        }
+      } else {
+        // Horizontal thighs and lower legs hidden under desk
+        return Avatar3D.updateStandingDebounce(false);
+      }
+    }
+
+    // Default between 0.16m and 0.20m: treat as standing unless clearly seated
+    return Avatar3D.updateStandingDebounce(true);
+  }
+
+  /**
+   * Temporal debouncing: requires 15 consecutive frames (~250ms) of consistent state change
+   * before flipping isStanding to prevent single-frame flickers.
+   */
+  private static updateStandingDebounce(rawStanding: boolean): boolean {
+    if (rawStanding === Avatar3D.standingDebounced) {
+      Avatar3D.standingCandidate = rawStanding;
+      Avatar3D.standingCandidateFrames = 0;
+    } else {
+      if (rawStanding === Avatar3D.standingCandidate) {
+        Avatar3D.standingCandidateFrames++;
+        if (Avatar3D.standingCandidateFrames >= 15) {
+          Avatar3D.standingDebounced = rawStanding;
+          Avatar3D.standingCandidateFrames = 0;
+        }
+      } else {
+        Avatar3D.standingCandidate = rawStanding;
+        Avatar3D.standingCandidateFrames = 1;
+      }
+    }
+    return Avatar3D.standingDebounced;
+  }
+
+  public static resetStandingDebounce(initialState = true): void {
+    Avatar3D.standingDebounced = initialState;
+    Avatar3D.standingCandidate = initialState;
+    Avatar3D.standingCandidateFrames = 0;
   }
 
   public setActionOTSVisibility(enabled: boolean): void {
@@ -975,8 +1061,8 @@ export class Avatar3D {
     const shoulderPos = this.joints[shoulderIdx].position;
 
     // Dynamic Torso Lean & Lateral Reach Expansion for webcam tracking
-    if (Math.abs(wristPos.x) > 0.45) {
-      const shoulderShift = THREE.MathUtils.clamp((wristPos.x - Math.sign(wristPos.x) * 0.45) * 0.4, -0.25, 0.25);
+    if (Math.abs(wristPos.x) > 0.40) {
+      const shoulderShift = THREE.MathUtils.clamp((wristPos.x - Math.sign(wristPos.x) * 0.40) * 0.45, -0.35, 0.35);
       shoulderPos.x += shoulderShift;
     }
 
@@ -984,17 +1070,26 @@ export class Avatar3D {
     const upVector = new THREE.Vector3(0, 1, 0);
 
     if (this.racketGroup) {
-      this.racketGroup.position.copy(wristPos);
-      this.racketGroup.visible = true;
-      this.racketGroup.scale.set(1.0, 1.0, 1.0);
-      this.racketGroup.traverse((child) => { child.visible = true; });
-      this.updateRacketTransform(wristPos, elbowPos, shoulderPos, this.smoothedRacketVel);
+      if (this.currentEquipment === 'badminton') {
+        this.racketGroup.position.copy(wristPos);
+        this.racketGroup.visible = true;
+        this.racketGroup.scale.set(1.0, 1.0, 1.0);
+        this.racketGroup.traverse((child) => { child.visible = true; });
+        this.updateRacketTransform(wristPos, elbowPos, shoulderPos, this.smoothedRacketVel);
+      } else {
+        this.racketGroup.visible = false;
+        this.racketGroup.traverse((child) => { child.visible = false; });
+      }
     }
 
-    if (this.paddleGroup && this.paddleGroup.visible) {
-      this.paddleGroup.position.copy(wristPos);
-      const quat = new THREE.Quaternion().setFromUnitVectors(upVector, forearmDir);
-      this.paddleGroup.setRotationFromQuaternion(quat);
+    if (this.paddleGroup) {
+      if (this.currentEquipment === 'tabletennis') {
+        this.paddleGroup.position.copy(wristPos);
+        this.paddleGroup.visible = true;
+        this.paddleGroup.rotation.set(-0.22, dominantArm === 'left' ? 0.15 : -0.15, 0);
+      } else {
+        this.paddleGroup.visible = false;
+      }
     }
 
     // Position support / non-dominant hand
@@ -1028,9 +1123,9 @@ export class Avatar3D {
       if (rawWristVel.length() < 0.15) rawWristVel.set(0, 0, 0);
       if (rawRacketVel.length() < 0.15) rawRacketVel.set(0, 0, 0);
 
-      // EMA smoothing alpha = 0.35
-      this.smoothedRightWristVel.lerp(rawWristVel, 0.35);
-      this.smoothedRacketVel.lerp(rawRacketVel, 0.35);
+      // EMA smoothing alpha = 0.45 (responsive to natural strokes/flicks)
+      this.smoothedRightWristVel.lerp(rawWristVel, 0.45);
+      this.smoothedRacketVel.lerp(rawRacketVel, 0.45);
 
       this.prevRightWristPos.copy(currentDominantWristPos);
       this.prevRacketWorldPos.copy(currentRacketWorldPos);
@@ -1049,9 +1144,37 @@ export class Avatar3D {
     return this.smoothedRacketVel.clone();
   }
 
+  public resetVelocities(): void {
+    this.smoothedRightWristVel.set(0, 0, 0);
+    this.smoothedRacketVel.set(0, 0, 0);
+    this.hasPrevRightWristPos = false;
+    this.hasPrevRacketPos = false;
+  }
+
   public getHandWorldPosition(hand: 'left' | 'right'): THREE.Vector3 {
     const index = hand === 'left' ? PoseLandmark.LEFT_WRIST : PoseLandmark.RIGHT_WRIST;
     return this.group.localToWorld(this.joints[index].position.clone());
+  }
+
+  public getShoulderWorldPosition(arm: 'left' | 'right' = this.dominantArm): THREE.Vector3 {
+    const index = arm === 'left' ? PoseLandmark.LEFT_SHOULDER : PoseLandmark.RIGHT_SHOULDER;
+    const pos = this.joints[index].position.clone();
+    this.group.localToWorld(pos);
+    return pos;
+  }
+
+  public getHipWorldPosition(side: 'left' | 'right' | 'center' = 'center'): THREE.Vector3 {
+    if (side === 'center') {
+      const left = this.joints[PoseLandmark.LEFT_HIP].position;
+      const right = this.joints[PoseLandmark.RIGHT_HIP].position;
+      const center = new THREE.Vector3().addVectors(left, right).multiplyScalar(0.5);
+      this.group.localToWorld(center);
+      return center;
+    }
+    const idx = side === 'left' ? PoseLandmark.LEFT_HIP : PoseLandmark.RIGHT_HIP;
+    const pos = this.joints[idx].position.clone();
+    this.group.localToWorld(pos);
+    return pos;
   }
 
   public pulseImpact(type: 'smash' | 'hit' | 'serve' = 'hit'): void {
@@ -1072,10 +1195,10 @@ export class Avatar3D {
   }
 
   public getPaddleWorldPosition(): THREE.Vector3 {
-    if (this.paddleGroup && this.paddleGroup.visible) {
+    if (this.paddleGroup && (this.paddleGroup.visible || this.currentEquipment === 'tabletennis')) {
       const pos = new THREE.Vector3();
       this.paddleGroup.getWorldPosition(pos);
-      const bladeOffset = new THREE.Vector3(0, 0.27, 0);
+      const bladeOffset = new THREE.Vector3(0, -0.10, 0.05);
       bladeOffset.applyQuaternion(this.paddleGroup.quaternion);
       pos.add(bladeOffset);
       return pos;
@@ -1251,7 +1374,7 @@ export class Avatar3D {
     return new THREE.Vector3()
       .copy(camera.position)
       .addScaledVector(forward, dStrike)
-      .addScaledVector(right, normX * halfW * 0.85 + sideOffset)
+      .addScaledVector(right, normX * halfW * 1.25 + sideOffset)
       .addScaledVector(up, normY * halfH * 0.85);
   }
 
