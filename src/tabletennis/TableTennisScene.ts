@@ -30,6 +30,7 @@ export class TableTennisScene implements IGameScene {
   private ballHaloMat!: THREE.MeshBasicMaterial;
   private ballShadowMesh!: THREE.Mesh;
   private ballShadowMat!: THREE.MeshBasicMaterial;
+  private ballLight!: THREE.PointLight;
   private fpPaddleGroup!: THREE.Group; // First-person high-visibility bat
   private fpSweetSpotMesh!: THREE.Mesh;
   private aimReticleMesh!: THREE.Mesh;
@@ -111,6 +112,7 @@ export class TableTennisScene implements IGameScene {
   private prevHipPos = new THREE.Vector3();
   private hasPrevHipPos = false;
   private hasPrevUpperBodyPos = false;
+  private paddleHistory: { pos: THREE.Vector3; velZ: number; t: number }[] = [];
 
   // Strict Standing Posture Gate (Debounced 0.6s & Centered Modal)
   private stableStandingTimer = 0;
@@ -150,10 +152,12 @@ export class TableTennisScene implements IGameScene {
   private targetScore = 11;
   private winByTwo = true;
   private initialServerForGame: 1 | 2 = 1;
+  private gameStartingServer: 1 | 2 = 1;
   private player1GamesWon = 0;
   private player2GamesWon = 0;
   private readonly gamesToWinMatch = 3; // Best 3 of 5 games
   private currentGameNumber = 1;
+  private aiHitCooldown = 0;
 
   private scoreState: GameScoreState = {
     player1Score: 0,
@@ -525,12 +529,16 @@ export class TableTennisScene implements IGameScene {
     // High-visibility glowing halo around ball
     const haloGeo = new THREE.SphereGeometry(this.ballRadius * 1.6, 16, 16);
     this.ballHaloMat = new THREE.MeshBasicMaterial({
-      color: 0x00f2fe,
+      color: 0xef4444,
       transparent: true,
       opacity: 0.55
     });
     this.ballHaloMesh = new THREE.Mesh(haloGeo, this.ballHaloMat);
     this.ballMesh.add(this.ballHaloMesh);
+
+    // Dynamic Point Light attached to ball
+    this.ballLight = new THREE.PointLight(0xef4444, 1.8, 3.5);
+    this.ballMesh.add(this.ballLight);
 
     // Dynamic table-projected contact shadow blob pinned to table surface
     const shadowGeo = new THREE.CircleGeometry(0.040, 24);
@@ -588,8 +596,8 @@ export class TableTennisScene implements IGameScene {
     const ripple = this.bounceRipples.find(r => r.life <= 0) || this.bounceRipples[0];
     ripple.mesh.position.set(x, this.tableHeight + 0.0025, z);
     ripple.life = ripple.maxLife;
-    // Red/Amber on player side, Green/Cyan on opponent side
-    const colorHex = isPlayerSide ? 0xef4444 : 0x10b981;
+    // Red on player half (Z < 0), Light Blue / Cyan on opponent half (Z > 0)
+    const colorHex = isPlayerSide ? 0xef4444 : 0x00f2fe;
     ripple.mat.color.setHex(colorHex);
     ripple.mat.opacity = 0.95;
     ripple.mesh.scale.set(1, 1, 1);
@@ -673,7 +681,7 @@ export class TableTennisScene implements IGameScene {
       const t = i / this.TRAIL_LENGTH;
       const trailGeo = new THREE.SphereGeometry(this.ballRadius * (1 - t * 0.70), 8, 8);
       const trailMat = new THREE.MeshBasicMaterial({
-        color: new THREE.Color().lerpColors(new THREE.Color(0xffffff), new THREE.Color(0x00f2fe), t),
+        color: new THREE.Color(0xef4444),
         transparent: true,
         opacity: 0
       });
@@ -878,8 +886,9 @@ export class TableTennisScene implements IGameScene {
     this.startNewGame(1);
   }
 
-  private startNewGame(firstServer: 1 | 2): void {
-    this.initialServerForGame = firstServer;
+  private startNewGame(firstServer: 1 | 2 = 1): void {
+    this.gameStartingServer = 1; // Always reset to 1 in single-player arcade mode (Player serves first at 0-0 of every set)
+    this.initialServerForGame = this.gameStartingServer;
     this.scoreState.player1Score = 0;
     this.scoreState.player2Score = 0;
     this.scoreState.isGameOver = false;
@@ -887,30 +896,30 @@ export class TableTennisScene implements IGameScene {
     this.isInitialStanceSettling = true;
     this.startupCountdown = 1.8;
     this.isServeArmed = false;
+    this.aiHitCooldown = 0;
     this.resetServe();
     this.notifyScore();
   }
 
   /**
    * Official ITTF Service Rotation:
-   * Each player serves 2 consecutive points.
-   * If score reaches 10-10 (deuce), service alternates every single point until won by 2.
+   * Calculate server strictly by total points played: totalPoints = p1 + p2
+   * Normal Play: Server changes every 2 points: Math.floor(totalPoints / 2) % 2 === (gameStartingServer === 1 ? 0 : 1)
+   * Deuce Play (Score >= 10-10 or target - 1): Server alternates every 1 point: totalPoints % 2 === (gameStartingServer === 1 ? 0 : 1)
    */
   private determineCurrentServer(): 1 | 2 {
     const p1 = this.scoreState.player1Score;
     const p2 = this.scoreState.player2Score;
     const totalPoints = p1 + p2;
-    const otherServer: 1 | 2 = this.initialServerForGame === 1 ? 2 : 1;
 
-    // Deuce rule: 10-10 or higher -> alternate every point
-    if (p1 >= 10 && p2 >= 10) {
-      const deucePoints = totalPoints - 20;
-      return (deucePoints % 2 === 0) ? this.initialServerForGame : otherServer;
+    const isDeuce = (p1 >= 10 && p2 >= 10) || (p1 >= this.targetScore - 1 && p2 >= this.targetScore - 1);
+    if (isDeuce) {
+      const isPlayerTurn = totalPoints % 2 === (this.gameStartingServer === 1 ? 0 : 1);
+      return isPlayerTurn ? 1 : 2;
     }
 
-    // Normal rotation: switch server every 2 points
-    const serviceTurnIndex = Math.floor(totalPoints / 2);
-    return (serviceTurnIndex % 2 === 0) ? this.initialServerForGame : otherServer;
+    const isPlayerTurn = Math.floor(totalPoints / 2) % 2 === (this.gameStartingServer === 1 ? 0 : 1);
+    return isPlayerTurn ? 1 : 2;
   }
 
   private setBallVisibility(visible: boolean): void {
@@ -1122,6 +1131,55 @@ export class TableTennisScene implements IGameScene {
       THREE.MathUtils.clamp(vy, -0.6, 3.2),
       THREE.MathUtils.clamp(vz, -3.8, 3.8)
     );
+  }
+
+  /**
+   * Overhauled Serve Strike Kinematic Evaluator:
+   * 1. Disarms immediate spawns (paddle.z <= ball.z + 0.04m).
+   * 2. Requires net forward stroke displacement >= 0.12m over last 150ms.
+   * 3. Rejects hand jitter/shaking oscillations and displacement < 0.08m.
+   * 4. Allows natural angled sweeps while requiring forward velocity (vel.z >= 1.2 m/s).
+   */
+  private isServeStrikeRegistered(relativeWristVel: THREE.Vector3): boolean {
+    const paddleZ = this.activePaddlePos.z;
+    const ballZ = this.ballPos.z;
+    // 1. Disarm immediate spawns: Paddle must start behind ball
+    if (paddleZ > ballZ + 0.04) {
+      return false;
+    }
+
+    // 2. Stroke Displacement & Duration Check
+    if (this.paddleHistory.length < 2) return false;
+    const oldestPos = this.paddleHistory[0].pos;
+    const netDz = this.activePaddlePos.z - oldestPos.z;
+
+    // Reject displacement < 0.08m completely
+    if (netDz < 0.08) {
+      return false;
+    }
+    // Require net forward stroke displacement >= 0.12m over last 150ms
+    if (netDz < 0.12) {
+      return false;
+    }
+
+    // 3. Reject Jitter / Hand Shaking Oscillations
+    let signFlips = 0;
+    for (let i = 1; i < this.paddleHistory.length; i++) {
+      if (this.paddleHistory[i].velZ * this.paddleHistory[i - 1].velZ < -0.01) {
+        signFlips++;
+      }
+    }
+    if (signFlips >= 2) {
+      return false;
+    }
+
+    // 4. Forward Velocity requirement (>= 1.2 m/s), without blocking lateral sweep (vel.x)
+    const forwardVelZ = Math.max(relativeWristVel.z, this.paddleVelocity.z, this.smoothedWristVelocity.z);
+    if (forwardVelZ < 1.2) {
+      return false;
+    }
+
+    return true;
   }
 
   /**
@@ -1368,6 +1426,7 @@ export class TableTennisScene implements IGameScene {
     if (this.postureGraceTimer > 0) this.postureGraceTimer -= dt;
     if (this.returnGraceTimer > 0) this.returnGraceTimer -= dt;
     if (this.swingCooldown > 0) this.swingCooldown -= dt;
+    if (this.aiHitCooldown > 0) this.aiHitCooldown -= dt;
 
     // Table half surface flash decay
     if (this.playerHalfFlashTimer > 0) {
@@ -1525,7 +1584,7 @@ export class TableTennisScene implements IGameScene {
       const isPlayerStill = isStanding && Math.abs(torsoVelZ) < 0.30;
       if (isPlayerStill) {
         this.startupCountdown = Math.max(0, this.startupCountdown - dt);
-        if (dominantVel.length() < 1.2) {
+        if (dominantVel.length() < 1.0) {
           this.wristSettledTimer += dt;
         } else {
           this.wristSettledTimer = 0;
@@ -1540,14 +1599,15 @@ export class TableTennisScene implements IGameScene {
       this.setBallVisibility(false);
       this.paddleVelocity.set(0, 0, 0);
       this.smoothedWristVelocity.set(0, 0, 0);
+      this.paddleHistory = [];
       if (this.playerAvatar) {
         this.playerAvatar.resetVelocities();
       }
 
       const displaySecs = Math.max(0.1, this.startupCountdown).toFixed(1);
-      this.updateStatusDialog('⏳ GET READY...', `Stand in position to begin (${displaySecs}s)`, 'position', 'MATCH START');
+      this.updateStatusDialog('GET READY', `GET READY — Stand in position (${displaySecs}s)`, 'position', 'MATCH START');
 
-      if (this.startupCountdown <= 0 && this.wristSettledTimer >= 0.30) {
+      if (this.startupCountdown <= 0 && this.wristSettledTimer >= 0.25) {
         this.isInitialStanceSettling = false;
         this.isServeArmed = true;
         this.setBallVisibility(true);
@@ -1567,7 +1627,7 @@ export class TableTennisScene implements IGameScene {
       const isPlayerStill = isStanding && Math.abs(torsoVelZ) < 0.30;
       if (isPlayerStill) {
         this.pointTransitionTimer = Math.max(0, this.pointTransitionTimer - dt);
-        if (dominantVel.length() < 1.2) {
+        if (dominantVel.length() < 1.0) {
           this.wristSettledTimer += dt;
         } else {
           this.wristSettledTimer = 0;
@@ -1582,6 +1642,7 @@ export class TableTennisScene implements IGameScene {
       this.setBallVisibility(false);
       this.paddleVelocity.set(0, 0, 0);
       this.smoothedWristVelocity.set(0, 0, 0);
+      this.paddleHistory = [];
       this.hasPrevWrist = false;
       this.hasPrevUpperBodyPos = false;
       if (this.playerAvatar) {
@@ -1589,10 +1650,10 @@ export class TableTennisScene implements IGameScene {
       }
 
       const displaySecs = Math.max(0.1, this.pointTransitionTimer).toFixed(1);
-      this.updateStatusDialog('⏳ GET READY', `Stand in position for next serve (${displaySecs}s)...`, 'position', 'INTER-POINT');
+      this.updateStatusDialog('GET READY', `Stand in position for next serve (${displaySecs}s)...`, 'position', 'INTER-POINT');
 
-      // Transition to READY_TO_SERVE only after 1.5s timer reaches 0 AND wrist settled
-      if (this.pointTransitionTimer <= 0 && this.wristSettledTimer >= 0.30) {
+      // Transition to READY_TO_SERVE only after 1.5s timer reaches 0 AND wrist settled (< 1.0 m/s for 0.25s)
+      if (this.pointTransitionTimer <= 0 && this.wristSettledTimer >= 0.25) {
         this.isServeArmed = true;
         this.setBallVisibility(true);
         this.resetServe();
@@ -1602,7 +1663,7 @@ export class TableTennisScene implements IGameScene {
       }
     }
 
-    // 4. Firm Toss/Docked Serve & Intentional Two-Phase Motion Gating
+    // 4. Firm Toss/Docked Serve & Overhauled Kinematic Serve Strike Gating
     if (!this.isInitialStanceSettling && this.rallyState === 'READY_TO_SERVE' && this.scoreState.currentServer === 1) {
       if (this.serveCountdown > 0) {
         this.serveCountdown -= dt;
@@ -1625,16 +1686,17 @@ export class TableTennisScene implements IGameScene {
       this.prevUpperShoulder.copy(currentShoulderPos);
       this.hasPrevUpperBodyPos = true;
 
-      // Hand flow velocities: forward component (+Z toward net) and total hand speed
-      const forwardZ = Math.max(relativeWristVel.z, this.paddleVelocity.z, this.smoothedWristVelocity.z);
-      const handSpeed = Math.max(relativeWristVel.length(), this.paddleVelocity.length(), this.smoothedWristVelocity.length());
+      // Maintain 150ms position history buffer for stroke displacement and oscillation checks
+      const now = performance.now();
+      this.paddleHistory.push({ pos: this.activePaddlePos.clone(), velZ: this.paddleVelocity.z, t: now });
+      while (this.paddleHistory.length > 0 && now - this.paddleHistory[0].t > 160) {
+        this.paddleHistory.shift();
+      }
 
-      // Natural table tennis serve hand flow: forward stroke, paddle push, or active hand flick
-      const isServingHandFlow = (forwardZ > 0.6 && handSpeed > 0.9) || handSpeed > 1.6 || forwardZ > 0.9;
-
-      // Must happen in standing posture, when armed, and not when actively walking across the room
+      // Overhauled serve strike check: rejects hand twitching/shaking, enforces starting behind ball,
+      // requires net forward displacement >= 0.12m over 150ms and vel.z >= 1.2 m/s while allowing lateral sweeps.
       const canServe = this.isServeArmed && !this.isPostureGated && !this.isStanceRepositioning && this.serveCountdown <= 0;
-      if (canServe && isServingHandFlow) {
+      if (canServe && this.isServeStrikeRegistered(relativeWristVel)) {
         this.executeMotionServe();
       }
     } else if (this.rallyState === 'IN_PLAY' && this.lastHitter !== 'player') {
@@ -1771,9 +1833,11 @@ export class TableTennisScene implements IGameScene {
         this.ballPos.y = this.tableHeight + this.ballRadius;
         this.spawnBounceRipple(this.ballPos.x, this.ballPos.z, this.ballPos.z < 0);
 
-        // Realistic Table Impact Damping (Remove Ice-Skate Skidding)
+        // Realistic Table Impact Damping (Maintain forward speed on drives > 10 km/h)
+        const speedKmh = Math.abs(this.ballVel.z) * 3.6;
+        const restitutionZ = speedKmh > 10 ? 0.88 : 0.78;
         this.ballVel.y = -this.ballVel.y * 0.82;
-        this.ballVel.z = this.ballVel.z * 0.78 - this.ballSpin.x * this.ballRadius * 0.08;
+        this.ballVel.z = this.ballVel.z * restitutionZ - this.ballSpin.x * this.ballRadius * 0.08;
         this.ballVel.x = this.ballVel.x * 0.78 + this.ballSpin.y * this.ballRadius * 0.08;
 
         // Spin exchange on bounce
@@ -1859,8 +1923,8 @@ export class TableTennisScene implements IGameScene {
               this.spawnBounceRipple(this.ballPos.x, this.ballPos.z, false);
               this.audio.tableTennisBounce(false);
               if (this.bounceCountFar > 1) {
-                // Bounce 2 on opponent table: bot failed to hit ball before or upon second bounce!
-                this.handleRallyPoint(1, 'POINT PLAYER — OPPONENT DOUBLE BOUNCE / MISSED');
+                // Bounce 2 on opponent table: bot failed to hit ball before second bounce!
+                this.handleRallyPoint(1, 'POINT PLAYER — OPPONENT DOUBLE BOUNCE');
                 return;
               }
               // Bounce 1: Legal active bounce. Bot must return it.
@@ -1907,6 +1971,8 @@ export class TableTennisScene implements IGameScene {
         if (this.ballTrail[i]) {
           tm.visible = true;
           tm.position.copy(this.ballTrail[i]);
+          const trailColor = this.ballTrail[i].z < 0 ? 0xef4444 : 0x00f2fe;
+          (tm.material as THREE.MeshBasicMaterial).color.setHex(trailColor);
           (tm.material as THREE.MeshBasicMaterial).opacity = (1 - i / this.TRAIL_LENGTH) * 0.65;
         } else {
           tm.visible = false;
@@ -1939,90 +2005,99 @@ export class TableTennisScene implements IGameScene {
 
       // 7. Intelligent TT Bot Opponent with Difficulty Scaling
       if (this.lastHitter !== 'opponent' && this.servePhase === 'NONE') {
-        if (!this.hasAiInterceptDecision) {
-          this.decideAIInterception();
-        }
-        const diffLerpSpeed = this.currentDifficulty === 'legend' ? 14 : (this.currentDifficulty === 'pro' ? 9.5 : 6.0);
-        // When AI fails interception, it hesitates/reacts slowly, letting the ball bounce cleanly on its side
-        const effectiveLerpSpeed = this.aiWillIntercept ? diffLerpSpeed : diffLerpSpeed * 0.35;
-        const targetX = THREE.MathUtils.clamp(this.ballPos.x * 0.88, -this.tableWidth / 2, this.tableWidth / 2);
-        this.opponentAvatar.group.position.x = THREE.MathUtils.lerp(this.opponentAvatar.group.position.x, targetX, effectiveLerpSpeed * dt);
+        if (this.lastHitter === 'opponent' || this.aiHitCooldown > 0) {
+          // AI paddle lockout active, skip AI collision logic
+        } else {
+          if (!this.hasAiInterceptDecision) {
+            this.decideAIInterception();
+          }
+          const diffLerpSpeed = this.currentDifficulty === 'legend' ? 14 : (this.currentDifficulty === 'pro' ? 9.5 : 6.0);
+          // When AI fails interception, it hesitates/reacts slowly, letting the ball bounce cleanly on its side
+          const effectiveLerpSpeed = this.aiWillIntercept ? diffLerpSpeed : diffLerpSpeed * 0.35;
+          const targetX = THREE.MathUtils.clamp(this.ballPos.x * 0.88, -this.tableWidth / 2, this.tableWidth / 2);
+          this.opponentAvatar.group.position.x = THREE.MathUtils.lerp(this.opponentAvatar.group.position.x, targetX, effectiveLerpSpeed * dt);
 
-        // Balanced Proportional Depth Tracking:
-        // The bot avatar's paddle naturally extends ~0.40m forward from its torso.
-        // As the ball moves across the table, the bot dynamically positions its torso at (ballPos.z + 0.38m)
-        // so its paddle remains directly in line with the ball's arrival point.
-        // It never overruns the ball (which caused the ball to bounce behind it)
-        // and never remains stranded behind the baseline.
-        const desiredZ = this.aiWillIntercept
-          ? THREE.MathUtils.clamp(this.ballPos.z + 0.38, 0.85, 1.55)
-          : 1.50;
-        const zLerpSpeed = this.aiWillIntercept ? Math.max(effectiveLerpSpeed, 10.0) : effectiveLerpSpeed * 0.5;
-        this.opponentAvatar.group.position.z = THREE.MathUtils.lerp(this.opponentAvatar.group.position.z, desiredZ, zLerpSpeed * dt);
+          // Dynamic Bot Target Z: Allow AI avatar to step forward down to Z = 0.70m (mid-table)
+          const desiredZ = this.aiWillIntercept
+            ? THREE.MathUtils.clamp(this.ballPos.z + 0.38, 0.70, 1.55)
+            : 1.50;
+          const zLerpSpeed = this.aiWillIntercept ? Math.max(effectiveLerpSpeed, 10.0) : effectiveLerpSpeed * 0.5;
+          this.opponentAvatar.group.position.z = THREE.MathUtils.lerp(this.opponentAvatar.group.position.z, desiredZ, zLerpSpeed * dt);
 
-        // Dynamically reach the arm and paddle towards the ball in 3D
-        if (this.ballPos.z > 0) {
-          const reachTarget = new THREE.Vector3(
-            this.ballPos.x,
-            Math.max(this.tableHeight + 0.06, this.ballPos.y),
-            this.ballPos.z
-          );
-          this.opponentAvatar.poseArmsToTargets(reachTarget, undefined, 'right');
-        }
-
-        const aiBat = this.opponentAvatar.getPaddleWorldPosition();
-
-        // AI hits ball after 1 bounce on AI side (or before a second bounce can occur!)
-        // Guarantees clean interception and completely eliminates accidental second bounces on the bot's table:
-        const hitDistance = 0.88;
-        const isNearSecondBounce = this.ballVel.y < 0 && this.ballPos.y <= this.tableHeight + 0.12 && this.ballPos.z > 0.25;
-        const isApexOrDescending = (this.ballVel.y <= 0.6 || isNearSecondBounce) && this.ballPos.y >= this.tableHeight + 0.04;
-        const isWithinReach = aiBat.distanceTo(this.ballPos) <= hitDistance ||
-          (Math.abs(aiBat.x - this.ballPos.x) < 0.65 && Math.abs(aiBat.z - this.ballPos.z) < 0.65);
-
-        if (
-          this.aiWillIntercept &&
-          this.bounceCountFar >= 1 &&
-          (isWithinReach && isApexOrDescending || isNearSecondBounce)
-        ) {
-          let targetXAi: number;
-          let targetZAi: number;
-          let aiPacing: number;
-
-          if (this.currentDifficulty === 'legend') {
-            // Aggressive corner placement and controlled pace (landing deep between -0.88m and -1.15m)
-            const cornerSign = Math.random() > 0.5 ? 1 : -1;
-            targetXAi = cornerSign * (0.24 + Math.random() * 0.20);
-            targetZAi = -0.88 - Math.random() * 0.25;
-            aiPacing = 3.6;
-            this.ballSpin.set(-16, cornerSign * 10, 0);
-          } else if (this.currentDifficulty === 'pro') {
-            // Dynamic deep placement (landing between -0.84m and -1.10m)
-            targetXAi = THREE.MathUtils.clamp((Math.random() - 0.5) * 0.8, -0.42, 0.42);
-            targetZAi = -0.84 - Math.random() * 0.25;
-            aiPacing = 3.4;
-            this.ballSpin.set(-12, (Math.random() - 0.5) * 6, 0);
-          } else {
-            // Casual: deep, readable pace (landing between -0.80m and -1.05m)
-            targetXAi = THREE.MathUtils.clamp((Math.random() - 0.5) * 0.5, -0.30, 0.30);
-            targetZAi = -0.80 - Math.random() * 0.25;
-            aiPacing = 3.2;
-            this.ballSpin.set(-6, (Math.random() - 0.5) * 3, 0);
+          // Dynamically reach the arm and paddle towards the ball in 3D
+          if (this.ballPos.z > 0) {
+            const reachTarget = new THREE.Vector3(
+              this.ballPos.x,
+              Math.max(this.tableHeight + 0.06, this.ballPos.y),
+              this.ballPos.z
+            );
+            this.opponentAvatar.poseArmsToTargets(reachTarget, undefined, 'right');
           }
 
-          this.ballVel = this.solveExactControlledVelocity(this.ballPos, targetXAi, targetZAi, 0.055, aiPacing);
-          this.lastHitter = 'opponent';
-          this.bounceCountNear = 0;
-          this.bounceCountFar = 0;
-          this.scoreState.rallyCount++;
-          this.hitStopTimer = 0.03;
-          this.hasAiInterceptDecision = false;
-          this.audio.tableTennisPaddleHit(1.0);
-        } else if (this.lastHitter === 'player' && this.bounceCountFar >= 1) {
-          // If the bot misses interception and ball passes baseline or drops below table height:
-          if (this.ballPos.z > 1.42 || (this.ballPos.z > 1.05 && this.ballPos.y < this.tableHeight - 0.05)) {
-            this.handleRallyPoint(1, 'POINT PLAYER — OPPONENT DOUBLE BOUNCE / MISSED');
-            return;
+          const aiBat = this.opponentAvatar.getPaddleWorldPosition();
+
+          // Strike on the Rise:
+          // Initiate swing immediately after ball bounces once on AI side (Z > 0 and vel.y > 0) within reach distance of 0.75m.
+          const hitDistance = 0.75;
+          const isStrikeOnRise = this.bounceCountFar >= 1 && this.ballVel.y > 0 && this.ballPos.z > 0;
+          const isNearSecondBounce = this.ballVel.y < 0 && this.ballPos.y <= this.tableHeight + 0.12 && this.ballPos.z > 0.25;
+          const isApexOrDescending = (this.ballVel.y <= 0.6 || isNearSecondBounce) && this.ballPos.y >= this.tableHeight + 0.04;
+          const distToBall = aiBat.distanceTo(this.ballPos);
+          const isWithinReach = distToBall <= hitDistance ||
+            (Math.abs(aiBat.x - this.ballPos.x) < 0.75 && Math.abs(aiBat.z - this.ballPos.z) < 0.75);
+
+          if (
+            this.aiWillIntercept &&
+            this.bounceCountFar >= 1 &&
+            (isWithinReach && (isStrikeOnRise || isApexOrDescending || isNearSecondBounce))
+          ) {
+            let targetXAi: number;
+            let targetZAi: number;
+            let aiPacing: number;
+
+            if (this.currentDifficulty === 'legend') {
+              // Aggressive corner placement and controlled pace (landing deep between -0.88m and -1.15m)
+              const cornerSign = Math.random() > 0.5 ? 1 : -1;
+              targetXAi = cornerSign * (0.24 + Math.random() * 0.20);
+              targetZAi = -0.88 - Math.random() * 0.25;
+              aiPacing = 3.6;
+              this.ballSpin.set(-16, cornerSign * 10, 0);
+            } else if (this.currentDifficulty === 'pro') {
+              // Dynamic deep placement (landing between -0.84m and -1.10m)
+              targetXAi = THREE.MathUtils.clamp((Math.random() - 0.5) * 0.8, -0.42, 0.42);
+              targetZAi = -0.84 - Math.random() * 0.25;
+              aiPacing = 3.4;
+              this.ballSpin.set(-12, (Math.random() - 0.5) * 6, 0);
+            } else {
+              // Casual: deep, readable pace (landing between -0.80m and -1.05m)
+              targetXAi = THREE.MathUtils.clamp((Math.random() - 0.5) * 0.5, -0.30, 0.30);
+              targetZAi = -0.80 - Math.random() * 0.25;
+              aiPacing = 3.2;
+              this.ballSpin.set(-6, (Math.random() - 0.5) * 3, 0);
+            }
+
+            this.ballVel = this.solveExactControlledVelocity(this.ballPos, targetXAi, targetZAi, 0.055, aiPacing);
+            this.lastHitter = 'opponent';
+            this.aiHitCooldown = 0.40; // Lockout AI paddle collision for 400ms
+            this.bounceCountNear = 0;
+            this.bounceCountFar = 0;
+            this.scoreState.rallyCount++;
+            this.hitStopTimer = 0.03;
+            this.hasAiInterceptDecision = false;
+            this.audio.tableTennisPaddleHit(1.0);
+
+            // Advance ball position forward along exit trajectory by at least BALL_RADIUS * 1.5
+            const exitDir = this.ballVel.clone().normalize();
+            if (exitDir.lengthSq() > 0) {
+              this.ballPos.addScaledVector(exitDir, this.ballRadius * 1.5);
+            }
+          } else if (this.lastHitter === 'player' && this.bounceCountFar >= 1) {
+            // If the bot misses interception and ball passes baseline or drops below table height:
+            if (this.ballPos.z > 1.37 || (this.ballPos.z > 1.05 && this.ballPos.y < this.tableHeight - 0.05)) {
+              const calloutText = this.bounceCountFar >= 2 ? 'OPPONENT DOUBLE BOUNCE' : 'OPPONENT MISSED';
+              this.handleRallyPoint(1, `POINT PLAYER — ${calloutText}`);
+              return;
+            }
           }
         }
       } else if (this.lastHitter === 'opponent') {
@@ -2110,11 +2185,14 @@ export class TableTennisScene implements IGameScene {
       : 1.0;
     this.ballMesh.scale.setScalar(ballScale);
 
-    // Side-Specific Ball Glow:
-    // Cyan (#00f2fe) when on player's court (Z < 0); Magenta (#ff007f) when on opponent's court (Z >= 0)
+    // Inverted Side-Specific Ball Glow:
+    // Red (#ef4444) when on player's court (Z < 0); Light Blue / Cyan (#00f2fe) when on opponent's court (Z >= 0)
     const isPlayerCourtSide = this.ballPos.z < 0;
-    const sideColorHex = isPlayerCourtSide ? 0x00f2fe : 0xff007f;
+    const sideColorHex = isPlayerCourtSide ? 0xef4444 : 0x00f2fe;
 
+    if (this.ballLight) {
+      this.ballLight.color.setHex(sideColorHex);
+    }
     if (this.ballHaloMat) {
       this.ballHaloMat.color.setHex(sideColorHex);
       this.ballHaloMat.opacity = isIncomingToPlayer ? 0.75 : 0.55;
@@ -2370,6 +2448,8 @@ export class TableTennisScene implements IGameScene {
       paddlePos: { x: this.activePaddlePos.x, y: this.activePaddlePos.y, z: this.activePaddlePos.z },
       paddleVel: { x: this.paddleVelocity.x, y: this.paddleVelocity.y, z: this.paddleVelocity.z },
       dominantHand: this.dominantHand,
+      gameStartingServer: this.gameStartingServer,
+      aiHitCooldown: this.aiHitCooldown,
       aiWillIntercept: this.aiWillIntercept,
       isPostureGated: this.isPostureGated,
       isStanceRepositioning: this.isStanceRepositioning,

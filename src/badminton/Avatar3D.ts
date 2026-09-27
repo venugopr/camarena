@@ -671,7 +671,28 @@ export class Avatar3D {
     const rightAnkleVis = rightAnkle?.visibility ?? 0;
 
     const hasKneesVisible = leftKneeVis >= 0.30 || rightKneeVis >= 0.30;
-    if (!hasKneesVisible) return Avatar3D.updateStandingDebounce(false);
+    if (!hasKneesVisible) {
+      // Framing check: user is standing close to camera, knees cut off!
+      // Evaluate standing from torso height (hip to shoulder vertical distance) and torso angle.
+      const leftShoulder = landmarks[PoseLandmark.LEFT_SHOULDER];
+      const rightShoulder = landmarks[PoseLandmark.RIGHT_SHOULDER];
+      const shoulderVis = ((leftShoulder?.visibility ?? 0) + (rightShoulder?.visibility ?? 0)) * 0.5;
+
+      if (shoulderVis >= 0.25 && hipVis >= 0.25 && leftShoulder && rightShoulder) {
+        const shoulderY = (leftShoulder.y + rightShoulder.y) * 0.5;
+        const hipY = (leftHip.y + rightHip.y) * 0.5;
+        const torsoHeight = Math.abs(hipY - shoulderY); // In 3D world coords, standing torso height is ~0.40 - 0.55m
+        const shoulderZ = ((leftShoulder.z ?? 0) + (rightShoulder.z ?? 0)) * 0.5;
+        const hipZ = ((leftHip.z ?? 0) + (rightHip.z ?? 0)) * 0.5;
+        const torsoDz = Math.abs(hipZ - shoulderZ);
+
+        // Standing torso height >= 0.28m with upright spine angle (torsoDz < 0.38m)
+        if (torsoHeight >= 0.28 && torsoDz < 0.38) {
+          return Avatar3D.updateStandingDebounce(true);
+        }
+      }
+      return Avatar3D.updateStandingDebounce(false);
+    }
 
     // Vertical femur drop calculation (support both camera and world coordinate sign conventions):
     const leftDrop = Math.max(leftKnee.y - leftHip.y, leftHip.y - leftKnee.y, Math.abs(leftHip.y - leftKnee.y));
