@@ -1831,12 +1831,13 @@ export class TableTennisScene implements IGameScene {
         this.ballPos.y = this.tableHeight + this.ballRadius;
         this.spawnBounceRipple(this.ballPos.x, this.ballPos.z, this.ballPos.z < 0);
 
-        // Realistic Table Impact Damping (Maintain forward speed on drives >= 12 km/h: vel.z *= 0.85)
+        // Realistic Table Impact Damping (Maintain forward speed on drives >= 12 km/h: vel.z *= 0.86, vel.x *= 0.86)
         const speedKmh = Math.abs(this.ballVel.z) * 3.6;
-        const restitutionZ = speedKmh >= 12 ? 0.85 : 0.78;
+        const restitutionZ = speedKmh >= 12 ? 0.86 : 0.78;
+        const restitutionX = speedKmh >= 12 ? 0.86 : 0.78;
         this.ballVel.y = -this.ballVel.y * 0.82;
         this.ballVel.z = this.ballVel.z * restitutionZ - this.ballSpin.x * this.ballRadius * 0.08;
-        this.ballVel.x = this.ballVel.x * 0.78 + this.ballSpin.y * this.ballRadius * 0.08;
+        this.ballVel.x = this.ballVel.x * restitutionX + this.ballSpin.y * this.ballRadius * 0.08;
 
         // Spin exchange on bounce
         this.ballSpin.x *= 0.65;
@@ -2035,13 +2036,13 @@ export class TableTennisScene implements IGameScene {
           const aiBat = this.opponentAvatar.getPaddleWorldPosition();
 
           // Strike on the Rise:
-          // Command AI to initiate swing immediately as the ball reaches the apex of its first bounce (when vel.y <= 0.45 or rising after bounce and Z reach <= 0.85m).
-          const hitDistance = 0.85;
+          // Command AI to initiate swing immediately as the ball reaches the peak of its first bounce (when vel.y begins turning downward and distance to paddle is within reach <= 0.80m).
+          const hitDistance = 0.80;
           const isBounceFar = this.bounceCountFar >= 1;
           const isApexOrDescending = (this.ballVel.y <= 0.45 || (this.ballVel.y > 0 && isBounceFar)) && this.ballPos.y >= this.tableHeight + 0.04;
           const distToBall = aiBat.distanceTo(this.ballPos);
           const isWithinReach = distToBall <= hitDistance ||
-            (Math.abs(aiBat.x - this.ballPos.x) < 0.75 && Math.abs(aiBat.z - this.ballPos.z) <= 0.85);
+            (Math.abs(aiBat.x - this.ballPos.x) < 0.75 && Math.abs(aiBat.z - this.ballPos.z) <= 0.80);
 
           if (
             this.aiWillIntercept &&

@@ -1109,23 +1109,6 @@ export class BowlingScene implements IGameScene {
     const torsoVelZ = hipCenterWorld && this.hasPrevBodyLandmarks ? Math.abs((hipCenterWorld.z - this.prevHipCenterWorld.z) / safeDt) : 0;
     const isMovingFrontOrBack = torsoVelZ > 0.25 || torsoSpeed > 0.25;
 
-    if (isMovingFrontOrBack) {
-      this.isStanceRepositioning = true;
-      this.isBowlingArmed = false;
-      this.stableStanceTimer = 0;
-      this.bowlingPhase = 'IDLE';
-      this.cockingDuration = 0;
-      this.liveWindupPower = 0;
-      this.updatePowerMeter(0);
-    } else {
-      // Standing and not moving front/back: arm delivery smoothly
-      this.stableStanceTimer += dt;
-      if (this.stableStanceTimer >= 0.50) {
-        this.isBowlingArmed = true;
-        this.isStanceRepositioning = false;
-      }
-    }
-
     // 2. Measure Arm Velocity Relative to Torso (Isolate Whole-Body Walking Artifacts):
     const rightWrist = frame.worldLandmarks[PoseLandmark.RIGHT_WRIST];
     const leftWrist = frame.worldLandmarks[PoseLandmark.LEFT_WRIST];
@@ -1145,7 +1128,6 @@ export class BowlingScene implements IGameScene {
     const currentShoulder = new THREE.Vector3(shoulder.x, shoulder.y, shoulder.z);
 
     // Arm velocity strictly relative to the dominant shoulder:
-    // const relativeWristVel = (currentWrist - currentShoulder) - (prevWrist - prevShoulder) / dt;
     let relativeWristVel = new THREE.Vector3();
     let relativeArmSpeed = 0;
 
@@ -1162,6 +1144,27 @@ export class BowlingScene implements IGameScene {
       this.prevHipCenterWorld.copy(hipCenterWorld);
     }
     this.hasPrevBodyLandmarks = true;
+
+    // Do NOT arm isBowlingArmed if hand velocity exceeds 0.20 m/s during idle or torso is moving
+    const isHandMovingInIdle = relativeArmSpeed > 0.20;
+    if (isMovingFrontOrBack || isHandMovingInIdle) {
+      this.isStanceRepositioning = isMovingFrontOrBack;
+      this.isBowlingArmed = false;
+      this.stableStanceTimer = 0;
+      if (isMovingFrontOrBack) {
+        this.bowlingPhase = 'IDLE';
+        this.cockingDuration = 0;
+        this.liveWindupPower = 0;
+        this.updatePowerMeter(0);
+      }
+    } else {
+      // Standing and hand still (speed <= 0.20 m/s): arm delivery smoothly
+      this.stableStanceTimer += dt;
+      if (this.stableStanceTimer >= 0.50) {
+        this.isBowlingArmed = true;
+        this.isStanceRepositioning = false;
+      }
+    }
 
     // 3. Bowling Delivery State Machine Hardening:
     // Do NOT enter COCKED state if the player's hips/feet are moving.
