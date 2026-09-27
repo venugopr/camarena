@@ -144,7 +144,7 @@ export class TableTennisScene implements IGameScene {
   private bounceRipples: { mesh: THREE.Mesh; mat: THREE.MeshBasicMaterial; life: number; maxLife: number }[] = [];
 
   // Ball trail system
-  private readonly TRAIL_LENGTH = 16;
+  private readonly TRAIL_LENGTH = 10;
   private ballTrail: THREE.Vector3[] = [];
   private ballTrailMeshes: THREE.Mesh[] = [];
 
@@ -516,9 +516,9 @@ export class TableTennisScene implements IGameScene {
     const ballGeo = new THREE.SphereGeometry(this.ballRadius, 24, 24);
     const ballMat = new THREE.MeshStandardMaterial({
       color: 0xffffff,
-      roughness: 0.18,
+      roughness: 0.2,
       emissive: 0xffffff,
-      emissiveIntensity: 0.50
+      emissiveIntensity: 0.35
     });
     this.ballMesh = new THREE.Mesh(ballGeo, ballMat);
     // Ball does not cast a shadow to the room floor (Y = 0) to eliminate misleading vertical parallax.
@@ -536,8 +536,8 @@ export class TableTennisScene implements IGameScene {
     this.ballHaloMesh = new THREE.Mesh(haloGeo, this.ballHaloMat);
     this.ballMesh.add(this.ballHaloMesh);
 
-    // Dynamic Point Light attached to ball
-    this.ballLight = new THREE.PointLight(0xffffff, 1.8, 3.5);
+    // Dynamic Point Light attached to ball with soft 0.6m radius
+    this.ballLight = new THREE.PointLight(0xffffff, 1.8, 0.6);
     this.ballMesh.add(this.ballLight);
 
     // Dynamic table-projected contact shadow blob pinned to table surface
@@ -679,9 +679,9 @@ export class TableTennisScene implements IGameScene {
     this.ballTrailMeshes = [];
     for (let i = 0; i < this.TRAIL_LENGTH; i++) {
       const t = i / this.TRAIL_LENGTH;
-      const trailGeo = new THREE.SphereGeometry(this.ballRadius * (1 - t * 0.70), 8, 8);
+      const trailGeo = new THREE.SphereGeometry(this.ballRadius * (1 - t * 0.65), 8, 8);
       const trailMat = new THREE.MeshBasicMaterial({
-        color: new THREE.Color(0xef4444),
+        color: new THREE.Color(0xffffff),
         transparent: true,
         opacity: 0
       });
@@ -1961,7 +1961,7 @@ export class TableTennisScene implements IGameScene {
         (this.netMesh.material as THREE.MeshStandardMaterial).emissiveIntensity = 0;
       }
 
-      // Ball Trail
+      // Ball Trail (Pure White 0xffffff, tapering smoothly from 0.75 down to 0.0)
       this.ballTrail.unshift(this.ballPos.clone());
       if (this.ballTrail.length > this.TRAIL_LENGTH) this.ballTrail.pop();
       for (let i = 0; i < this.TRAIL_LENGTH; i++) {
@@ -1970,9 +1970,8 @@ export class TableTennisScene implements IGameScene {
         if (this.ballTrail[i]) {
           tm.visible = true;
           tm.position.copy(this.ballTrail[i]);
-          const trailColor = this.ballTrail[i].z < 0 ? 0xef4444 : 0x00f2fe;
-          (tm.material as THREE.MeshBasicMaterial).color.setHex(trailColor);
-          (tm.material as THREE.MeshBasicMaterial).opacity = (1 - i / this.TRAIL_LENGTH) * 0.65;
+          (tm.material as THREE.MeshBasicMaterial).color.setHex(0xffffff);
+          (tm.material as THREE.MeshBasicMaterial).opacity = (1 - i / this.TRAIL_LENGTH) * 0.75;
         } else {
           tm.visible = false;
         }
@@ -2183,22 +2182,20 @@ export class TableTennisScene implements IGameScene {
       : 1.0;
     this.ballMesh.scale.setScalar(ballScale);
 
-    // Inverted Side-Specific Ball Glow:
-    // Red (#ef4444) when on player's court (Z < 0); Light Blue / Cyan (#00f2fe) when on opponent's court (Z >= 0)
-    const isPlayerCourtSide = this.ballPos.z < 0;
-    const sideColorHex = isPlayerCourtSide ? 0xef4444 : 0x00f2fe;
-
+    // Unified Pure White Ball Material & Glow:
     if (this.ballLight) {
-      this.ballLight.color.setHex(sideColorHex);
+      this.ballLight.color.setHex(0xffffff);
     }
     if (this.ballHaloMat) {
-      this.ballHaloMat.color.setHex(sideColorHex);
-      this.ballHaloMat.opacity = isIncomingToPlayer ? 0.75 : 0.55;
+      this.ballHaloMat.color.setHex(0xffffff);
+      this.ballHaloMat.opacity = 0.55;
     }
     const ballMat = this.ballMesh.material as THREE.MeshStandardMaterial;
     if (ballMat) {
-      ballMat.emissive.setHex(sideColorHex);
-      ballMat.emissiveIntensity = 0.45;
+      ballMat.color.setHex(0xffffff);
+      ballMat.emissive.setHex(0xffffff);
+      ballMat.emissiveIntensity = 0.35;
+      ballMat.roughness = 0.2;
     }
 
     // 1. Table-Projected Contact Shadow:
@@ -2229,7 +2226,7 @@ export class TableTennisScene implements IGameScene {
       const isPlayingOrServing = this.rallyState === 'IN_PLAY' || this.rallyState === 'IN_SERVE' || this.rallyState === 'READY_TO_SERVE';
       if (isPlayingOrServing && isAboveTable && isWithinTableXZ) {
         this.altitudeStemLine.visible = true;
-        this.altitudeStemMat.color.setHex(sideColorHex);
+        this.altitudeStemMat.color.setHex(0xffffff);
         const posAttr = this.altitudeStemGeo.attributes.position as THREE.BufferAttribute;
         posAttr.setXYZ(0, this.ballPos.x, this.ballPos.y - this.ballRadius, this.ballPos.z);
         posAttr.setXYZ(1, this.ballPos.x, this.tableHeight + 0.002, this.ballPos.z);
