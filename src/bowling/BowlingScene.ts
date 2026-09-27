@@ -1504,6 +1504,7 @@ export class BowlingScene implements IGameScene {
   private setupAITurnParams(): void {
     type DiffParams = { startX: number; hookAccelX: number };
     const diffMap: Record<DifficultyLevel, DiffParams> = {
+      learner: { startX: 0.0, hookAccelX: 0.0 },
       casual: { startX: 0.0, hookAccelX: 0.0 },
       pro: { startX: 0.18, hookAccelX: -0.8 },
       legend: { startX: 0.30, hookAccelX: -1.6 },
@@ -1516,6 +1517,7 @@ export class BowlingScene implements IGameScene {
   private aiRoll(): void {
     type DiffParams = { speed: number; startX: number; hookAccelX: number; accuracy: number };
     const diffMap: Record<DifficultyLevel, DiffParams> = {
+      learner: { speed: 3.5, startX: 0.0, hookAccelX: 0.0, accuracy: 0.40 },
       casual: { speed: 4.2, startX: 0.0, hookAccelX: 0.0, accuracy: 0.50 },
       pro: { speed: 5.5, startX: 0.18, hookAccelX: -0.8, accuracy: 0.75 },
       legend: { speed: 6.8, startX: 0.30, hookAccelX: -1.6, accuracy: 0.92 },

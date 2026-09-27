@@ -2733,5 +2733,49 @@ html, body {
   text-shadow: 0 0 12px rgba(251, 191, 36, 0.6);
 }
 
+/* ─── Floating Table Tennis Rally Combo Badge ───────────────────────────────────── */
+.tt-combo-badge {
+  position: absolute;
+  top: 175px;
+  left: 28px;
+  z-index: 55;
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.90), rgba(0, 242, 254, 0.85));
+  border: 1.5px solid rgba(57, 255, 20, 0.8);
+  border-radius: 12px;
+  padding: 8px 18px;
+  color: #ffffff;
+  font-family: 'Outfit', 'Inter', sans-serif;
+  font-size: 15px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 0 24px rgba(0, 242, 254, 0.5);
+  pointer-events: none;
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.tt-combo-badge.mega-rally {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.95), rgba(239, 68, 68, 0.90));
+  border-color: rgba(251, 191, 36, 0.9);
+  box-shadow: 0 0 32px rgba(245, 158, 11, 0.7);
+  animation: pulseCombo 0.8s ease-in-out infinite alternate;
+}
+
+.tt-combo-badge.hidden {
+  opacity: 0;
+  transform: translateY(-8px) scale(0.95);
+}
+
+.tt-combo-badge.show {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+@keyframes pulseCombo {
+  from { transform: scale(1.0); }
+  to { transform: scale(1.06); }
+}
+
 
 

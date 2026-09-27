@@ -112,4 +112,4 @@ export interface MotionFrame {
 
 export type GameModeId = 'bowling' | 'boxing' | 'tabletennis' | 'tennis' | 'badminton' | 'sandbox';
 export type OpponentMode = 'system' | 'pvp' | 'practice';
-export type DifficultyLevel = 'casual' | 'pro' | 'legend';
+export type DifficultyLevel = 'learner' | 'casual' | 'pro' | 'legend';

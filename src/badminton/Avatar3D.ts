@@ -54,12 +54,9 @@ export class Avatar3D {
   private racketStringMat?: THREE.MeshBasicMaterial;
   public dominantArm: 'right' | 'left' = 'right';
   private trackedForwardZ = 0;
-  private dominantHandGroup: THREE.Group = new THREE.Group();
   private supportHandGroup: THREE.Group = new THREE.Group();
   private lastRightWrist = new THREE.Vector3();
   private lastLeftWrist = new THREE.Vector3();
-  private hasRightWrist = false;
-  private hasLeftWrist = false;
   private smoothedRightWristVel = new THREE.Vector3();
   private smoothedRacketVel = new THREE.Vector3();
   private prevRightWristPos = new THREE.Vector3();

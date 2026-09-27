@@ -64,6 +64,14 @@ export class OpponentAI {
 
   private getDifficultyConfig(diff: DifficultyLevel): OpponentConfig {
     switch (diff) {
+      case 'learner':
+        return {
+          difficulty: diff,
+          reactionTimeSec: 0.15,
+          speed: 3.5,
+          accuracy: 1.0,
+          smashChance: 0.0
+        };
       case 'casual':
         return {
           difficulty: diff,
@@ -81,6 +89,7 @@ export class OpponentAI {
           smashChance: 0.15
         };
       case 'legend':
+      default:
         return {
           difficulty: diff,
           reactionTimeSec: 0.02,

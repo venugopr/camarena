@@ -177,21 +177,36 @@ export class TableTennisScene implements IGameScene {
   private scoreCallbacks: ((score: GameScoreState) => void)[] = [];
   private isRunning = false;
   private currentDifficulty: DifficultyLevel = 'casual';
+  // Learner Tutorial & Rally Combo State
+  private tutorialStep: 1 | 2 | 3 | 4 = 1;
+  private tutorialCount = 0;
+  private tutorialTargetDecal!: THREE.Mesh;
+  private landingMarkerMesh!: THREE.Mesh;
+  private comboBadgeEl?: HTMLElement;
   private aiWillIntercept = true;
   private hasAiInterceptDecision = false;
   private keydownHandler?: (e: KeyboardEvent) => void;
   private pointerMoveHandler?: (e: MouseEvent) => void;
   private pointerDownHandler?: (e: MouseEvent) => void;
-  private activeTimeouts: ReturnType<typeof setTimeout>[] = [];
+  private activeTimeouts: number[] = [];
+  private serveGestureStage: 'IDLE' | 'PULLBACK' | 'FORWARD' = 'IDLE';
+  private servePullbackTimer = 0;
 
   private decideAIInterception(): void {
-    // Casual Difficulty: 65% interception probability (giving player 35% winning window)
-    // Pro Difficulty: 90% interception probability (10% unforced error / miss window)
-    // Legend Difficulty: 95%
-    const probability = this.currentDifficulty === 'casual'
-      ? 0.65
-      : (this.currentDifficulty === 'pro' ? 0.90 : 0.95);
-    this.aiWillIntercept = Math.random() < probability;
+    if (this.currentDifficulty === 'learner') {
+      // Learner: 100% gentle feeds
+      this.aiWillIntercept = true;
+    } else if (this.currentDifficulty === 'casual') {
+      // Casual: 65% return rate
+      this.aiWillIntercept = Math.random() < 0.65;
+    } else if (this.currentDifficulty === 'pro') {
+      // Pro: 95% return rate (only miss deep baseline drives > 26 km/h)
+      const speedKmh = this.ballVel.length() * 3.6;
+      const isDeepBaselineDrive = speedKmh > 26 && this.ballPos.z < -1.22;
+      this.aiWillIntercept = isDeepBaselineDrive ? Math.random() < 0.30 : Math.random() < 0.95;
+    } else {
+      this.aiWillIntercept = Math.random() < 0.95;
+    }
     this.hasAiInterceptDecision = true;
   }
 
@@ -419,6 +434,33 @@ export class TableTennisScene implements IGameScene {
     addLeg(-this.tableWidth * 0.4, this.tableLength * 0.4);
     addLeg(this.tableWidth * 0.4, -this.tableLength * 0.4);
     addLeg(-this.tableWidth * 0.4, -this.tableLength * 0.4);
+
+    // 3D Learner Tutorial Target & Landing Decals
+    const targetRingGeo = new THREE.RingGeometry(0.16, 0.26, 32);
+    const targetRingMat = new THREE.MeshBasicMaterial({
+      color: 0x39ff14,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.85
+    });
+    this.tutorialTargetDecal = new THREE.Mesh(targetRingGeo, targetRingMat);
+    this.tutorialTargetDecal.rotation.x = -Math.PI / 2;
+    this.tutorialTargetDecal.position.set(0, this.tableHeight + 0.003, 0.70);
+    this.tutorialTargetDecal.visible = false;
+    this.scene.add(this.tutorialTargetDecal);
+
+    const landingRingGeo = new THREE.RingGeometry(0.12, 0.20, 32);
+    const landingRingMat = new THREE.MeshBasicMaterial({
+      color: 0x00f2fe,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.85
+    });
+    this.landingMarkerMesh = new THREE.Mesh(landingRingGeo, landingRingMat);
+    this.landingMarkerMesh.rotation.x = -Math.PI / 2;
+    this.landingMarkerMesh.position.set(0, this.tableHeight + 0.003, -0.85);
+    this.landingMarkerMesh.visible = false;
+    this.scene.add(this.landingMarkerMesh);
 
     // Floor court grid
     const floorGeo = new THREE.PlaneGeometry(16, 16);
@@ -728,6 +770,12 @@ export class TableTennisScene implements IGameScene {
     this.netHitBannerEl.style.display = 'none';
     this.netHitBannerEl.textContent = '⛔ NET HIT!';
     this.container.appendChild(this.netHitBannerEl);
+
+    // Dynamic Rally Combo Badge
+    this.comboBadgeEl = document.createElement('div');
+    this.comboBadgeEl.id = 'tt-combo-badge';
+    this.comboBadgeEl.className = 'tt-combo-badge hidden';
+    this.container.appendChild(this.comboBadgeEl);
   }
 
   private updateStatusDialog(
@@ -1318,6 +1366,19 @@ export class TableTennisScene implements IGameScene {
     this.audio.tableTennisPaddleHit(strokePower);
     this.flashSweetSpot();
     this.triggerScreenShake(Math.min(0.06, strokePower * 0.018));
+
+    // Learner Return Practice Step 2 Check
+    if (this.currentDifficulty === 'learner' && this.tutorialStep === 2) {
+      this.tutorialCount++;
+      this.audio.scoreChime();
+      if (this.tutorialCount >= 3) {
+        this.tutorialStep = 3;
+        this.tutorialCount = 0;
+        this.showFaultBanner('🎓 RETURN PRACTICE COMPLETE! STEP 3: 5-SHOT RALLY');
+      } else {
+        this.showFaultBanner(`🎓 RETURN PRACTICE (${this.tutorialCount}/3) — GREAT RETURN!`);
+      }
+    }
   }
 
   private flashSweetSpot(): void {
@@ -1889,6 +1950,19 @@ export class TableTennisScene implements IGameScene {
               this.bounceCountFar = 1;
               this.rallyState = 'IN_PLAY';
               this.servePhase = 'NONE';
+
+              // Learner Serve Practice Step 1 Check
+              if (this.currentDifficulty === 'learner' && this.tutorialStep === 1) {
+                this.tutorialCount++;
+                this.audio.scoreChime();
+                if (this.tutorialCount >= 3) {
+                  this.tutorialStep = 2;
+                  this.tutorialCount = 0;
+                  this.showFaultBanner('🎓 SERVE PRACTICE COMPLETE! STEP 2: RETURN PRACTICE');
+                } else {
+                  this.showFaultBanner(`🎓 SERVE PRACTICE (${this.tutorialCount}/3) — GREAT SERVE!`);
+                }
+              }
               return;
             } else if (this.lastHitter === 'opponent') {
               if (this.ballPos.z > 0) {
@@ -2003,7 +2077,7 @@ export class TableTennisScene implements IGameScene {
 
       // 7. Intelligent TT Bot Opponent with Difficulty Scaling
       if (this.lastHitter !== 'opponent' && this.servePhase === 'NONE') {
-        if (this.lastHitter === 'opponent' || this.aiHitCooldown > 0) {
+        if (this.aiHitCooldown > 0) {
           // AI paddle lockout active, skip AI collision logic
         } else {
           if (!this.hasAiInterceptDecision) {
@@ -2052,18 +2126,16 @@ export class TableTennisScene implements IGameScene {
             let targetZAi: number;
             let aiPacing: number;
 
-            if (this.currentDifficulty === 'legend') {
-              // Aggressive corner placement and controlled pace (landing deep between -0.88m and -1.15m)
-              const cornerSign = Math.random() > 0.5 ? 1 : -1;
-              targetXAi = cornerSign * (0.24 + Math.random() * 0.20);
-              targetZAi = -0.88 - Math.random() * 0.25;
-              aiPacing = 3.6;
-              this.ballSpin.set(-16, cornerSign * 10, 0);
+            if (this.currentDifficulty === 'learner') {
+              targetXAi = THREE.MathUtils.clamp((Math.random() - 0.5) * 0.3, -0.20, 0.20);
+              targetZAi = -0.85;
+              aiPacing = 3.2; // Gentle 12 km/h feed
+              this.ballSpin.set(0, 0, 0);
             } else if (this.currentDifficulty === 'pro') {
               // Dynamic deep placement (landing between -0.84m and -1.10m)
               targetXAi = THREE.MathUtils.clamp((Math.random() - 0.5) * 0.8, -0.42, 0.42);
               targetZAi = -0.84 - Math.random() * 0.25;
-              aiPacing = 3.4;
+              aiPacing = 3.6;
               this.ballSpin.set(-12, (Math.random() - 0.5) * 6, 0);
             } else {
               // Casual: deep, readable pace (landing between -0.80m and -1.05m)
@@ -2087,6 +2159,27 @@ export class TableTennisScene implements IGameScene {
             const exitDir = this.ballVel.clone().normalize();
             if (exitDir.lengthSq() > 0) {
               this.ballPos.addScaledVector(exitDir, this.ballRadius * 1.5);
+            }
+          } else if (!this.aiWillIntercept && isBounceFar && isWithinReach && isApexOrDescending) {
+            // Casual 35% miss rolls: simulate realistic unforced bot error
+            if (this.currentDifficulty === 'casual') {
+              const isNetTapeError = Math.random() < 0.50;
+              if (isNetTapeError) {
+                // 50% chance: Bot hits into net tape
+                this.ballVel.set((Math.random() - 0.5) * 0.3, 0.5, 2.0);
+              } else {
+                // 50% chance: Bot hits long past player baseline
+                this.ballVel.set((Math.random() - 0.5) * 0.5, 1.4, -5.8);
+              }
+              this.lastHitter = 'opponent';
+              this.aiHitCooldown = 0.40;
+              this.bounceCountNear = 0;
+              this.bounceCountFar = 0;
+              this.scoreState.rallyCount++;
+              this.hitStopTimer = 0.03;
+              this.hasAiInterceptDecision = false;
+              this.audio.tableTennisPaddleHit(0.8);
+              return;
             }
           } else if (this.lastHitter === 'player' && this.bounceCountFar >= 1) {
             // If the bot misses interception and ball passes baseline or drops below table height:
@@ -2170,6 +2263,45 @@ export class TableTennisScene implements IGameScene {
         'active',
         'IN PLAY'
       );
+    }
+
+    // ─── Learner Tutorial 3D Decal Visibility & Pulse ───
+    if (this.tutorialTargetDecal && this.landingMarkerMesh) {
+      if (this.currentDifficulty === 'learner') {
+        this.tutorialTargetDecal.visible = this.tutorialStep === 1;
+        this.landingMarkerMesh.visible = this.tutorialStep === 2 || this.tutorialStep === 3;
+        const pulse = 1.0 + Math.sin(this.animT * 6) * 0.08;
+        this.tutorialTargetDecal.scale.setScalar(pulse);
+        this.landingMarkerMesh.scale.setScalar(pulse);
+      } else {
+        this.tutorialTargetDecal.visible = false;
+        this.landingMarkerMesh.visible = false;
+      }
+    }
+
+    // ─── Floating Rally Combo Badge ───
+    const rCount = this.scoreState.rallyCount;
+    if (rCount >= 10) {
+      if (this.comboBadgeEl) {
+        this.comboBadgeEl.textContent = '⚡ 10x MEGA RALLY!';
+        this.comboBadgeEl.className = 'tt-combo-badge mega-rally show';
+      }
+    } else if (rCount >= 5) {
+      if (this.comboBadgeEl) {
+        this.comboBadgeEl.textContent = '🔥 5x RALLY!';
+        this.comboBadgeEl.className = 'tt-combo-badge show';
+      }
+
+      // Learner Rally Step Check
+      if (this.currentDifficulty === 'learner' && this.tutorialStep === 3) {
+        this.tutorialStep = 4;
+        this.audio.scoreChime();
+        this.showFaultBanner('🏆 TUTORIAL COMPLETE! YOU ARE READY TO PLAY');
+      }
+    } else {
+      if (this.comboBadgeEl) {
+        this.comboBadgeEl.className = 'tt-combo-badge hidden';
+      }
     }
 
     // Ball Mesh Position Sync & Incoming Scale Boost
@@ -2383,7 +2515,7 @@ export class TableTennisScene implements IGameScene {
     if (this.rallyState === 'READY_TO_SERVE' && this.scoreState.currentServer === 1 && this.isServeArmed) {
       // Hand flow serve initiation: allowed in standing posture when not moving front/back
       if (!this.isPostureGated && !this.isStanceRepositioning && this.serveCountdown <= 0) {
-        if (event.speedMps >= 1.3 || event.type === 'FOREHAND' || event.type === 'BACKHAND') {
+        if (event.speedMps >= 1.3 || event.type === 'FOREHAND_DRIVE' || event.type === 'BACKHAND_DRIVE') {
           this.executeMotionServe();
         }
       }
@@ -2512,6 +2644,10 @@ export class TableTennisScene implements IGameScene {
     if (this.netHitBannerEl) {
       this.netHitBannerEl.remove();
       this.netHitBannerEl = undefined;
+    }
+    if (this.comboBadgeEl) {
+      this.comboBadgeEl.remove();
+      this.comboBadgeEl = undefined;
     }
     if (this.bounceCalloutTimer) clearTimeout(this.bounceCalloutTimer);
     if (this.faultBannerTimer) clearTimeout(this.faultBannerTimer);
