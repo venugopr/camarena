@@ -596,8 +596,8 @@ export class TableTennisScene implements IGameScene {
     const ripple = this.bounceRipples.find(r => r.life <= 0) || this.bounceRipples[0];
     ripple.mesh.position.set(x, this.tableHeight + 0.0025, z);
     ripple.life = ripple.maxLife;
-    // High-visibility crisp white bounce ripple
-    const colorHex = 0xffffff;
+    // Red on player half (Z < 0), Light Blue / Cyan on opponent half (Z > 0)
+    const colorHex = isPlayerSide ? 0xef4444 : 0x00f2fe;
     ripple.mat.color.setHex(colorHex);
     ripple.mat.opacity = 0.95;
     ripple.mesh.scale.set(1, 1, 1);
@@ -681,7 +681,7 @@ export class TableTennisScene implements IGameScene {
       const t = i / this.TRAIL_LENGTH;
       const trailGeo = new THREE.SphereGeometry(this.ballRadius * (1 - t * 0.70), 8, 8);
       const trailMat = new THREE.MeshBasicMaterial({
-        color: new THREE.Color(0xffffff),
+        color: new THREE.Color(0xef4444),
         transparent: true,
         opacity: 0
       });
@@ -1368,10 +1368,10 @@ export class TableTennisScene implements IGameScene {
       this.isStanceRepositioning = false;
     }
 
-    // Restrict the #tt-posture-modal to Serve States ONLY:
-    // Only show the modal and freeze countdowns if rallyState === 'READY_TO_SERVE' or 'IN_SERVE'.
-    // If rallyState === 'IN_PLAY', NEVER display #tt-posture-modal and never freeze physics mid-rally.
-    if (isServeState) {
+    // Scope Posture Modal Strictly to Pre-Match (Initial Match Startup Only):
+    // Only check posture once when the match is first launched from main menu (isInitialStanceSettling === true).
+    // Once player starts playing, keep #tt-posture-modal permanently hidden and never pause/freeze mid-rally or mid-match.
+    if (this.isInitialStanceSettling) {
       if (!isStanding || this.isStanceRepositioning) {
         this.stableStandingTimer = 0;
         this.isPostureGated = true;
@@ -1384,8 +1384,7 @@ export class TableTennisScene implements IGameScene {
         return;
       }
 
-      // Posture Stability Debounce:
-      // Require 0.8 seconds of continuous, stable standing before unfreezing AI countdown or arming player serve
+      // Posture Stability Debounce: 0.8s continuous standing at match startup
       this.stableStandingTimer += dt;
       if (this.stableStandingTimer < 0.80) {
         this.isPostureGated = true;
@@ -1398,13 +1397,12 @@ export class TableTennisScene implements IGameScene {
         return;
       }
 
-      // Continuous stable standing confirmed!
       this.isPostureGated = false;
       if (this.postureModalEl) {
         this.postureModalEl.classList.add('hidden');
       }
     } else {
-      // In active rally (IN_PLAY): never display modal, never freeze physics mid-rally
+      // Permanently keep posture modal hidden during active match / serves
       this.isPostureGated = false;
       if (this.postureModalEl) {
         this.postureModalEl.classList.add('hidden');
@@ -1833,9 +1831,9 @@ export class TableTennisScene implements IGameScene {
         this.ballPos.y = this.tableHeight + this.ballRadius;
         this.spawnBounceRipple(this.ballPos.x, this.ballPos.z, this.ballPos.z < 0);
 
-        // Realistic Table Impact Damping (Maintain forward speed on drives > 10 km/h)
+        // Realistic Table Impact Damping (Maintain forward speed on drives >= 12 km/h: vel.z *= 0.85)
         const speedKmh = Math.abs(this.ballVel.z) * 3.6;
-        const restitutionZ = speedKmh > 10 ? 0.88 : 0.78;
+        const restitutionZ = speedKmh >= 12 ? 0.85 : 0.78;
         this.ballVel.y = -this.ballVel.y * 0.82;
         this.ballVel.z = this.ballVel.z * restitutionZ - this.ballSpin.x * this.ballRadius * 0.08;
         this.ballVel.x = this.ballVel.x * 0.78 + this.ballSpin.y * this.ballRadius * 0.08;
@@ -1971,7 +1969,7 @@ export class TableTennisScene implements IGameScene {
         if (this.ballTrail[i]) {
           tm.visible = true;
           tm.position.copy(this.ballTrail[i]);
-          const trailColor = 0xffffff;
+          const trailColor = this.ballTrail[i].z < 0 ? 0xef4444 : 0x00f2fe;
           (tm.material as THREE.MeshBasicMaterial).color.setHex(trailColor);
           (tm.material as THREE.MeshBasicMaterial).opacity = (1 - i / this.TRAIL_LENGTH) * 0.65;
         } else {
@@ -2037,19 +2035,18 @@ export class TableTennisScene implements IGameScene {
           const aiBat = this.opponentAvatar.getPaddleWorldPosition();
 
           // Strike on the Rise:
-          // Initiate swing immediately after ball bounces once on AI side (Z > 0 and vel.y > 0) within reach distance of 0.75m.
-          const hitDistance = 0.75;
-          const isStrikeOnRise = this.bounceCountFar >= 1 && this.ballVel.y > 0 && this.ballPos.z > 0;
-          const isNearSecondBounce = this.ballVel.y < 0 && this.ballPos.y <= this.tableHeight + 0.12 && this.ballPos.z > 0.25;
-          const isApexOrDescending = (this.ballVel.y <= 0.6 || isNearSecondBounce) && this.ballPos.y >= this.tableHeight + 0.04;
+          // Command AI to initiate swing immediately as the ball reaches the apex of its first bounce (when vel.y <= 0.45 or rising after bounce and Z reach <= 0.85m).
+          const hitDistance = 0.85;
+          const isBounceFar = this.bounceCountFar >= 1;
+          const isApexOrDescending = (this.ballVel.y <= 0.45 || (this.ballVel.y > 0 && isBounceFar)) && this.ballPos.y >= this.tableHeight + 0.04;
           const distToBall = aiBat.distanceTo(this.ballPos);
           const isWithinReach = distToBall <= hitDistance ||
-            (Math.abs(aiBat.x - this.ballPos.x) < 0.75 && Math.abs(aiBat.z - this.ballPos.z) < 0.75);
+            (Math.abs(aiBat.x - this.ballPos.x) < 0.75 && Math.abs(aiBat.z - this.ballPos.z) <= 0.85);
 
           if (
             this.aiWillIntercept &&
-            this.bounceCountFar >= 1 &&
-            (isWithinReach && (isStrikeOnRise || isApexOrDescending || isNearSecondBounce))
+            isBounceFar &&
+            (isWithinReach && isApexOrDescending)
           ) {
             let targetXAi: number;
             let targetZAi: number;
@@ -2185,8 +2182,10 @@ export class TableTennisScene implements IGameScene {
       : 1.0;
     this.ballMesh.scale.setScalar(ballScale);
 
-    // High-Visibility Pure White Ball Glow & Emissive Highlight:
-    const sideColorHex = 0xffffff;
+    // Inverted Side-Specific Ball Glow:
+    // Red (#ef4444) when on player's court (Z < 0); Light Blue / Cyan (#00f2fe) when on opponent's court (Z >= 0)
+    const isPlayerCourtSide = this.ballPos.z < 0;
+    const sideColorHex = isPlayerCourtSide ? 0xef4444 : 0x00f2fe;
 
     if (this.ballLight) {
       this.ballLight.color.setHex(sideColorHex);

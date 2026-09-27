@@ -1107,7 +1107,7 @@ export class BowlingScene implements IGameScene {
 
     // Gate: Player must NOT be moving front or back (walking/stepping artifact protection)
     const torsoVelZ = hipCenterWorld && this.hasPrevBodyLandmarks ? Math.abs((hipCenterWorld.z - this.prevHipCenterWorld.z) / safeDt) : 0;
-    const isMovingFrontOrBack = torsoVelZ > 0.32 || torsoSpeed > 0.38;
+    const isMovingFrontOrBack = torsoVelZ > 0.25 || torsoSpeed > 0.25;
 
     if (isMovingFrontOrBack) {
       this.isStanceRepositioning = true;
@@ -1205,7 +1205,7 @@ export class BowlingScene implements IGameScene {
 
       // Phase 2: Forward/downward delivery stroke
       const forwardDownThrust = Math.max(-relativeWristVel.y, relativeWristVel.z, Math.hypot(relativeWristVel.z, -relativeWristVel.y));
-      const isReleaseTriggered = this.cockingDuration >= 0.25 && (relativeArmSpeed > 3.8 || forwardDownThrust > 2.8);
+      const isReleaseTriggered = this.cockingDuration >= 0.35 && (relativeArmSpeed > 3.8 || forwardDownThrust > 2.8);
 
       if (isReleaseTriggered) {
         const shoulderMidX = (leftShoulder && rightShoulder) ? (leftShoulder.x + rightShoulder.x) / 2 : shoulder.x;
