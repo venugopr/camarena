@@ -529,7 +529,7 @@ export class TableTennisScene implements IGameScene {
     // High-visibility glowing halo around ball
     const haloGeo = new THREE.SphereGeometry(this.ballRadius * 1.6, 16, 16);
     this.ballHaloMat = new THREE.MeshBasicMaterial({
-      color: 0xef4444,
+      color: 0xffffff,
       transparent: true,
       opacity: 0.55
     });
@@ -537,7 +537,7 @@ export class TableTennisScene implements IGameScene {
     this.ballMesh.add(this.ballHaloMesh);
 
     // Dynamic Point Light attached to ball
-    this.ballLight = new THREE.PointLight(0xef4444, 1.8, 3.5);
+    this.ballLight = new THREE.PointLight(0xffffff, 1.8, 3.5);
     this.ballMesh.add(this.ballLight);
 
     // Dynamic table-projected contact shadow blob pinned to table surface
@@ -558,7 +558,7 @@ export class TableTennisScene implements IGameScene {
     const stemPositions = new Float32Array(6);
     this.altitudeStemGeo.setAttribute('position', new THREE.BufferAttribute(stemPositions, 3));
     this.altitudeStemMat = new THREE.LineBasicMaterial({
-      color: 0x00f2fe,
+      color: 0xffffff,
       transparent: true,
       opacity: 0.70,
       linewidth: 2
@@ -596,8 +596,8 @@ export class TableTennisScene implements IGameScene {
     const ripple = this.bounceRipples.find(r => r.life <= 0) || this.bounceRipples[0];
     ripple.mesh.position.set(x, this.tableHeight + 0.0025, z);
     ripple.life = ripple.maxLife;
-    // Red on player half (Z < 0), Light Blue / Cyan on opponent half (Z > 0)
-    const colorHex = isPlayerSide ? 0xef4444 : 0x00f2fe;
+    // High-visibility crisp white bounce ripple
+    const colorHex = 0xffffff;
     ripple.mat.color.setHex(colorHex);
     ripple.mat.opacity = 0.95;
     ripple.mesh.scale.set(1, 1, 1);
@@ -681,7 +681,7 @@ export class TableTennisScene implements IGameScene {
       const t = i / this.TRAIL_LENGTH;
       const trailGeo = new THREE.SphereGeometry(this.ballRadius * (1 - t * 0.70), 8, 8);
       const trailMat = new THREE.MeshBasicMaterial({
-        color: new THREE.Color(0xef4444),
+        color: new THREE.Color(0xffffff),
         transparent: true,
         opacity: 0
       });
@@ -1971,7 +1971,7 @@ export class TableTennisScene implements IGameScene {
         if (this.ballTrail[i]) {
           tm.visible = true;
           tm.position.copy(this.ballTrail[i]);
-          const trailColor = this.ballTrail[i].z < 0 ? 0xef4444 : 0x00f2fe;
+          const trailColor = 0xffffff;
           (tm.material as THREE.MeshBasicMaterial).color.setHex(trailColor);
           (tm.material as THREE.MeshBasicMaterial).opacity = (1 - i / this.TRAIL_LENGTH) * 0.65;
         } else {
@@ -2185,10 +2185,8 @@ export class TableTennisScene implements IGameScene {
       : 1.0;
     this.ballMesh.scale.setScalar(ballScale);
 
-    // Inverted Side-Specific Ball Glow:
-    // Red (#ef4444) when on player's court (Z < 0); Light Blue / Cyan (#00f2fe) when on opponent's court (Z >= 0)
-    const isPlayerCourtSide = this.ballPos.z < 0;
-    const sideColorHex = isPlayerCourtSide ? 0xef4444 : 0x00f2fe;
+    // High-Visibility Pure White Ball Glow & Emissive Highlight:
+    const sideColorHex = 0xffffff;
 
     if (this.ballLight) {
       this.ballLight.color.setHex(sideColorHex);
