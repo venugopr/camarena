@@ -181,8 +181,9 @@ export class TableTennisScene implements IGameScene {
   private gameStartingServer: 1 | 2 = 1;
   private player1GamesWon = 0;
   private player2GamesWon = 0;
-  private readonly gamesToWinMatch = 3; // Best 3 of 5 games
+  private readonly gamesToWinMatch = 2; // Best of 3 games (first to 2 wins)
   private currentGameNumber = 1;
+  private gamesWonCardEl?: HTMLElement;
   private aiHitCooldown = 0;
   private aiHasHitCurrentInbound = false;
   private hasHitThisTurn = false; // State lock: prevents AI from re-hitting until ball crosses net or player returns
@@ -807,6 +808,53 @@ export class TableTennisScene implements IGameScene {
     this.comboBadgeEl.id = 'tt-combo-badge';
     this.comboBadgeEl.className = 'tt-combo-badge hidden';
     this.container.appendChild(this.comboBadgeEl);
+
+    // Games Won Scoreboard Card (Top-Left Broadcast Widget)
+    this.gamesWonCardEl = document.createElement('div');
+    this.gamesWonCardEl.id = 'tt-games-card';
+    this.gamesWonCardEl.className = 'tt-games-card glass-panel';
+    this.container.appendChild(this.gamesWonCardEl);
+    this.updateGamesWonDisplay();
+  }
+
+  private updateGamesWonDisplay(): void {
+    if (!this.gamesWonCardEl) return;
+    const p1Won = this.player1GamesWon;
+    const p2Won = this.player2GamesWon;
+    const isDecider = this.currentGameNumber === 3 || (p1Won === 1 && p2Won === 1);
+    const gameNumTxt = this.matchOver
+      ? 'FINAL'
+      : isDecider
+        ? 'DECIDER'
+        : `GAME ${this.currentGameNumber}`;
+
+    this.gamesWonCardEl.innerHTML = `
+      <div class="tt-games-header">
+        <div class="tt-games-badge-left">
+          <span class="tt-games-icon">🏓</span>
+          <span class="tt-games-mode">BEST OF 3</span>
+        </div>
+        <span class="tt-games-current" style="color: ${isDecider ? '#f43f5e' : '#f59e0b'}">${gameNumTxt}</span>
+      </div>
+      <div class="tt-games-body">
+        <div class="tt-game-row player">
+          <span class="tt-team-label">YOU</span>
+          <div class="tt-pips">
+            <span class="tt-pip ${p1Won >= 1 ? 'won' : ''}"></span>
+            <span class="tt-pip ${p1Won >= 2 ? 'won' : ''}"></span>
+          </div>
+          <span class="tt-game-score">${p1Won}</span>
+        </div>
+        <div class="tt-game-row bot">
+          <span class="tt-team-label">BOT</span>
+          <div class="tt-pips">
+            <span class="tt-pip ${p2Won >= 1 ? 'won' : ''}"></span>
+            <span class="tt-pip ${p2Won >= 2 ? 'won' : ''}"></span>
+          </div>
+          <span class="tt-game-score">${p2Won}</span>
+        </div>
+      </div>
+    `;
   }
 
   private updateStatusDialog(
@@ -981,6 +1029,7 @@ export class TableTennisScene implements IGameScene {
     this.hasHitThisTurn = false;
     this.aiPaddleProximityEngaged = false;
     this.resetServe();
+    this.updateGamesWonDisplay();
     this.notifyScore();
   }
 
@@ -2378,7 +2427,7 @@ export class TableTennisScene implements IGameScene {
       const matchWinnerTxt = this.scoreState.winner === 1 ? '🏆 MATCH WON!' : '🤖 AI WON MATCH!';
       this.updateStatusDialog(
         matchWinnerTxt,
-        `Final Match: You ${this.player1GamesWon} - ${this.player2GamesWon} AI (Best of 5)`,
+        `Final Match: You ${this.player1GamesWon} - ${this.player2GamesWon} AI (Best of 3)`,
         'over',
         'MATCH COMPLETE'
       );
@@ -2392,7 +2441,7 @@ export class TableTennisScene implements IGameScene {
       const p1 = this.scoreState.player1Score;
       const p2 = this.scoreState.player2Score;
       const isDeuce = p1 >= 10 && p2 >= 10;
-      const gameScoreTxt = `Game ${this.currentGameNumber} · Games: You ${this.player1GamesWon} - ${this.player2GamesWon} AI`;
+      const gameScoreTxt = `Game ${this.currentGameNumber} of 3 · Series: You ${this.player1GamesWon} - ${this.player2GamesWon} AI`;
 
       if (this.scoreState.currentServer === 1) {
         let serveCue: string;
@@ -2625,28 +2674,43 @@ export class TableTennisScene implements IGameScene {
       this.scoreState.matchPointText = undefined;
     }
 
-    // Official ITTF Singles Game Win: First to 11, win by 2
-    const p1WonGame = p1 >= this.targetScore && p1 - p2 >= 2;
-    const p2WonGame = p2 >= this.targetScore && p2 - p1 >= 2;
+    // Official ITTF Singles Game Win: First to targetScore (e.g. 11), win by 2 (or sudden death cap)
+    const maxCap = this.targetScore >= 21 ? 30 : this.targetScore + 9;
+    const p1WonGame = (p1 >= this.targetScore && p1 - p2 >= 2) || p1 >= maxCap;
+    const p2WonGame = (p2 >= this.targetScore && p2 - p1 >= 2) || p2 >= maxCap;
 
     if (p1WonGame || p2WonGame) {
       const gameWinner = p1WonGame ? 1 : 2;
       if (gameWinner === 1) this.player1GamesWon++;
       else this.player2GamesWon++;
 
-      // Check Match Win (Best 3 of 5 games)
+      this.updateGamesWonDisplay();
+
+      // Check Match Win (Best of 3: first to 2 games wins)
       if (this.player1GamesWon >= this.gamesToWinMatch || this.player2GamesWon >= this.gamesToWinMatch) {
         this.matchOver = true;
         this.scoreState.isGameOver = true;
         this.scoreState.winner = gameWinner;
+        this.setBallVisibility(false);
+        this.updateGamesWonDisplay();
+        this.updateStatusDialog(
+          gameWinner === 1 ? '🏆 MATCH WON!' : '🤖 AI WON MATCH!',
+          gameWinner === 1
+            ? `Match Victory! You won ${this.player1GamesWon} - ${this.player2GamesWon} in Best of 3!`
+            : `AI won ${this.player2GamesWon} - ${this.player1GamesWon} in Best of 3.`,
+          'over',
+          'MATCH COMPLETE'
+        );
         this.notifyScore();
         return;
       }
 
-      // Game completed, prepare next game
+      // Game completed, prepare next game in Best of 3
+      const isDecider = this.player1GamesWon === 1 && this.player2GamesWon === 1;
+      const nextGameText = isDecider ? 'DECIDING GAME 3' : `GAME ${this.currentGameNumber + 1}`;
       this.updateStatusDialog(
         gameWinner === 1 ? '🎉 Game Won!' : '🤖 AI Won Game',
-        `Games: You ${this.player1GamesWon} - ${this.player2GamesWon} AI. Starting Game ${this.currentGameNumber + 1}...`,
+        `Games: You ${this.player1GamesWon} - ${this.player2GamesWon} AI (Best of 3). Starting ${nextGameText}...`,
         'over',
         'GAME COMPLETE'
       );
@@ -2657,7 +2721,7 @@ export class TableTennisScene implements IGameScene {
         // Switch initial server for next game
         const nextFirstServer: 1 | 2 = this.initialServerForGame === 1 ? 2 : 1;
         this.startNewGame(nextFirstServer);
-      }, 2000);
+      }, 2500);
       this.activeTimeouts.push(timerId);
       return;
     }
@@ -2725,6 +2789,10 @@ export class TableTennisScene implements IGameScene {
   }
 
   private notifyScore(): void {
+    this.scoreState.gamesWon1 = this.player1GamesWon;
+    this.scoreState.gamesWon2 = this.player2GamesWon;
+    this.scoreState.gamesToWinMatch = this.gamesToWinMatch;
+    this.scoreState.currentGameNumber = this.currentGameNumber;
     for (const cb of this.scoreCallbacks) {
       cb({ ...this.scoreState });
     }
@@ -2829,6 +2897,10 @@ export class TableTennisScene implements IGameScene {
     if (this.comboBadgeEl) {
       this.comboBadgeEl.remove();
       this.comboBadgeEl = undefined;
+    }
+    if (this.gamesWonCardEl) {
+      this.gamesWonCardEl.remove();
+      this.gamesWonCardEl = undefined;
     }
     if (this.bounceCalloutTimer) clearTimeout(this.bounceCalloutTimer);
     if (this.faultBannerTimer) clearTimeout(this.faultBannerTimer);

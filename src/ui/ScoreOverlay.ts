@@ -482,14 +482,18 @@ export class ScoreOverlay {
         if (didWin) {
           title.textContent = 'MATCH VICTORY! 🏆';
           title.style.color = '#00f2fe';
-          subtitle.textContent = 'Superb match! You outplayed the opponent and secured the win!';
+          subtitle.textContent = (score.gamesWon1 !== undefined && score.gamesWon2 !== undefined)
+            ? `Superb match! You won the Best of 3 series (${score.gamesWon1} - ${score.gamesWon2})!`
+            : 'Superb match! You outplayed the opponent and secured the win!';
           badge.textContent = 'VICTORY ACHIEVED';
           badge.style.background = 'rgba(0, 242, 254, 0.2)';
           badge.style.borderColor = '#00f2fe';
         } else {
           title.textContent = 'MATCH DEFEAT ⚡';
           title.style.color = '#ff0055';
-          subtitle.textContent = 'Match Lost. Defeat registered! Ready for a comeback in the rematch?';
+          subtitle.textContent = (score.gamesWon1 !== undefined && score.gamesWon2 !== undefined)
+            ? `Match Lost (${score.gamesWon2} - ${score.gamesWon1} in Best of 3). Ready for a comeback in the rematch?`
+            : 'Match Lost. Defeat registered! Ready for a comeback in the rematch?';
           badge.textContent = 'DEFEAT REGISTERED';
           badge.style.background = 'rgba(255, 0, 85, 0.2)';
           badge.style.borderColor = '#ff0055';

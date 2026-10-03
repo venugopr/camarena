@@ -20,6 +20,10 @@ export interface GameScoreState {
   lastPointReason?: string;
   matchPointText?: string;
   gameModeTitle?: string;
+  gamesWon1?: number;
+  gamesWon2?: number;
+  gamesToWinMatch?: number;
+  currentGameNumber?: number;
 }
 
 export interface IGameScene {
