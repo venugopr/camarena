@@ -67,11 +67,36 @@ export class TableTennisScene implements IGameScene {
   private hasPrevWrist = false;
   private smoothedWristVelocity = new THREE.Vector3();
 
-  // Mouse / Pointer fallback
+  // Mouse / Pointer fallback & 3D Strike Plane Projection
   private mouseX = 0;
   private mouseY = 0.86;
   private isPointerControlled = false;
   private lastPointerEventTime = 0;
+  private raycaster = new THREE.Raycaster();
+  private pointerNdc = new THREE.Vector2();
+
+  // Contact-frame visual snap & follow-through surge
+  private paddleSnapTimer = 0;
+  private paddleSnapContactPos = new THREE.Vector3();
+  private paddleSnapFollowThrough = new THREE.Vector3();
+
+  // Zero-allocation scratch objects for 60+ FPS physics & tracking hot loops
+  private readonly scratchPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+  private readonly scratchStrikePoint = new THREE.Vector3();
+  private readonly scratchVec3A = new THREE.Vector3();
+  private readonly scratchVec3B = new THREE.Vector3();
+  private readonly scratchPaddleVel = new THREE.Vector3();
+  private readonly scratchCurrentWrist = new THREE.Vector3();
+  private readonly scratchRawWristVel = new THREE.Vector3();
+  private readonly scratchRelativeWristVel = new THREE.Vector3();
+  private readonly scratchSegD1 = new THREE.Vector3();
+  private readonly scratchSegD2 = new THREE.Vector3();
+  private readonly scratchSegR = new THREE.Vector3();
+  private readonly scratchSegA = new THREE.Vector3();
+  private readonly scratchSegB = new THREE.Vector3();
+  private readonly scratchContactPos = new THREE.Vector3();
+  private readonly scratchExitDir = new THREE.Vector3();
+  private readonly scratchReachTarget = new THREE.Vector3();
 
   // Ball physics state
   private ballPos = new THREE.Vector3(0.20, 0.92, -1.28);
@@ -146,6 +171,7 @@ export class TableTennisScene implements IGameScene {
   // Ball trail system
   private readonly TRAIL_LENGTH = 10;
   private ballTrail: THREE.Vector3[] = [];
+  private ballTrailCount = 0;
   private ballTrailMeshes: THREE.Mesh[] = [];
 
   // ITTF Singles Match & Scoring Rules
@@ -158,6 +184,9 @@ export class TableTennisScene implements IGameScene {
   private readonly gamesToWinMatch = 3; // Best 3 of 5 games
   private currentGameNumber = 1;
   private aiHitCooldown = 0;
+  private aiHasHitCurrentInbound = false;
+  private hasHitThisTurn = false; // State lock: prevents AI from re-hitting until ball crosses net or player returns
+  private aiPaddleProximityEngaged = false; // Enter/exit proximity latch for clean collision volume tracking
 
   private scoreState: GameScoreState = {
     player1Score: 0,
@@ -719,6 +748,8 @@ export class TableTennisScene implements IGameScene {
 
   private buildBallTrail(): void {
     this.ballTrailMeshes = [];
+    this.ballTrail = Array.from({ length: this.TRAIL_LENGTH }, () => new THREE.Vector3());
+    this.ballTrailCount = 0;
     for (let i = 0; i < this.TRAIL_LENGTH; i++) {
       const t = i / this.TRAIL_LENGTH;
       const trailGeo = new THREE.SphereGeometry(this.ballRadius * (1 - t * 0.65), 8, 8);
@@ -792,8 +823,8 @@ export class TableTennisScene implements IGameScene {
     this.statusDialogEl.className = `state-${state}`;
     const dotColor =
       state === 'ready' ? '#00f2fe' :
-      state === 'position' ? '#f59e0b' :
-      state === 'active' ? '#34d399' : '#10b981';
+        state === 'position' ? '#f59e0b' :
+          state === 'active' ? '#34d399' : '#10b981';
 
     this.statusDialogEl.innerHTML = `
       <div class="tt-status-tag">
@@ -882,6 +913,7 @@ export class TableTennisScene implements IGameScene {
       if (rect.width <= 0 || rect.height <= 0) return;
       const normX = (e.clientX - rect.left) / rect.width; // 0..1
       const normY = (e.clientY - rect.top) / rect.height;  // 0..1
+      this.pointerNdc.set((normX * 2) - 1, -(normY * 2) + 1);
       this.mouseX = (normX - 0.5) * 2.5; // [-1.25, +1.25] full table reach
       this.mouseY = this.tableHeight + 0.10 + (1 - normY) * 0.40; // ~0.86 to 1.26m
       this.isPointerControlled = true;
@@ -945,6 +977,9 @@ export class TableTennisScene implements IGameScene {
     this.startupCountdown = 1.8;
     this.isServeArmed = false;
     this.aiHitCooldown = 0;
+    this.aiHasHitCurrentInbound = false;
+    this.hasHitThisTurn = false;
+    this.aiPaddleProximityEngaged = false;
     this.resetServe();
     this.notifyScore();
   }
@@ -983,6 +1018,11 @@ export class TableTennisScene implements IGameScene {
     this.bounceCountNear = 0;
     this.bounceCountFar = 0;
     this.lastHitter = null;
+    this.aiHitCooldown = 0;
+    this.aiHasHitCurrentInbound = false;
+    this.hasHitThisTurn = false;
+    this.aiPaddleProximityEngaged = false;
+    this.paddleSnapTimer = 0;
     this.hasAiInterceptDecision = false;
     this.aiWillIntercept = true;
     this.isStanceRepositioning = false;
@@ -1014,11 +1054,11 @@ export class TableTennisScene implements IGameScene {
    * During READY_TO_SERVE, locks the ping-pong ball visibly to the player's table tennis paddle.
    */
   private dockBallToPlayerPaddle(): void {
-    const paddleForward = new THREE.Vector3(0, 0, 1);
+    this.scratchVec3A.set(0, 0, 1);
     if (this.fpPaddleGroup) {
-      paddleForward.applyEuler(this.fpPaddleGroup.rotation).normalize();
+      this.scratchVec3A.applyEuler(this.fpPaddleGroup.rotation).normalize();
     }
-    const dockOffset = paddleForward.multiplyScalar(this.ballRadius + 0.006);
+    const dockOffset = this.scratchVec3A.multiplyScalar(this.ballRadius + 0.006);
     this.ballPos.copy(this.activePaddlePos).add(dockOffset);
     this.prevBallPos.copy(this.ballPos);
     this.ballVel.set(0, 0, 0);
@@ -1039,6 +1079,9 @@ export class TableTennisScene implements IGameScene {
     this.bounceCountNear = 0;
     this.bounceCountFar = 0;
     this.lastHitter = null;
+    this.aiHitCooldown = 0;
+    this.aiHasHitCurrentInbound = false;
+    this.paddleSnapTimer = 0;
     this.serveCountdown = 1.4;
     this.wasNetClippedOnServe = false;
     this.ballSpin.set(0, 0, 0);
@@ -1059,9 +1102,9 @@ export class TableTennisScene implements IGameScene {
     a0: THREE.Vector3, a1: THREE.Vector3,
     b0: THREE.Vector3, b1: THREE.Vector3
   ): number {
-    const d1 = a1.clone().sub(a0);
-    const d2 = b1.clone().sub(b0);
-    const r = a0.clone().sub(b0);
+    const d1 = this.scratchSegD1.subVectors(a1, a0);
+    const d2 = this.scratchSegD2.subVectors(b1, b0);
+    const r = this.scratchSegR.subVectors(a0, b0);
 
     const a = d1.dot(d1);
     const e = d2.dot(d2);
@@ -1095,8 +1138,8 @@ export class TableTennisScene implements IGameScene {
       }
     }
 
-    const closestA = a0.clone().addScaledVector(d1, s);
-    const closestB = b0.clone().addScaledVector(d2, t);
+    const closestA = this.scratchSegA.copy(a0).addScaledVector(d1, s);
+    const closestB = this.scratchSegB.copy(b0).addScaledVector(d2, t);
     return closestA.distanceTo(closestB);
   }
 
@@ -1246,11 +1289,12 @@ export class TableTennisScene implements IGameScene {
     this.bounceCountNear = 0;
     this.bounceCountFar = 0;
     this.scoreState.rallyCount = 1;
-    this.ballTrail = [];
+    this.ballTrailCount = 0;
+    for (const tm of this.ballTrailMeshes) tm.visible = false;
     this.wasNetClippedOnServe = false;
 
-    // Satisfying micro hit-stop (0.035s freeze) and audio pop
-    this.hitStopTimer = 0.035;
+    // Satisfying micro hit-stop (0.02s freeze) and audio pop
+    this.hitStopTimer = 0.02;
     this.audio.tableTennisPaddleHit(1.2);
     this.flashSweetSpot();
     this.triggerScreenShake(0.04);
@@ -1262,6 +1306,11 @@ export class TableTennisScene implements IGameScene {
     const targetX1 = THREE.MathUtils.clamp(this.playerX * 0.4 + this.paddleVelocity.x * 0.1, -0.38, 0.38);
     const targetZ1 = -0.75;
     this.ballVel = this.solveExactControlledVelocity(this.ballPos, targetX1, targetZ1, 0.05, 2.8);
+
+    this.paddleSnapTimer = 0.08;
+    this.paddleSnapContactPos.copy(this.activePaddlePos);
+    const serveExitDir = this.scratchExitDir.copy(this.ballVel).normalize();
+    this.paddleSnapFollowThrough.copy(serveExitDir).multiplyScalar(0.08);
   }
 
   /**
@@ -1273,10 +1322,15 @@ export class TableTennisScene implements IGameScene {
     this.servePhase = 'SERVER_BOUNCE';
     this.isBallInPlay = true;
     this.lastHitter = 'opponent';
+    this.hasHitThisTurn = true;
+    this.aiHasHitCurrentInbound = true;
+    this.aiPaddleProximityEngaged = true;
+    this.aiHitCooldown = 0.40; // Cooldown lockout during AI serve
     this.bounceCountNear = 0;
     this.bounceCountFar = 0;
     this.scoreState.rallyCount = 1;
-    this.ballTrail = [];
+    this.ballTrailCount = 0;
+    for (const tm of this.ballTrailMeshes) tm.visible = false;
     this.wasNetClippedOnServe = false;
 
     this.ballSpin.set(-15, (Math.random() - 0.5) * 10, 0);
@@ -1302,6 +1356,8 @@ export class TableTennisScene implements IGameScene {
     // immediately cancel all player return timers, floor drop timeouts, and grace timers.
     // Set this.lastHitter = 'player' and reset bounceCount = 0.
     this.lastHitter = 'player';
+    this.hasHitThisTurn = false; // Player return unlocks hitter state for next inbound
+    this.aiHasHitCurrentInbound = false; // Arm inbound trajectory for AI return
     this.bounceCountNear = 0;
     this.bounceCountFar = 0;
     if (this.playerBounceTimeout) {
@@ -1361,11 +1417,38 @@ export class TableTennisScene implements IGameScene {
     this.bounceCountFar = 0;
     this.scoreState.rallyCount++;
 
-    // Satisfying micro hit-stop (0.04s freeze) and audio feedback
-    this.hitStopTimer = 0.04;
+    // Satisfying micro hit-stop (0.02s freeze) and audio feedback
+    this.hitStopTimer = 0.02;
     this.audio.tableTennisPaddleHit(strokePower);
     this.flashSweetSpot();
     this.triggerScreenShake(Math.min(0.06, strokePower * 0.018));
+
+    // 6. Contact-Frame Visual Snap: Snap visual paddle directly to ball contact point
+    const contactOffsetZ = -(this.ballRadius + 0.006);
+    const contactPos = this.scratchContactPos.set(
+      this.ballPos.x,
+      THREE.MathUtils.clamp(this.ballPos.y, this.tableHeight + 0.04, 1.28),
+      this.ballPos.z + contactOffsetZ
+    );
+    this.activePaddlePos.copy(contactPos);
+    this.fpPaddleGroup.position.copy(contactPos);
+    this.prevPaddlePos.copy(contactPos);
+    this.prevPaddleHeadPos.copy(contactPos);
+
+    this.paddleSnapTimer = 0.08; // 80ms follow-through surge
+    this.paddleSnapContactPos.copy(contactPos);
+    const exitDir = this.scratchExitDir.copy(this.ballVel).normalize();
+    this.paddleSnapFollowThrough.copy(exitDir).multiplyScalar(0.08);
+
+    // Dynamic visual orientation flush to exit vector
+    const snapPitch = -0.32 + THREE.MathUtils.clamp(this.paddleVelocity.y * 0.02, -0.15, 0.15);
+    const snapYaw = THREE.MathUtils.clamp(-exitDir.x * 0.8, -0.45, 0.45);
+    const snapRoll = this.dominantHand === 'left' ? 0.12 : -0.12;
+    this.fpPaddleGroup.rotation.set(snapPitch, snapYaw, snapRoll);
+
+    if (this.playerAvatar) {
+      this.playerAvatar.poseArmsToTargets(contactPos, undefined, this.dominantHand);
+    }
 
     // Learner Return Practice Step 2 Check
     if (this.currentDifficulty === 'learner' && this.tutorialStep === 2) {
@@ -1394,7 +1477,7 @@ export class TableTennisScene implements IGameScene {
 
   public update(deltaTime: number, motionFrame: MotionFrame | null): void {
     if (!this.isRunning) return;
-    const dt = Math.min(deltaTime, 0.05);
+    const dt = Math.min(deltaTime, 0.10);
 
     // ─── 1. Strict Leg-Visibility & Standing Posture Gate ───
     // Evaluated at the top of the frame before running any gameplay logic.
@@ -1414,7 +1497,7 @@ export class TableTennisScene implements IGameScene {
       const safeDelta = Math.max(0.008, dt);
 
       if (this.hasPrevHipPos) {
-        const hipVel = currentHipPos.clone().sub(this.prevHipPos).divideScalar(safeDelta);
+        const hipVel = this.scratchVec3A.subVectors(currentHipPos, this.prevHipPos).divideScalar(safeDelta);
         torsoVelZ = hipVel.z;
         this.currentHipSpeed = Math.abs(torsoVelZ);
       }
@@ -1472,14 +1555,10 @@ export class TableTennisScene implements IGameScene {
 
     this.animT += dt;
 
+    // Non-blocking micro hit-stop: keep paddle tracking fluid and render continuous
+    const isHitStopActive = this.hitStopTimer > 0;
     if (this.hitStopTimer > 0) {
-      this.hitStopTimer -= dt;
-      // During hit-stop freeze (0.04s), keep 3D paddle tracking responsive and render,
-      // but freeze physics integration for tactile impact punch
-      if (this.renderer && this.scene && this.camera) {
-        this.renderer.render(this.scene, this.camera);
-      }
-      return;
+      this.hitStopTimer = Math.max(0, this.hitStopTimer - dt);
     }
 
     if (this.postureGraceTimer > 0) this.postureGraceTimer -= dt;
@@ -1548,34 +1627,61 @@ export class TableTennisScene implements IGameScene {
       this.playerAvatar.group.position.x = this.playerX;
     }
 
-    // 3. 1:1 Hand-to-Paddle 3D Tracking
-    let dominantVel = new THREE.Vector3(0, 0, 0);
-    if (motionFrame && motionFrame.worldLandmarks && motionFrame.worldLandmarks.length > 20) {
+    // 3. 1:1 Hand-to-Paddle 3D Tracking & 3D Strike Plane Projection
+    const isPointerActive = this.isPointerControlled && (performance.now() - this.lastPointerEventTime < 2500);
+    const dominantVel = this.scratchVec3A.set(0, 0, 0);
+    let targetX = this.activePaddlePos.x;
+    let targetY = this.activePaddlePos.y;
+    let targetZ = this.activePaddlePos.z;
+
+    if (isPointerActive) {
+      // 3D Strike Plane Projection: Raycast 2D pointer coordinates directly onto table strike plane
+      const isBallLive = this.isBallInPlay || this.rallyState === 'IN_PLAY' || this.rallyState === 'IN_SERVE';
+      const strikePlaneY = THREE.MathUtils.clamp(
+        isBallLive ? this.ballPos.y : this.mouseY,
+        this.tableHeight + 0.04,
+        1.28
+      );
+      this.raycaster.setFromCamera(this.pointerNdc, this.camera);
+      this.scratchPlane.setComponents(0, 1, 0, -strikePlaneY);
+      if (this.raycaster.ray.intersectPlane(this.scratchPlane, this.scratchStrikePoint)) {
+        targetX = THREE.MathUtils.clamp(this.scratchStrikePoint.x, -1.25, 1.25);
+        targetY = strikePlaneY;
+        targetZ = THREE.MathUtils.clamp(this.scratchStrikePoint.z, -1.65, -0.25);
+      } else {
+        targetX = THREE.MathUtils.clamp(this.mouseX, -1.25, 1.25);
+        targetY = THREE.MathUtils.clamp(this.mouseY, this.tableHeight + 0.06, 1.28);
+        targetZ = -1.35;
+      }
+      const isReadyServe = this.rallyState === 'READY_TO_SERVE' && this.scoreState.currentServer === 1;
+      const pitch = isReadyServe ? -0.58 : -0.20;
+      const yaw = THREE.MathUtils.clamp(-targetX * 0.25, -0.4, 0.4);
+      const roll = this.dominantHand === 'left' ? 0.12 : -0.12;
+      this.fpPaddleGroup.rotation.set(pitch, yaw, roll);
+    } else if (motionFrame && motionFrame.worldLandmarks && motionFrame.worldLandmarks.length > 20) {
       this.playerAvatar.update(motionFrame.worldLandmarks, this.dominantHand, dt);
       const batPos = this.playerAvatar.getPaddleWorldPosition();
-      dominantVel = this.playerAvatar.getSmoothedDominantWristVelocity();
+      dominantVel.copy(this.playerAvatar.getSmoothedDominantWristVelocity());
 
       const wristIdx = this.dominantHand === 'left' ? PoseLandmark.LEFT_WRIST : PoseLandmark.RIGHT_WRIST;
       const elbowIdx = this.dominantHand === 'left' ? PoseLandmark.LEFT_ELBOW : PoseLandmark.RIGHT_ELBOW;
       const wrist = motionFrame.worldLandmarks[wristIdx];
       const elbow = motionFrame.worldLandmarks[elbowIdx];
 
-      // Instant 1:1 paddle tracking without artificial latency across court width
-      const targetX = THREE.MathUtils.clamp(batPos.x, -1.25, 1.25);
-      const targetY = THREE.MathUtils.clamp(batPos.y, this.tableHeight + 0.02, 1.35);
-      const targetZ = THREE.MathUtils.clamp(batPos.z, -1.65, -1.10);
-      this.activePaddlePos.set(targetX, targetY, targetZ);
-      this.fpPaddleGroup.position.set(targetX, targetY, targetZ);
+      // Reach expanded across player's full table half (Z up to -0.25m)
+      targetX = THREE.MathUtils.clamp(batPos.x, -1.25, 1.25);
+      targetY = THREE.MathUtils.clamp(batPos.y, this.tableHeight + 0.02, 1.35);
+      targetZ = THREE.MathUtils.clamp(batPos.z, -1.65, -0.25);
 
       // Exponential smoothing (EMA) on wrist velocities to capture rapid TT forearm flicks while filtering out resting camera jitter
       if (wrist) {
-        const currentWrist = new THREE.Vector3(
+        const currentWrist = this.scratchCurrentWrist.set(
           -wrist.x * 1.8,
           (1.4 - wrist.y) * 1.6,
           -wrist.z * 1.8 - 1.25
         );
         if (this.hasPrevWrist) {
-          const rawWristVel = currentWrist.clone().sub(this.prevWristPos).divideScalar(Math.max(0.008, dt));
+          const rawWristVel = this.scratchRawWristVel.subVectors(currentWrist, this.prevWristPos).divideScalar(Math.max(0.008, dt));
           // Filter resting camera jitter with a deadzone (< 0.12 m/s)
           if (rawWristVel.length() < 0.12) {
             rawWristVel.set(0, 0, 0);
@@ -1606,25 +1712,42 @@ export class TableTennisScene implements IGameScene {
       this.fpPaddleGroup.rotation.set(pitch, yaw, roll);
     } else if (this.isPointerControlled) {
       // Smooth Pointer fallback positioning with 1:1 response
-      const targetX = THREE.MathUtils.clamp(this.mouseX, -1.25, 1.25);
-      const targetY = THREE.MathUtils.clamp(this.mouseY, this.tableHeight + 0.06, 1.28);
-      const targetZ = -1.35;
-      this.activePaddlePos.set(targetX, targetY, targetZ);
-      this.fpPaddleGroup.position.set(targetX, targetY, targetZ);
+      targetX = THREE.MathUtils.clamp(this.mouseX, -1.25, 1.25);
+      targetY = THREE.MathUtils.clamp(this.mouseY, this.tableHeight + 0.06, 1.28);
+      targetZ = -1.35;
       const isReadyServe = this.rallyState === 'READY_TO_SERVE' && this.scoreState.currentServer === 1;
       this.fpPaddleGroup.rotation.set(isReadyServe ? -0.58 : -0.20, -targetX * 0.25, 0);
     }
 
+    // Contact-frame snap & follow-through surge: keep paddle visually locked to ball during hit-stop & follow through
+    if (this.paddleSnapTimer > 0) {
+      this.paddleSnapTimer = Math.max(0, this.paddleSnapTimer - dt);
+      const snapProgress = 1 - this.paddleSnapTimer / 0.08;
+      const followSurge = snapProgress * 0.08;
+      const snapX = THREE.MathUtils.lerp(this.paddleSnapContactPos.x + this.paddleSnapFollowThrough.x * followSurge, targetX, snapProgress * 0.6);
+      const snapY = THREE.MathUtils.lerp(this.paddleSnapContactPos.y + this.paddleSnapFollowThrough.y * followSurge, targetY, snapProgress * 0.6);
+      const snapZ = THREE.MathUtils.lerp(this.paddleSnapContactPos.z + this.paddleSnapFollowThrough.z * followSurge, targetZ, snapProgress * 0.6);
+      this.activePaddlePos.set(snapX, snapY, snapZ);
+      this.fpPaddleGroup.position.set(snapX, snapY, snapZ);
+    } else {
+      this.activePaddlePos.set(targetX, targetY, targetZ);
+      this.fpPaddleGroup.position.set(targetX, targetY, targetZ);
+    }
+
     // 3D paddle velocity computation with EMA smoothing and resting camera jitter filter
-    const rawPaddleVel = new THREE.Vector3().subVectors(this.activePaddlePos, this.prevPaddlePos).divideScalar(Math.max(0.008, dt));
+    const rawPaddleVel = this.scratchPaddleVel.subVectors(this.activePaddlePos, this.prevPaddlePos).divideScalar(Math.max(0.008, dt));
     if (rawPaddleVel.length() < 0.12) {
       rawPaddleVel.set(0, 0, 0);
     }
     this.paddleVelocity.lerp(rawPaddleVel, 0.45);
     this.prevPaddlePos.copy(this.activePaddlePos);
 
-    const paddleGroup = this.playerAvatar.getPaddleGroup();
-    if (paddleGroup) paddleGroup.visible = true;
+    // Keep avatar arm synchronized with paddle position while hiding duplicate internal avatar paddle
+    if (this.playerAvatar) {
+      this.playerAvatar.poseArmsToTargets(this.activePaddlePos, undefined, this.dominantHand, this.paddleVelocity);
+      const avatarPaddle = this.playerAvatar.getPaddleGroup();
+      if (avatarPaddle) avatarPaddle.visible = false;
+    }
 
     // Update aim reticle feedback
     if (this.rallyState === 'READY_TO_SERVE' && this.scoreState.currentServer === 1) {
@@ -1735,11 +1858,11 @@ export class TableTennisScene implements IGameScene {
       const currentShoulderPos = this.playerAvatar.getShoulderWorldPosition(this.playerAvatar.dominantArm);
       const safeDelta = Math.max(0.008, dt);
 
-      let relativeWristVel = new THREE.Vector3();
+      const relativeWristVel = this.scratchRelativeWristVel.set(0, 0, 0);
       if (this.hasPrevUpperBodyPos) {
-        relativeWristVel = currentWristPos.clone().sub(currentShoulderPos).sub(
-          this.prevUpperWrist.clone().sub(this.prevUpperShoulder)
-        ).divideScalar(safeDelta);
+        const curDiff = this.scratchVec3A.subVectors(currentWristPos, currentShoulderPos);
+        const prevDiff = this.scratchVec3B.subVectors(this.prevUpperWrist, this.prevUpperShoulder);
+        relativeWristVel.subVectors(curDiff, prevDiff).divideScalar(safeDelta);
       }
       this.prevUpperWrist.copy(currentWristPos);
       this.prevUpperShoulder.copy(currentShoulderPos);
@@ -1770,7 +1893,7 @@ export class TableTennisScene implements IGameScene {
       if (inContactZone) {
         const closestDist = this.closestApproachSegSeg(
           this.prevPaddleHeadPos, this.activePaddlePos,
-          this.prevBallPos,       this.ballPos
+          this.prevBallPos, this.ballPos
         );
         const directDist = this.activePaddlePos.distanceTo(this.ballPos);
 
@@ -1802,17 +1925,21 @@ export class TableTennisScene implements IGameScene {
     this.prevPaddleHeadPos.copy(this.activePaddlePos);
 
     // 6. Ball Dynamics & ITTF Bounce Rules
-    if (this.rallyState === 'IN_PLAY' || this.rallyState === 'IN_SERVE') {
+    if (!isHitStopActive && (this.rallyState === 'IN_PLAY' || this.rallyState === 'IN_SERVE')) {
       this.prevBallPos.copy(this.ballPos);
 
-      // Auto-Net Safety Lift for casual player shots heading directly into bottom of net
+      // Auto-Net Safety Lift for casual player shots heading directly into bottom of net:
+      // Gentle nudge only if ball is dipping below net height right before the net plane,
+      // avoiding excessive ballooning upward (previous +27 m/s^2 caused slow-motion floating).
       if (
         this.lastHitter === 'player' &&
-        Math.abs(this.ballPos.z) < 0.35 &&
+        this.ballPos.z > -0.25 &&
+        this.ballPos.z < 0.0 &&
         this.ballVel.z > 0 &&
-        this.ballPos.y < this.tableHeight + this.netHeight + 0.06
+        this.ballPos.y < this.tableHeight + this.netHeight + 0.02 &&
+        this.ballVel.y < 0.2
       ) {
-        this.ballVel.y += 1.8 * dt * 15;
+        this.ballVel.y = Math.min(0.35, this.ballVel.y + 4.0 * dt);
       }
 
       // ─── Aerodynamic Air Drag & Magnus Spin Effect ───
@@ -1850,6 +1977,14 @@ export class TableTennisScene implements IGameScene {
       const zPrev = this.prevBallPos.z;
       const zCurr = this.ballPos.z;
       const crossesNetPlane = (zPrev < 0 && zCurr >= 0) || (zPrev > 0 && zCurr <= 0);
+
+      // Inbound Net Crossing: Reset AI inbound hit lock once ball passes net into AI's half
+      if (zPrev < 0 && zCurr >= 0 && this.lastHitter === 'player' && this.ballVel.z > 0.1) {
+        this.aiHasHitCurrentInbound = false;
+        this.hasHitThisTurn = false;
+        this.aiPaddleProximityEngaged = false;
+        this.hasAiInterceptDecision = false;
+      }
 
       if (crossesNetPlane) {
         const alpha = Math.abs(zPrev) / (Math.abs(zCurr - zPrev) || 0.001);
@@ -2036,12 +2171,17 @@ export class TableTennisScene implements IGameScene {
       }
 
       // Ball Trail (Pure White 0xffffff, tapering smoothly from 0.75 down to 0.0)
-      this.ballTrail.unshift(this.ballPos.clone());
-      if (this.ballTrail.length > this.TRAIL_LENGTH) this.ballTrail.pop();
+      for (let i = this.TRAIL_LENGTH - 1; i > 0; i--) {
+        this.ballTrail[i].copy(this.ballTrail[i - 1]);
+      }
+      this.ballTrail[0].copy(this.ballPos);
+      if (this.ballTrailCount < this.TRAIL_LENGTH) {
+        this.ballTrailCount++;
+      }
       for (let i = 0; i < this.TRAIL_LENGTH; i++) {
         const tm = this.ballTrailMeshes[i];
         if (!tm) continue;
-        if (this.ballTrail[i]) {
+        if (i < this.ballTrailCount) {
           tm.visible = true;
           tm.position.copy(this.ballTrail[i]);
           (tm.material as THREE.MeshBasicMaterial).color.setHex(0xffffff);
@@ -2076,124 +2216,149 @@ export class TableTennisScene implements IGameScene {
       }
 
       // 7. Intelligent TT Bot Opponent with Difficulty Scaling
-      if (this.lastHitter !== 'opponent' && this.servePhase === 'NONE') {
-        if (this.aiHitCooldown > 0) {
-          // AI paddle lockout active, skip AI collision logic
-        } else {
-          if (!this.hasAiInterceptDecision) {
-            this.decideAIInterception();
+      if (this.lastHitter !== 'opponent' && !this.hasHitThisTurn && this.aiHitCooldown <= 0 && this.servePhase === 'NONE') {
+        if (!this.hasAiInterceptDecision) {
+          this.decideAIInterception();
+        }
+        const diffLerpSpeed = this.currentDifficulty === 'legend' ? 14 : (this.currentDifficulty === 'pro' ? 9.5 : 6.0);
+        // When AI fails interception, it hesitates/reacts slowly, letting the ball bounce cleanly on its side
+        const effectiveLerpSpeed = this.aiWillIntercept ? diffLerpSpeed : diffLerpSpeed * 0.35;
+        const targetX = THREE.MathUtils.clamp(this.ballPos.x * 0.88, -this.tableWidth / 2, this.tableWidth / 2);
+        this.opponentAvatar.group.position.x = THREE.MathUtils.lerp(this.opponentAvatar.group.position.x, targetX, effectiveLerpSpeed * dt);
+
+        // Dynamic Bot Target Z: Allow AI avatar to step forward down to Z = 0.70m (mid-table)
+        const desiredZ = this.aiWillIntercept
+          ? THREE.MathUtils.clamp(this.ballPos.z + 0.38, 0.70, 1.55)
+          : 1.50;
+        const zLerpSpeed = this.aiWillIntercept ? Math.max(effectiveLerpSpeed, 10.0) : effectiveLerpSpeed * 0.5;
+        this.opponentAvatar.group.position.z = THREE.MathUtils.lerp(this.opponentAvatar.group.position.z, desiredZ, zLerpSpeed * dt);
+
+        // Dynamically reach the arm and paddle towards the ball in 3D
+        if (this.ballPos.z > 0) {
+          this.scratchReachTarget.set(
+            this.ballPos.x,
+            Math.max(this.tableHeight + 0.06, this.ballPos.y),
+            this.ballPos.z
+          );
+          this.opponentAvatar.poseArmsToTargets(this.scratchReachTarget, undefined, 'right');
+        }
+
+        const aiBat = this.opponentAvatar.getPaddleWorldPosition();
+        const distToBall = aiBat.distanceTo(this.ballPos);
+
+        // Collision Volume Cleanup: Enter-and-Exit proximity reset
+        if (this.aiPaddleProximityEngaged) {
+          if (distToBall > 0.60 || this.ballPos.z <= 0.0) {
+            this.aiPaddleProximityEngaged = false; // Cleanly exited volume
           }
-          const diffLerpSpeed = this.currentDifficulty === 'legend' ? 14 : (this.currentDifficulty === 'pro' ? 9.5 : 6.0);
-          // When AI fails interception, it hesitates/reacts slowly, letting the ball bounce cleanly on its side
-          const effectiveLerpSpeed = this.aiWillIntercept ? diffLerpSpeed : diffLerpSpeed * 0.35;
-          const targetX = THREE.MathUtils.clamp(this.ballPos.x * 0.88, -this.tableWidth / 2, this.tableWidth / 2);
-          this.opponentAvatar.group.position.x = THREE.MathUtils.lerp(this.opponentAvatar.group.position.x, targetX, effectiveLerpSpeed * dt);
+        }
 
-          // Dynamic Bot Target Z: Allow AI avatar to step forward down to Z = 0.70m (mid-table)
-          const desiredZ = this.aiWillIntercept
-            ? THREE.MathUtils.clamp(this.ballPos.z + 0.38, 0.70, 1.55)
-            : 1.50;
-          const zLerpSpeed = this.aiWillIntercept ? Math.max(effectiveLerpSpeed, 10.0) : effectiveLerpSpeed * 0.5;
-          this.opponentAvatar.group.position.z = THREE.MathUtils.lerp(this.opponentAvatar.group.position.z, desiredZ, zLerpSpeed * dt);
+        // Strike on the Rise & Trajectory Validation:
+        // Strict ITTF & Anti-Double-Hit Preconditions:
+        // 1. Ball must be on AI half (ballPos.z >= 0.10)
+        // 2. Ball must be moving inbound towards AI side (ballVel.z > 0.15)
+        // 3. AI must not have already struck this turn (!this.hasHitThisTurn && !this.aiHasHitCurrentInbound)
+        // 4. Hit cooldown must be zero (this.aiHitCooldown <= 0)
+        // 5. Proximity volume must not be lingering (!this.aiPaddleProximityEngaged)
+        // 6. Ball must have legally bounced on AI table half (bounceCountFar >= 1)
+        const hitDistance = 0.65;
+        const isBounceFar = this.bounceCountFar >= 1;
+        const isBallIncomingToAi = this.ballVel.z > 0.15 && this.ballPos.z >= 0.10;
+        const isLegalInboundForAi = !this.hasHitThisTurn && !this.aiHasHitCurrentInbound && !this.aiPaddleProximityEngaged && this.aiHitCooldown <= 0 && this.lastHitter === 'player' && isBounceFar && isBallIncomingToAi;
+        const isApexOrDescending = this.ballVel.y <= 0.45 && this.ballPos.y >= this.tableHeight + 0.04;
+        const isWithinReach = distToBall <= hitDistance ||
+          (Math.abs(aiBat.x - this.ballPos.x) < 0.55 && Math.abs(aiBat.z - this.ballPos.z) <= 0.55);
 
-          // Dynamically reach the arm and paddle towards the ball in 3D
-          if (this.ballPos.z > 0) {
-            const reachTarget = new THREE.Vector3(
-              this.ballPos.x,
-              Math.max(this.tableHeight + 0.06, this.ballPos.y),
-              this.ballPos.z
-            );
-            this.opponentAvatar.poseArmsToTargets(reachTarget, undefined, 'right');
+        if (
+          this.aiWillIntercept &&
+          isLegalInboundForAi &&
+          isWithinReach &&
+          isApexOrDescending
+        ) {
+          let targetXAi: number;
+          let targetZAi: number;
+          let aiPacing: number;
+
+          if (this.currentDifficulty === 'learner') {
+            targetXAi = THREE.MathUtils.clamp((Math.random() - 0.5) * 0.3, -0.20, 0.20);
+            targetZAi = -0.85;
+            aiPacing = 3.2; // Gentle 12 km/h feed
+            this.ballSpin.set(0, 0, 0);
+          } else if (this.currentDifficulty === 'pro') {
+            // Dynamic deep placement (landing between -0.84m and -1.10m)
+            targetXAi = THREE.MathUtils.clamp((Math.random() - 0.5) * 0.8, -0.42, 0.42);
+            targetZAi = -0.84 - Math.random() * 0.25;
+            aiPacing = 3.6;
+            this.ballSpin.set(-12, (Math.random() - 0.5) * 6, 0);
+          } else {
+            // Casual: deep, readable pace (landing between -0.80m and -1.05m)
+            targetXAi = THREE.MathUtils.clamp((Math.random() - 0.5) * 0.5, -0.30, 0.30);
+            targetZAi = -0.80 - Math.random() * 0.25;
+            aiPacing = 3.2;
+            this.ballSpin.set(-6, (Math.random() - 0.5) * 3, 0);
           }
 
-          const aiBat = this.opponentAvatar.getPaddleWorldPosition();
+          this.ballVel = this.solveExactControlledVelocity(this.ballPos, targetXAi, targetZAi, 0.055, aiPacing);
+          this.lastHitter = 'opponent';
+          this.hasHitThisTurn = true;
+          this.aiHasHitCurrentInbound = true;
+          this.aiPaddleProximityEngaged = true; // Latched inside collision volume until it cleanly exits
+          this.aiHitCooldown = 0.40; // 0.40s cooldown blocking consecutive hit triggers
+          this.bounceCountNear = 0;
+          this.bounceCountFar = 0;
+          this.scoreState.rallyCount++;
+          this.hitStopTimer = 0.03;
+          this.hasAiInterceptDecision = false;
+          this.audio.tableTennisPaddleHit(1.0);
 
-          // Strike on the Rise:
-          // Command AI to initiate swing immediately as the ball reaches the peak of its first bounce (when vel.y begins turning downward and distance to paddle is within reach <= 0.80m).
-          const hitDistance = 0.80;
-          const isBounceFar = this.bounceCountFar >= 1;
-          const isApexOrDescending = (this.ballVel.y <= 0.45 || (this.ballVel.y > 0 && isBounceFar)) && this.ballPos.y >= this.tableHeight + 0.04;
-          const distToBall = aiBat.distanceTo(this.ballPos);
-          const isWithinReach = distToBall <= hitDistance ||
-            (Math.abs(aiBat.x - this.ballPos.x) < 0.75 && Math.abs(aiBat.z - this.ballPos.z) <= 0.80);
-
-          if (
-            this.aiWillIntercept &&
-            isBounceFar &&
-            (isWithinReach && isApexOrDescending)
-          ) {
-            let targetXAi: number;
-            let targetZAi: number;
-            let aiPacing: number;
-
-            if (this.currentDifficulty === 'learner') {
-              targetXAi = THREE.MathUtils.clamp((Math.random() - 0.5) * 0.3, -0.20, 0.20);
-              targetZAi = -0.85;
-              aiPacing = 3.2; // Gentle 12 km/h feed
-              this.ballSpin.set(0, 0, 0);
-            } else if (this.currentDifficulty === 'pro') {
-              // Dynamic deep placement (landing between -0.84m and -1.10m)
-              targetXAi = THREE.MathUtils.clamp((Math.random() - 0.5) * 0.8, -0.42, 0.42);
-              targetZAi = -0.84 - Math.random() * 0.25;
-              aiPacing = 3.6;
-              this.ballSpin.set(-12, (Math.random() - 0.5) * 6, 0);
+          // Advance ball position forward along exit trajectory by at least BALL_RADIUS * 2.0
+          const exitDir = this.scratchExitDir.copy(this.ballVel).normalize();
+          if (exitDir.lengthSq() > 0) {
+            this.ballPos.addScaledVector(exitDir, this.ballRadius * 2.0);
+          }
+        } else if (!this.aiWillIntercept && isLegalInboundForAi && isWithinReach && isApexOrDescending) {
+          // Casual 35% miss rolls: simulate realistic unforced bot error
+          if (this.currentDifficulty === 'casual') {
+            const isNetTapeError = Math.random() < 0.50;
+            if (isNetTapeError) {
+              // 50% chance: Bot hits into net tape (vz must be negative towards net tape at z=0)
+              this.ballVel.set((Math.random() - 0.5) * 0.3, 0.4, -2.2);
             } else {
-              // Casual: deep, readable pace (landing between -0.80m and -1.05m)
-              targetXAi = THREE.MathUtils.clamp((Math.random() - 0.5) * 0.5, -0.30, 0.30);
-              targetZAi = -0.80 - Math.random() * 0.25;
-              aiPacing = 3.2;
-              this.ballSpin.set(-6, (Math.random() - 0.5) * 3, 0);
+              // 50% chance: Bot hits long past player baseline
+              this.ballVel.set((Math.random() - 0.5) * 0.5, 1.4, -5.8);
             }
-
-            this.ballVel = this.solveExactControlledVelocity(this.ballPos, targetXAi, targetZAi, 0.055, aiPacing);
             this.lastHitter = 'opponent';
-            this.aiHitCooldown = 0.40; // Lockout AI paddle collision for 400ms
+            this.hasHitThisTurn = true;
+            this.aiHasHitCurrentInbound = true;
+            this.aiPaddleProximityEngaged = true;
+            this.aiHitCooldown = 0.40; // 0.40s cooldown on miss rolls as well
             this.bounceCountNear = 0;
             this.bounceCountFar = 0;
             this.scoreState.rallyCount++;
             this.hitStopTimer = 0.03;
             this.hasAiInterceptDecision = false;
-            this.audio.tableTennisPaddleHit(1.0);
-
-            // Advance ball position forward along exit trajectory by at least BALL_RADIUS * 1.5
-            const exitDir = this.ballVel.clone().normalize();
-            if (exitDir.lengthSq() > 0) {
-              this.ballPos.addScaledVector(exitDir, this.ballRadius * 1.5);
-            }
-          } else if (!this.aiWillIntercept && isBounceFar && isWithinReach && isApexOrDescending) {
-            // Casual 35% miss rolls: simulate realistic unforced bot error
-            if (this.currentDifficulty === 'casual') {
-              const isNetTapeError = Math.random() < 0.50;
-              if (isNetTapeError) {
-                // 50% chance: Bot hits into net tape
-                this.ballVel.set((Math.random() - 0.5) * 0.3, 0.5, 2.0);
-              } else {
-                // 50% chance: Bot hits long past player baseline
-                this.ballVel.set((Math.random() - 0.5) * 0.5, 1.4, -5.8);
-              }
-              this.lastHitter = 'opponent';
-              this.aiHitCooldown = 0.40;
-              this.bounceCountNear = 0;
-              this.bounceCountFar = 0;
-              this.scoreState.rallyCount++;
-              this.hitStopTimer = 0.03;
-              this.hasAiInterceptDecision = false;
-              this.audio.tableTennisPaddleHit(0.8);
-              return;
-            }
-          } else if (this.lastHitter === 'player' && this.bounceCountFar >= 1) {
-            // If the bot misses interception and ball passes baseline or drops below table height:
-            if (this.ballPos.z > 1.37 || (this.ballPos.z > 1.05 && this.ballPos.y < this.tableHeight - 0.05)) {
-              const calloutText = this.bounceCountFar >= 2 ? 'OPPONENT DOUBLE BOUNCE' : 'OPPONENT MISSED';
-              this.handleRallyPoint(1, `POINT PLAYER — ${calloutText}`);
-              return;
-            }
+            this.audio.tableTennisPaddleHit(0.8);
+            return;
+          }
+        } else if (this.lastHitter === 'player' && this.bounceCountFar >= 1) {
+          // If the bot misses interception and ball passes baseline or drops below table height:
+          if (this.ballPos.z > 1.37 || (this.ballPos.z > 1.05 && this.ballPos.y < this.tableHeight - 0.05)) {
+            const calloutText = this.bounceCountFar >= 2 ? 'OPPONENT DOUBLE BOUNCE' : 'OPPONENT MISSED';
+            this.handleRallyPoint(1, `POINT PLAYER — ${calloutText}`);
+            return;
           }
         }
-      } else if (this.lastHitter === 'opponent') {
-        // Recover smoothly toward baseline when ball is flying towards player
-        this.opponentAvatar.group.position.z = THREE.MathUtils.lerp(this.opponentAvatar.group.position.z, 1.50, 3.5 * dt);
-        this.opponentAvatar.applyDefaultPose('tabletennis', true);
+      } else {
+        // Recovery when AI has already hit or is on cooldown
+        if (this.lastHitter === 'opponent') {
+          this.opponentAvatar.group.position.z = THREE.MathUtils.lerp(this.opponentAvatar.group.position.z, 1.50, 3.5 * dt);
+          this.opponentAvatar.applyDefaultPose('tabletennis', true);
+        }
+        // Clean up proximity state once ball moves away from AI bat
+        const aiBat = this.opponentAvatar.getPaddleWorldPosition();
+        if (aiBat.distanceTo(this.ballPos) > 0.60 || this.ballPos.z <= 0.0) {
+          this.aiPaddleProximityEngaged = false;
+        }
       }
     } else if (this.rallyState === 'READY_TO_SERVE' && this.scoreState.currentServer === 2) {
       if (!this.isInitialStanceSettling) {
@@ -2204,8 +2369,8 @@ export class TableTennisScene implements IGameScene {
         }
       }
     } else {
+      this.ballTrailCount = 0;
       for (const tm of this.ballTrailMeshes) tm.visible = false;
-      this.ballTrail = [];
     }
 
     // Status Dialogue Update
@@ -2399,6 +2564,10 @@ export class TableTennisScene implements IGameScene {
     this.servePhase = 'NONE';
     this.isBallInPlay = false;
     this.ballVel.set(0, 0, 0);
+    this.aiHitCooldown = 0;
+    this.aiHasHitCurrentInbound = false;
+    this.hasHitThisTurn = false;
+    this.aiPaddleProximityEngaged = false;
 
     if (this.playerBounceTimeout) {
       clearTimeout(this.playerBounceTimeout);
@@ -2523,8 +2692,17 @@ export class TableTennisScene implements IGameScene {
     }
 
     if (this.rallyState === 'IN_PLAY' && this.lastHitter !== 'player') {
-      const speed = event.speedMps || 2.0;
-      this.executePlayerReturn(speed);
+      // Strictly guard action-triggered returns to player's contact zone
+      const inContactZone =
+        this.ballPos.z <= 0.0 &&
+        this.ballPos.z >= -1.60 &&
+        Math.abs(this.ballPos.x) <= 0.90 &&
+        this.ballVel.z < 0.5;
+
+      if (inContactZone) {
+        const speed = event.speedMps || 2.0;
+        this.executePlayerReturn(speed);
+      }
     }
   }
 
@@ -2577,6 +2755,9 @@ export class TableTennisScene implements IGameScene {
       dominantHand: this.dominantHand,
       gameStartingServer: this.gameStartingServer,
       aiHitCooldown: this.aiHitCooldown,
+      aiHasHitCurrentInbound: this.aiHasHitCurrentInbound,
+      hasHitThisTurn: this.hasHitThisTurn,
+      aiPaddleProximityEngaged: this.aiPaddleProximityEngaged,
       aiWillIntercept: this.aiWillIntercept,
       isPostureGated: this.isPostureGated,
       isStanceRepositioning: this.isStanceRepositioning,

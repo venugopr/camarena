@@ -6,7 +6,7 @@
   --bg-surface-elevated: rgba(30, 41, 59, 0.85);
   --border-subtle: rgba(255, 255, 255, 0.1);
   --border-glow: rgba(0, 242, 254, 0.4);
-  
+
   --primary-cyan: #00f2fe;
   --primary-blue: #38bdf8;
   --accent-lime: #39ff14;
@@ -25,7 +25,7 @@
   --radius-md: 14px;
   --radius-lg: 20px;
   --radius-full: 9999px;
-  
+
   --shadow-glow-cyan: 0 0 25px rgba(0, 242, 254, 0.35);
   --shadow-glow-pink: 0 0 25px rgba(255, 0, 85, 0.35);
   --shadow-glass: 0 8px 32px 0 rgba(0, 0, 0, 0.45);
@@ -38,7 +38,8 @@
   user-select: none;
 }
 
-html, body {
+html,
+body {
   width: 100%;
   height: 100%;
   overflow: hidden;
@@ -482,9 +483,20 @@ html, body {
 }
 
 @keyframes arcadePopSide {
-  0% { opacity: 0; transform: translateY(-8px) scale(0.92); }
-  60% { opacity: 1; transform: translateY(2px) scale(1.02); }
-  100% { opacity: 1; transform: translateY(0) scale(1); }
+  0% {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.92);
+  }
+
+  60% {
+    opacity: 1;
+    transform: translateY(2px) scale(1.02);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .arcade-callout.out {
@@ -514,11 +526,27 @@ html, body {
 }
 
 @keyframes shakeSide {
-  0%, 100% { transform: translateY(0); }
-  20% { transform: translateY(-4px) scale(1.02); }
-  40% { transform: translateY(4px) scale(1.02); }
-  60% { transform: translateY(-2px) scale(1); }
-  80% { transform: translateY(2px) scale(1); }
+
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  20% {
+    transform: translateY(-4px) scale(1.02);
+  }
+
+  40% {
+    transform: translateY(4px) scale(1.02);
+  }
+
+  60% {
+    transform: translateY(-2px) scale(1);
+  }
+
+  80% {
+    transform: translateY(2px) scale(1);
+  }
 }
 
 /* Transparent Rules & Target Banner */
@@ -701,7 +729,8 @@ html, body {
   pointer-events: auto;
 }
 
-.pip-min-btn, .pip-mirror-btn {
+.pip-min-btn,
+.pip-mirror-btn {
   background: rgba(0, 0, 0, 0.65);
   border: 1px solid rgba(255, 255, 255, 0.18);
   color: var(--text-secondary);
@@ -902,8 +931,15 @@ html, body {
 }
 
 @keyframes fadeIn {
-  from { opacity: 0; transform: scale(0.98); }
-  to { opacity: 1; transform: scale(1); }
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 /* Pause Menu Modal */
@@ -1280,6 +1316,7 @@ html, body {
     opacity: 0;
     transform: scale(0.98);
   }
+
   to {
     opacity: 1;
     transform: scale(1);
@@ -1291,6 +1328,7 @@ html, body {
     opacity: 1;
     transform: scale(1);
   }
+
   to {
     opacity: 0;
     transform: scale(0.98);
@@ -1805,7 +1843,8 @@ html, body {
 /* ─── Record Button ─────────────────────────────────────────────────────────── */
 .bm-record-btn {
   position: absolute;
-  top: 132px;       /* Sits directly below the camera-view toggle at 88px + 36px height + 8px gap */
+  top: 132px;
+  /* Sits directly below the camera-view toggle at 88px + 36px height + 8px gap */
   right: 24px;
   z-index: 25;
   font-family: var(--font-sans);
@@ -1844,8 +1883,15 @@ html, body {
 }
 
 @keyframes recButtonPulse {
-  0%, 100% { box-shadow: 0 0 18px rgba(255, 40, 60, 0.55); }
-  50%       { box-shadow: 0 0 30px rgba(255, 40, 60, 0.90); }
+
+  0%,
+  100% {
+    box-shadow: 0 0 18px rgba(255, 40, 60, 0.55);
+  }
+
+  50% {
+    box-shadow: 0 0 30px rgba(255, 40, 60, 0.90);
+  }
 }
 
 /* ─── Live Recording Indicator ──────────────────────────────────────────────── */
@@ -1873,16 +1919,26 @@ html, body {
 }
 
 @keyframes recDotBlink {
-  0%, 100% { opacity: 1; }
-  50%       { opacity: 0.55; }
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.55;
+  }
 }
 
 /* ─── Serve Guidance Banner ─────────────────────────────────────────────────── */
 @keyframes servePulse {
-  0%, 100% {
+
+  0%,
+  100% {
     opacity: 1;
     box-shadow: 0 0 14px rgba(0, 242, 254, 0.25);
   }
+
   50% {
     opacity: 0.75;
     box-shadow: 0 0 28px rgba(0, 242, 254, 0.55);
@@ -1915,10 +1971,13 @@ html, body {
 }
 
 @keyframes readyPulse {
-  0%, 100% {
+
+  0%,
+  100% {
     opacity: 1;
     box-shadow: 0 0 16px rgba(52, 211, 153, 0.35);
   }
+
   50% {
     opacity: 0.85;
     box-shadow: 0 0 30px rgba(52, 211, 153, 0.75);
@@ -2053,8 +2112,13 @@ html, body {
 }
 
 @keyframes postureModalPulse {
-  0% { box-shadow: 0 20px 60px rgba(0, 0, 0, 0.85), 0 0 30px rgba(245, 158, 11, 0.25); }
-  100% { box-shadow: 0 20px 60px rgba(0, 0, 0, 0.85), 0 0 50px rgba(245, 158, 11, 0.5); }
+  0% {
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.85), 0 0 30px rgba(245, 158, 11, 0.25);
+  }
+
+  100% {
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.85), 0 0 50px rgba(245, 158, 11, 0.5);
+  }
 }
 
 .tt-posture-icon {
@@ -2164,8 +2228,15 @@ html, body {
 }
 
 @keyframes faultBannerSidePop {
-  0% { transform: translateY(-8px) scale(0.92); opacity: 0; }
-  100% { transform: translateY(0) scale(1); opacity: 1; }
+  0% {
+    transform: translateY(-8px) scale(0.92);
+    opacity: 0;
+  }
+
+  100% {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
 }
 
 /* ─── Bowling HUD Layout ───────────────────────────────────────────────── */
@@ -2242,8 +2313,13 @@ html, body {
 }
 
 @keyframes readyGlowPulse {
-  0% { box-shadow: 0 10px 36px rgba(0, 0, 0, 0.8), 0 0 18px rgba(0, 242, 254, 0.3); }
-  100% { box-shadow: 0 10px 36px rgba(0, 0, 0, 0.8), 0 0 32px rgba(0, 242, 254, 0.6); }
+  0% {
+    box-shadow: 0 10px 36px rgba(0, 0, 0, 0.8), 0 0 18px rgba(0, 242, 254, 0.3);
+  }
+
+  100% {
+    box-shadow: 0 10px 36px rgba(0, 0, 0, 0.8), 0 0 32px rgba(0, 242, 254, 0.6);
+  }
 }
 
 .bowling-status-tag {
@@ -2355,8 +2431,15 @@ html, body {
 }
 
 @keyframes pinTargetPulse {
-  0% { transform: scale(1); box-shadow: 0 0 10px rgba(250, 204, 21, 0.7); }
-  100% { transform: scale(1.18); box-shadow: 0 0 22px rgba(250, 204, 21, 1); }
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 10px rgba(250, 204, 21, 0.7);
+  }
+
+  100% {
+    transform: scale(1.18);
+    box-shadow: 0 0 22px rgba(250, 204, 21, 1);
+  }
 }
 
 .pin-rack-status {
@@ -2675,11 +2758,28 @@ html, body {
 
 /* ─── Net Hit Banner: Upper-Left Flank Entry Animation ───────────────────────── */
 @keyframes netHitFlashSide {
-  0%   { opacity: 0; transform: translateY(-6px) scale(0.92); }
-  15%  { opacity: 1; transform: translateY(0) scale(1.02); }
-  30%  { transform: scale(1.0); }
-  80%  { opacity: 1; }
-  100% { opacity: 0; transform: translateY(-4px) scale(0.96); }
+  0% {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.92);
+  }
+
+  15% {
+    opacity: 1;
+    transform: translateY(0) scale(1.02);
+  }
+
+  30% {
+    transform: scale(1.0);
+  }
+
+  80% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.96);
+  }
 }
 
 #tt-net-hit-banner,
@@ -2773,9 +2873,11 @@ html, body {
 }
 
 @keyframes pulseCombo {
-  from { transform: scale(1.0); }
-  to { transform: scale(1.06); }
+  from {
+    transform: scale(1.0);
+  }
+
+  to {
+    transform: scale(1.06);
+  }
 }
-
-
-

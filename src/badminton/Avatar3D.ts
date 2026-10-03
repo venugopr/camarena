@@ -63,6 +63,19 @@ export class Avatar3D {
   private prevRacketWorldPos = new THREE.Vector3();
   private isVelocitiesInitialized = false;
 
+  // Zero-allocation scratch objects for 60+ FPS inverse arm kinematics
+  private static readonly scratchUpVector = new THREE.Vector3(0, 1, 0);
+  private static readonly scratchLocalTarget = new THREE.Vector3();
+  private static readonly scratchArmVector = new THREE.Vector3();
+  private static readonly scratchWristPos = new THREE.Vector3();
+  private static readonly scratchForearmDir = new THREE.Vector3();
+  private static readonly scratchLocalSTarget = new THREE.Vector3();
+  private static readonly scratchSArmVector = new THREE.Vector3();
+  private static readonly scratchSWristPos = new THREE.Vector3();
+  private static readonly scratchSForearmDir = new THREE.Vector3();
+  private static readonly scratchQuat = new THREE.Quaternion();
+  private static readonly defaultVelocity = new THREE.Vector3(0, 0, 0);
+
   constructor(primaryColor = 0x00f2fe, secondaryColor = 0x39ff14) {
     this.primaryColor = primaryColor;
     this.secondaryColor = secondaryColor;
@@ -479,9 +492,9 @@ export class Avatar3D {
     dominantWorldTarget: THREE.Vector3,
     supportWorldTarget?: THREE.Vector3,
     dominantArm: 'right' | 'left' = this.dominantArm,
-    racketVelocity: THREE.Vector3 = new THREE.Vector3(0, 0, 0)
+    racketVelocity: THREE.Vector3 = Avatar3D.defaultVelocity
   ): void {
-    const upVector = new THREE.Vector3(0, 1, 0);
+    const upVector = Avatar3D.scratchUpVector;
 
     // 1. Dominant arm reaching towards racket target
     const dShoulderIdx = dominantArm === 'right' ? PoseLandmark.RIGHT_SHOULDER : PoseLandmark.LEFT_SHOULDER;
@@ -503,7 +516,8 @@ export class Avatar3D {
     this.joints[PoseLandmark.NOSE].position.y = 1.75;
 
     const shoulderPos = this.joints[dShoulderIdx].position;
-    const localTarget = this.group.worldToLocal(dominantWorldTarget.clone());
+    const localTarget = Avatar3D.scratchLocalTarget.copy(dominantWorldTarget);
+    this.group.worldToLocal(localTarget);
 
     // Dynamic Torso Lean & Lateral Reach Expansion
     const reachOffset = localTarget.x;
@@ -518,11 +532,11 @@ export class Avatar3D {
       this.joints[PoseLandmark.NOSE].position.x += shoulderShift * 0.7;
     }
 
-    const armVector = new THREE.Vector3().subVectors(localTarget, shoulderPos);
+    const armVector = Avatar3D.scratchArmVector.subVectors(localTarget, shoulderPos);
     const armLength = Math.min(1.05, Math.max(0.28, armVector.length()));
     const armDir = armVector.normalize();
 
-    const wristPos = new THREE.Vector3().copy(shoulderPos).addScaledVector(armDir, armLength);
+    const wristPos = Avatar3D.scratchWristPos.copy(shoulderPos).addScaledVector(armDir, armLength);
     wristPos.y = Math.min(wristPos.y, 1.78);
     this.joints[dWristIdx].position.copy(wristPos);
 
@@ -532,7 +546,7 @@ export class Avatar3D {
     this.joints[dElbowIdx].position.y -= 0.04;
 
     const elbowPos = this.joints[dElbowIdx].position;
-    const forearmDir = new THREE.Vector3().subVectors(wristPos, elbowPos).normalize();
+    const forearmDir = Avatar3D.scratchForearmDir.subVectors(wristPos, elbowPos).normalize();
 
     if (this.racketGroup) {
       if (this.currentEquipment === 'badminton') {
@@ -557,15 +571,16 @@ export class Avatar3D {
     // 2. Support arm (cradling/holding shuttlecock or athletic balance)
     if (supportWorldTarget) {
       const sShoulderPos = this.joints[sShoulderIdx].position;
-      const localSTarget = this.group.worldToLocal(supportWorldTarget.clone());
-      const sArmVector = new THREE.Vector3().subVectors(localSTarget, sShoulderPos);
+      const localSTarget = Avatar3D.scratchLocalSTarget.copy(supportWorldTarget);
+      this.group.worldToLocal(localSTarget);
+      const sArmVector = Avatar3D.scratchSArmVector.subVectors(localSTarget, sShoulderPos);
 
       const isCrossBody = dominantArm === 'right' ? localSTarget.x < 0 : localSTarget.x > 0;
       const maxReach = isCrossBody ? 0.95 : 0.78;
       const sArmLength = Math.min(maxReach, Math.max(0.20, sArmVector.length()));
       const sArmDir = sArmVector.normalize();
 
-      const sWristPos = new THREE.Vector3().copy(sShoulderPos).addScaledVector(sArmDir, sArmLength);
+      const sWristPos = Avatar3D.scratchSWristPos.copy(sShoulderPos).addScaledVector(sArmDir, sArmLength);
       if (isCrossBody) {
         if (dominantArm === 'right' && sWristPos.x < Math.max(localSTarget.x, -0.50)) {
           sWristPos.x = Math.max(localSTarget.x, -0.50);
@@ -582,10 +597,11 @@ export class Avatar3D {
       this.joints[sElbowIdx].position.x += sSideOffset;
       this.joints[sElbowIdx].position.y -= 0.04;
 
-      const sForearmDir = new THREE.Vector3().subVectors(sWristPos, this.joints[sElbowIdx].position).normalize();
+      const sForearmDir = Avatar3D.scratchSForearmDir.subVectors(sWristPos, this.joints[sElbowIdx].position).normalize();
       if (this.supportHandGroup) {
         this.supportHandGroup.position.copy(sWristPos);
-        this.supportHandGroup.setRotationFromQuaternion(new THREE.Quaternion().setFromUnitVectors(upVector, sForearmDir));
+        Avatar3D.scratchQuat.setFromUnitVectors(upVector, sForearmDir);
+        this.supportHandGroup.setRotationFromQuaternion(Avatar3D.scratchQuat);
       }
     }
 
