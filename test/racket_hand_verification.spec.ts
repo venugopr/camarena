@@ -9,6 +9,12 @@ test.describe('Dominant Hand, Mirroring & Idle Serve Suppression Verification', 
     await expect(rightHandBtn).toBeVisible();
     await expect(rightHandBtn).toHaveClass(/active/);
 
+    const badmintonCard = page.locator('.sport-card[data-sport="badminton"]');
+    if (await badmintonCard.isVisible()) {
+      await badmintonCard.click();
+      await page.waitForTimeout(100);
+    }
+
     const synthBtn = page.locator('button[data-tracking="synthetic"]');
     if (await synthBtn.isVisible()) {
       await synthBtn.click();
@@ -37,8 +43,8 @@ test.describe('Dominant Hand, Mirroring & Idle Serve Suppression Verification', 
     if (debugState) {
       expect(debugState.rallyState).toBe('READY_TO_SERVE');
       expect(debugState.dominantHand).toBe('right');
-      expect(debugState.racketLocalPos.x).toBeGreaterThan(0); // Racket is on avatar right hand (+X)
-      expect(debugState.rightWristWorldPos.x).toBeGreaterThan(debugState.leftWristWorldPos.x); // Right wrist is screen-right of left wrist
+      expect(debugState.racketLocalPos.x).toBeLessThan(0); // Racket is on avatar right hand (-X)
+      expect(debugState.rightWristWorldPos.x).toBeLessThan(debugState.leftWristWorldPos.x); // Right wrist is screen-right of left wrist (-X)
     }
 
     // 6. Capture screenshot
@@ -53,6 +59,12 @@ test.describe('Dominant Hand, Mirroring & Idle Serve Suppression Verification', 
     await expect(leftHandBtn).toBeVisible();
     await leftHandBtn.click();
     await expect(leftHandBtn).toHaveClass(/active/);
+
+    const badmintonCard = page.locator('.sport-card[data-sport="badminton"]');
+    if (await badmintonCard.isVisible()) {
+      await badmintonCard.click();
+      await page.waitForTimeout(100);
+    }
 
     const synthBtn = page.locator('button[data-tracking="synthetic"]');
     if (await synthBtn.isVisible()) {
@@ -80,8 +92,8 @@ test.describe('Dominant Hand, Mirroring & Idle Serve Suppression Verification', 
     if (debugState) {
       expect(debugState.rallyState).toBe('READY_TO_SERVE');
       expect(debugState.dominantHand).toBe('left');
-      expect(debugState.racketLocalPos.x).toBeLessThan(0); // Racket is on avatar left hand (-X)
-      expect(debugState.leftWristWorldPos.x).toBeLessThan(debugState.rightWristWorldPos.x); // Left wrist is screen-left of right wrist
+      expect(debugState.racketLocalPos.x).toBeGreaterThan(0); // Racket is on avatar left hand (+X)
+      expect(debugState.leftWristWorldPos.x).toBeGreaterThan(debugState.rightWristWorldPos.x); // Left wrist is screen-left of right wrist (+X)
     }
 
     // 4. Capture screenshot
@@ -94,6 +106,12 @@ test.describe('Dominant Hand, Mirroring & Idle Serve Suppression Verification', 
     await page.waitForTimeout(600);
 
     await expect(page.locator('#main-menu-overlay')).toBeVisible({ timeout: 10000 });
+
+    const badmintonCard = page.locator('.sport-card[data-sport="badminton"]');
+    if (await badmintonCard.isVisible()) {
+      await badmintonCard.click();
+      await page.waitForTimeout(100);
+    }
 
     const synthBtn = page.locator('button[data-tracking="synthetic"]');
     if (await synthBtn.isVisible()) {

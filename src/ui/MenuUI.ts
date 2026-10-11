@@ -81,9 +81,9 @@ export class MenuUI {
 
     const gameOptions: { id: GameModeId; label: string; icon: string; badge?: string }[] = [
       { id: 'bowling',     label: 'Bowling',      icon: '🎳', badge: 'NEW' },
-      { id: 'boxing',      label: 'Boxing',        icon: '🥊', badge: 'SOON' },
+      { id: 'boxing',      label: 'Boxing 3D',    icon: '🥊', badge: 'NEW' },
       { id: 'tabletennis', label: 'Table Tennis',  icon: '🏓' },
-      { id: 'tennis',      label: 'Tennis 3D',     icon: '🎾', badge: 'SOON' },
+      { id: 'tennis',      label: 'Tennis 3D',     icon: '🎾', badge: 'NEW' },
       { id: 'badminton',   label: 'Badminton',     icon: '🏸' },
       { id: 'sandbox',     label: 'Motion Mirror', icon: '🪞' },
     ];
@@ -301,7 +301,7 @@ export class MenuUI {
 
   private readonly sportMeta: Record<GameModeId, { icon: string; name: string }> = {
     bowling:     { icon: '🎳', name: 'ARCADE BOWLING' },
-    boxing:      { icon: '🥊', name: 'FITNESS BOXING' },
+    boxing:      { icon: '🥊', name: 'ARCADE BOXING 3D PRO' },
     tabletennis: { icon: '🏓', name: 'TABLE TENNIS 3D' },
     tennis:      { icon: '🎾', name: 'TENNIS 3D' },
     badminton:   { icon: '🏸', name: 'BADMINTON 3D' },
@@ -340,7 +340,12 @@ export class MenuUI {
   private updateInMatchState(): void {
     if (!this.navEl) return;
     const activeId = this.sceneManager.getActiveSceneId();
-    const isCompetitive = activeId === 'badminton' || activeId === 'tabletennis' || activeId === 'bowling';
+    const isCompetitive =
+      activeId === 'badminton' ||
+      activeId === 'tabletennis' ||
+      activeId === 'bowling' ||
+      activeId === 'tennis' ||
+      activeId === 'boxing';
 
     const shouldBeInMatch = isCompetitive && !this.isPaused && !this.isGameOver && !this.isMainMenuOpen;
 

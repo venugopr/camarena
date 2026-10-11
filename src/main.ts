@@ -24,6 +24,7 @@ declare global {
     __camarena: {
       getDebugState: () => ReturnType<BadmintonScene['getDebugState']> | null;
       debugServe: () => void;
+      debugRoll?: (forwardSpeed?: number, lateralBias?: number, hookAccelX?: number) => void;
       tracker: PoseTracker;
     };
   }
@@ -70,7 +71,8 @@ async function bootstrap() {
   });
 
   tracker.onGesturePause(() => {
-    if (sceneManager.getActiveSceneId() === 'bowling') return;
+    const active = sceneManager.getActiveSceneId();
+    if (active === 'bowling' || active === 'boxing') return;
     sceneManager.togglePause();
   });
 
@@ -130,6 +132,12 @@ async function bootstrap() {
         (active as any).debugServe();
       } else {
         badmintonScene.debugServe();
+      }
+    },
+    debugRoll: (forwardSpeed = 10.0, lateralBias = 0, hookAccelX = 0) => {
+      const active = sceneManager.getActiveScene();
+      if (active && typeof (active as any).debugRoll === 'function') {
+        (active as any).debugRoll(forwardSpeed, lateralBias, hookAccelX);
       }
     },
     tracker,

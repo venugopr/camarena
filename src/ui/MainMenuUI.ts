@@ -72,9 +72,12 @@ export class MainMenuUI {
       this.overlayEl.style.display = 'none';
       this.overlayEl.classList.remove('hiding');
     }, 300);
-    // Show in-game score wrapper when leaving main menu
-    const scoreWrapper = document.querySelector('.score-wrapper') as HTMLElement;
-    if (scoreWrapper) scoreWrapper.style.display = 'flex';
+    // Show in-game score wrapper when leaving main menu (except for boxing or sandbox)
+    const activeSceneId = this.sceneManager.getActiveScene()?.id;
+    if (activeSceneId !== 'boxing' && activeSceneId !== 'sandbox') {
+      const scoreWrapper = document.querySelector('.score-wrapper') as HTMLElement;
+      if (scoreWrapper) scoreWrapper.style.display = 'flex';
+    }
   }
 
   public isVisible(): boolean {
@@ -132,12 +135,12 @@ export class MainMenuUI {
               </div>
               <div class="sport-info">
                 <div class="sport-name-row">
-                  <h3 class="sport-name">Fitness Boxing</h3>
-                  <span class="sport-status-badge soon">PHASE 2</span>
+                  <h3 class="sport-name">Arcade Boxing 3D Pro</h3>
+                  <span class="sport-status-badge boxing">KNOCKOUT PRO</span>
                 </div>
-                <p class="sport-desc">Target-pad combo training with jab, cross, hook, and uppercut detection via full-body pose tracking.</p>
+                <p class="sport-desc">Motion-driven boxing with jabs, crosses, hooks, uppercuts, high/body guards, slips, ducks, and 3-round knockout championship AI.</p>
                 <div class="sport-equipment-preview">
-                  <span class="equip-dot soon"></span> Virtual Boxing Gloves — Coming Soon
+                  <span class="equip-dot boxing"></span> 3D Virtual Laced Boxing Gloves
                 </div>
               </div>
             </div>
@@ -166,12 +169,12 @@ export class MainMenuUI {
               </div>
               <div class="sport-info">
                 <div class="sport-name-row">
-                  <h3 class="sport-name">Tennis 3D</h3>
-                  <span class="sport-status-badge soon">COURTSIDE</span>
+                  <h3 class="sport-name">Lawn Tennis 3D</h3>
+                  <span class="sport-status-badge tennis">ITF REGULATION</span>
                 </div>
-                <p class="sport-desc">Full-court rallies with serve mechanics, topspin physics, and a reactive AI opponent on a 3D hardcourt.</p>
+                <p class="sport-desc">Full-court Grand Slam action with serves, topspin drives, slices, ITF scoring, and adaptive AI opponent on a 3D hardcourt.</p>
                 <div class="sport-equipment-preview">
-                  <span class="equip-dot soon"></span> Virtual Tennis Racket — Coming Soon
+                  <span class="equip-dot tennis"></span> Virtual Pro Tennis Racket on Hand
                 </div>
               </div>
             </div>
@@ -509,7 +512,7 @@ export class MainMenuUI {
 
     const sportLabels: Partial<Record<GameModeId, string>> = {
       bowling:     'Arcade Bowling 3D',
-      boxing:      'Fitness Boxing',
+      boxing:      'Arcade Boxing 3D Pro',
       tabletennis: 'Table Tennis 3D',
       tennis:      'Tennis 3D',
       badminton:   'Badminton 3D',
@@ -528,9 +531,12 @@ export class MainMenuUI {
     const trackLabel = this.useWebcam ? 'Webcam Pose Tracking' : 'Motion Simulator';
 
     const isBowling = this.selectedSport === 'bowling';
+    const isBoxing = this.selectedSport === 'boxing';
     const scoreInfo = isBowling
       ? '10 Frames'
-      : `Target: <strong>${this.selectedTargetScore} pts</strong> (Win by 2)`;
+      : isBoxing
+        ? '3 Rounds (K.O.)'
+        : `Target: <strong>${this.selectedTargetScore} pts</strong> (Win by 2)`;
 
     summary.innerHTML = `
       📋 Selected: <strong>${sportLabel}</strong> • ${oppLabel} • ${handLabel} • ${scoreInfo} • ${trackLabel}

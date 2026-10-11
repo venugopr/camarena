@@ -333,7 +333,7 @@ export class BowlingScene implements IGameScene {
 
     // Enforce Standing Posture Gate for Bowling Execution
     const isStanding = Avatar3D.isFullBodyStanding(motionFrame?.worldLandmarks || []);
-    if (!isStanding && this.isPlayerTurn && !this.waitingForReset && !this.matchOver) {
+    if (!this.ball?.active && !isStanding && this.isPlayerTurn && !this.waitingForReset && !this.matchOver) {
       this.syncStatusDialog(false);
       this.bowlingPhase = 'IDLE';
       this.liveWindupPower = 0;
@@ -1920,5 +1920,9 @@ export class BowlingScene implements IGameScene {
       pinsUpCount: this.pinsUpCount,
       ballActive: this.ball?.active ?? false
     };
+  }
+
+  public debugRoll(forwardSpeed = 10.0, lateralBias = 0, hookAccelX = 0): void {
+    this.releaseBall(forwardSpeed, lateralBias, hookAccelX, false);
   }
 }

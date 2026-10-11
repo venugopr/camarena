@@ -475,4 +475,384 @@ export class SoundSynthesizer {
       this.scoreChime();
     }, 280);
   }
+
+  // ─── Lawn Tennis Sound Synthesis ──────────────────────────────────────────
+
+  /**
+   * Crisp high-tension outdoor tennis string pop:
+   * Layer 1 — Fast high-pass string snap (1600-2400 Hz noise burst)
+   * Layer 2 — Resonant sweet-spot ping (780 Hz -> 260 Hz sine wave)
+   * Layer 3 — Graphite frame punch (140 Hz body thump)
+   */
+  public tennisRacketHit(power = 1.0, isSmash = false): void {
+    if (this.isMuted) return;
+    const ctx = this.getContext();
+    if (!ctx) return;
+
+    const t = ctx.currentTime;
+    const vol = Math.min(1.0, 0.45 + power * 0.45);
+    const comp = this.makeCompressor(ctx);
+    comp.connect(ctx.destination);
+
+    // Layer 1: Sharp String Snap
+    const snapDur = isSmash ? 0.05 : 0.038;
+    const snapSrc = this.makeNoiseSource(ctx, snapDur);
+    const snapFilter = ctx.createBiquadFilter();
+    snapFilter.type = 'bandpass';
+    snapFilter.frequency.setValueAtTime(isSmash ? 2400 : 1900, t);
+    snapFilter.Q.value = 1.2;
+    const snapGain = ctx.createGain();
+    snapGain.gain.setValueAtTime(vol * 1.2, t);
+    snapGain.gain.exponentialRampToValueAtTime(0.0001, t + snapDur);
+    snapSrc.connect(snapFilter);
+    snapFilter.connect(snapGain);
+    snapGain.connect(comp);
+    snapSrc.start(t);
+    snapSrc.stop(t + snapDur);
+
+    // Layer 2: Resonant Sweet-spot Tone
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(isSmash ? 950 : 780, t);
+    osc.frequency.exponentialRampToValueAtTime(isSmash ? 220 : 280, t + 0.09);
+    const oscGain = ctx.createGain();
+    oscGain.gain.setValueAtTime(vol * 0.7, t);
+    oscGain.gain.exponentialRampToValueAtTime(0.0001, t + 0.09);
+    osc.connect(oscGain);
+    oscGain.connect(comp);
+    osc.start(t);
+    osc.stop(t + 0.10);
+
+    // Layer 3: Graphite frame punch
+    const punch = ctx.createOscillator();
+    punch.type = 'triangle';
+    punch.frequency.setValueAtTime(140, t);
+    punch.frequency.exponentialRampToValueAtTime(45, t + 0.06);
+    const punchGain = ctx.createGain();
+    punchGain.gain.setValueAtTime(vol * 0.5, t);
+    punchGain.gain.exponentialRampToValueAtTime(0.0001, t + 0.06);
+    punch.connect(punchGain);
+    punchGain.connect(comp);
+    punch.start(t);
+    punch.stop(t + 0.07);
+  }
+
+  public playRacketHit(power = 1.0, type: 'serve' | 'smash' | 'hit' = 'hit'): void {
+    this.tennisRacketHit(power, type === 'smash' || type === 'serve');
+  }
+
+  /**
+   * Heavy felt tennis ball hardcourt turf impact:
+   * Layer 1 — Low-end resonant turf impact thump (160 Hz -> 42 Hz)
+   * Layer 2 — Felt friction crunch (lowpass filtered noise, 0.04s)
+   */
+  public tennisBallBounce(speedRatio = 1.0): void {
+    if (this.isMuted) return;
+    const ctx = this.getContext();
+    if (!ctx) return;
+
+    const t = ctx.currentTime;
+    const vol = Math.min(0.9, 0.35 + speedRatio * 0.45);
+
+    // Layer 1: Felt Ball Thud
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(160, t);
+    osc.frequency.exponentialRampToValueAtTime(42, t + 0.075);
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(vol, t);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.08);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(t);
+    osc.stop(t + 0.085);
+
+    // Layer 2: Surface friction burst
+    const noiseDur = 0.035;
+    const noise = this.makeNoiseSource(ctx, noiseDur);
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(900, t);
+    const noiseGain = ctx.createGain();
+    noiseGain.gain.setValueAtTime(vol * 0.4, t);
+    noiseGain.gain.exponentialRampToValueAtTime(0.0001, t + noiseDur);
+    noise.connect(filter);
+    filter.connect(noiseGain);
+    noiseGain.connect(ctx.destination);
+    noise.start(t);
+    noise.stop(t + noiseDur);
+  }
+
+  public playPingPongBounce(power = 1.0): void {
+    this.tennisBallBounce(power);
+  }
+
+  public playPingPongNet(): void {
+    this.tableTennisNetClip();
+  }
+
+  public tennisNetHit(): void {
+    this.tableTennisNetClip();
+  }
+
+  public playCheer(): void {
+    this.whistle();
+    setTimeout(() => {
+      this.scoreChime();
+    }, 180);
+  }
+
+  public playPointWon(): void {
+    this.scoreChime();
+  }
+
+  // ─── Section 5: Arcade Boxing 3D Pro Procedural Sound Synthesis ─────────
+
+  /**
+   * Heavy leather boxing glove impact:
+   * Layer 1 — Sub-bass punch thump (90 Hz -> 28 Hz sine, 0.09s decay)
+   * Layer 2 — Leather slap friction crack (bandpass white noise burst, 0.045s)
+   * Layer 3 — Critical counter / jaw crack (resonant high spike 2200 Hz -> 750 Hz, 0.07s)
+   */
+  public boxingPunchImpact(power = 1.0, isHeavy = false, isCounter = false): void {
+    if (this.isMuted) return;
+    const ctx = this.getContext();
+    if (!ctx) return;
+
+    const t = ctx.currentTime;
+    const clampedPower = Math.max(0.3, Math.min(2.0, power));
+    const vol = Math.min(1.0, 0.45 * clampedPower);
+    const comp = this.makeCompressor(ctx);
+    comp.connect(ctx.destination);
+
+    // Layer 1: Sub-bass punch thump
+    const subOsc = ctx.createOscillator();
+    subOsc.type = 'sine';
+    subOsc.frequency.setValueAtTime(isHeavy ? 110 : 85, t);
+    subOsc.frequency.exponentialRampToValueAtTime(26, t + (isHeavy ? 0.11 : 0.075));
+    const subGain = ctx.createGain();
+    subGain.gain.setValueAtTime(vol * 1.3, t);
+    subGain.gain.exponentialRampToValueAtTime(0.0001, t + (isHeavy ? 0.12 : 0.085));
+    subOsc.connect(subGain);
+    subGain.connect(comp);
+    subOsc.start(t);
+    subOsc.stop(t + (isHeavy ? 0.13 : 0.09));
+
+    // Layer 2: Leather slap friction crack
+    const crackDur = isHeavy ? 0.055 : 0.038;
+    const noiseSrc = this.makeNoiseSource(ctx, crackDur);
+    const noiseFilter = ctx.createBiquadFilter();
+    noiseFilter.type = 'bandpass';
+    noiseFilter.frequency.setValueAtTime(isHeavy ? 1400 : 1800, t);
+    noiseFilter.Q.value = 1.1;
+    const noiseGain = ctx.createGain();
+    noiseGain.gain.setValueAtTime(vol * 0.9, t);
+    noiseGain.gain.exponentialRampToValueAtTime(0.0001, t + crackDur);
+    noiseSrc.connect(noiseFilter);
+    noiseFilter.connect(noiseGain);
+    noiseGain.connect(comp);
+    noiseSrc.start(t);
+    noiseSrc.stop(t + crackDur);
+
+    // Layer 3: Critical Counter crack
+    if (isCounter || isHeavy) {
+      const crackOsc = ctx.createOscillator();
+      crackOsc.type = 'triangle';
+      crackOsc.frequency.setValueAtTime(isCounter ? 2400 : 1600, t);
+      crackOsc.frequency.exponentialRampToValueAtTime(isCounter ? 650 : 450, t + 0.07);
+      const crackGain = ctx.createGain();
+      crackGain.gain.setValueAtTime(vol * (isCounter ? 1.1 : 0.6), t);
+      crackGain.gain.exponentialRampToValueAtTime(0.0001, t + 0.075);
+      crackOsc.connect(crackGain);
+      crackGain.connect(comp);
+      crackOsc.start(t);
+      crackOsc.stop(t + 0.08);
+    }
+  }
+
+  /**
+   * Padded leather-on-leather guard block:
+   * Layer 1 — Absorbed muffled thud (120 Hz -> 50 Hz, 0.06s)
+   * Layer 2 — Lowpass leather impact burst (650 Hz, 0.03s)
+   */
+  public boxingGloveBlock(): void {
+    if (this.isMuted) return;
+    const ctx = this.getContext();
+    if (!ctx) return;
+
+    const t = ctx.currentTime;
+    const comp = this.makeCompressor(ctx);
+    comp.connect(ctx.destination);
+
+    // Muffled thump
+    const osc = ctx.createOscillator();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(130, t);
+    osc.frequency.exponentialRampToValueAtTime(45, t + 0.06);
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.55, t);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.065);
+    osc.connect(gain);
+    gain.connect(comp);
+    osc.start(t);
+    osc.stop(t + 0.07);
+
+    // Padded noise
+    const noiseDur = 0.035;
+    const noise = this.makeNoiseSource(ctx, noiseDur);
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(650, t);
+    const nGain = ctx.createGain();
+    nGain.gain.setValueAtTime(0.4, t);
+    nGain.gain.exponentialRampToValueAtTime(0.0001, t + noiseDur);
+    noise.connect(filter);
+    filter.connect(nGain);
+    nGain.connect(comp);
+    noise.start(t);
+    noise.stop(t + noiseDur);
+  }
+
+  /**
+   * Dynamic punch air whoosh for swings and near-misses.
+   */
+  public boxingWhoosh(velocity = 3.0): void {
+    if (this.isMuted) return;
+    const ctx = this.getContext();
+    if (!ctx) return;
+
+    const t = ctx.currentTime;
+    const dur = 0.11;
+    const vol = Math.min(0.65, 0.2 + (velocity / 8.0) * 0.45);
+
+    const noise = this.makeNoiseSource(ctx, dur);
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.setValueAtTime(320, t);
+    filter.frequency.exponentialRampToValueAtTime(880, t + dur * 0.5);
+    filter.frequency.exponentialRampToValueAtTime(300, t + dur);
+    filter.Q.value = 1.8;
+
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.01, t);
+    gain.gain.linearRampToValueAtTime(vol, t + dur * 0.4);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+
+    noise.connect(filter);
+    filter.connect(gain);
+    gain.connect(ctx.destination);
+    noise.start(t);
+    noise.stop(t + dur);
+  }
+
+  /**
+   * Brass boxing ring round bell chimes:
+   * 880 Hz fundamental + 1760 Hz harmonic + metallic ring overtone with 1.8s decay.
+   */
+  public boxingBellRing(chimes = 1): void {
+    if (this.isMuted) return;
+    const ctx = this.getContext();
+    if (!ctx) return;
+
+    for (let c = 0; c < chimes; c++) {
+      const t = ctx.currentTime + c * 0.22;
+
+      // Fundamental brass bell
+      const osc1 = ctx.createOscillator();
+      osc1.type = 'sine';
+      osc1.frequency.setValueAtTime(880, t);
+      const gain1 = ctx.createGain();
+      gain1.gain.setValueAtTime(0.7, t);
+      gain1.gain.exponentialRampToValueAtTime(0.0001, t + 1.6);
+      osc1.connect(gain1);
+      gain1.connect(ctx.destination);
+      osc1.start(t);
+      osc1.stop(t + 1.7);
+
+      // Overtone harmonic
+      const osc2 = ctx.createOscillator();
+      osc2.type = 'sine';
+      osc2.frequency.setValueAtTime(1760, t);
+      const gain2 = ctx.createGain();
+      gain2.gain.setValueAtTime(0.35, t);
+      gain2.gain.exponentialRampToValueAtTime(0.0001, t + 1.1);
+      osc2.connect(gain2);
+      gain2.connect(ctx.destination);
+      osc2.start(t);
+      osc2.stop(t + 1.2);
+
+      // Strike transient
+      const hitDur = 0.03;
+      const noise = this.makeNoiseSource(ctx, hitDur);
+      const hitFilter = ctx.createBiquadFilter();
+      hitFilter.type = 'highpass';
+      hitFilter.frequency.setValueAtTime(3400, t);
+      const hitGain = ctx.createGain();
+      hitGain.gain.setValueAtTime(0.4, t);
+      hitGain.gain.exponentialRampToValueAtTime(0.0001, t + hitDur);
+      noise.connect(hitFilter);
+      hitFilter.connect(hitGain);
+      hitGain.connect(ctx.destination);
+      noise.start(t);
+      noise.stop(t + hitDur);
+    }
+  }
+
+  /**
+   * Stadium crowd roar swell during heavy hits or knockdowns.
+   */
+  public boxingCrowdRoar(intensity = 1.0): void {
+    if (this.isMuted) return;
+    const ctx = this.getContext();
+    if (!ctx) return;
+
+    const t = ctx.currentTime;
+    const dur = 1.5;
+    const vol = Math.min(0.5, 0.25 * intensity);
+
+    const noise = this.makeNoiseSource(ctx, dur);
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(450, t);
+    filter.frequency.linearRampToValueAtTime(950, t + 0.5);
+    filter.frequency.exponentialRampToValueAtTime(350, t + dur);
+
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.01, t);
+    gain.gain.linearRampToValueAtTime(vol, t + 0.35);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+
+    noise.connect(filter);
+    filter.connect(gain);
+    gain.connect(ctx.destination);
+    noise.start(t);
+    noise.stop(t + dur);
+  }
+
+  /**
+   * Referee count tone / mallet strike during 10-count.
+   */
+  public boxingRefCountdown(count: number): void {
+    if (this.isMuted) return;
+    const ctx = this.getContext();
+    if (!ctx) return;
+
+    const t = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    // Slightly ascending pitch per count for dramatic tension
+    const baseFreq = 480 + (count - 1) * 25;
+    osc.frequency.setValueAtTime(baseFreq, t);
+    osc.frequency.exponentialRampToValueAtTime(baseFreq * 0.7, t + 0.08);
+
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.55, t);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.09);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(t);
+    osc.stop(t + 0.095);
+  }
 }
+

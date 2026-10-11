@@ -35,26 +35,33 @@ export const SKELETON_CONNECTIONS: [number, number][] = [
   [PoseLandmark.RIGHT_ANKLE, PoseLandmark.RIGHT_FOOT_INDEX],
 ];
 
+export type AvatarStyle = 'humanoid' | 'cyber_skeleton';
+
 export class Avatar3D {
   public group: THREE.Group;
-  private joints: THREE.Mesh[] = [];
-  private bones: THREE.Mesh[] = [];
-  private racketGroup: THREE.Group | null = null;
+  protected joints: THREE.Mesh[] = [];
+  protected bones: THREE.Mesh[] = [];
+  protected racketGroup: THREE.Group | null = null;
   public racketMesh?: THREE.Mesh;
-  private paddleGroup: THREE.Group | null = null;
-  public currentEquipment: 'badminton' | 'tabletennis' | 'none' = 'badminton';
-  private headMesh: THREE.Mesh;
+  protected paddleGroup: THREE.Group | null = null;
+  protected tennisRacketGroup: THREE.Group | null = null;
+  public tennisRacketMesh?: THREE.Mesh;
+  public currentEquipment: 'badminton' | 'tabletennis' | 'tennis' | 'none' = 'badminton';
+  public avatarStyle: 'humanoid' | 'cyber_skeleton' = 'humanoid';
+  protected headMesh: THREE.Mesh;
   private readonly jointSmoothing = 0.18;
 
-  private primaryColor: number;
-  private secondaryColor: number;
-  private jointMat: THREE.MeshStandardMaterial;
-  private boneMat: THREE.MeshStandardMaterial;
-  private racketFrameMat?: THREE.MeshStandardMaterial;
-  private racketStringMat?: THREE.MeshBasicMaterial;
+  protected primaryColor: number;
+  protected secondaryColor: number;
+  protected jointMat: THREE.MeshStandardMaterial;
+  protected boneMat: THREE.MeshStandardMaterial;
+  protected racketFrameMat?: THREE.MeshStandardMaterial;
+  protected racketStringMat?: THREE.MeshBasicMaterial;
+  protected tennisRacketFrameMat?: THREE.MeshStandardMaterial;
+  protected tennisRacketStringMat?: THREE.MeshBasicMaterial;
   public dominantArm: 'right' | 'left' = 'right';
   private trackedForwardZ = 0;
-  private supportHandGroup: THREE.Group = new THREE.Group();
+  protected supportHandGroup: THREE.Group = new THREE.Group();
   private lastRightWrist = new THREE.Vector3();
   private lastLeftWrist = new THREE.Vector3();
   private smoothedRightWristVel = new THREE.Vector3();
@@ -62,6 +69,63 @@ export class Avatar3D {
   private prevRightWristPos = new THREE.Vector3();
   private prevRacketWorldPos = new THREE.Vector3();
   private isVelocitiesInitialized = false;
+
+  // Tracking flags
+  protected hasRightWrist = false;
+  protected hasLeftWrist = false;
+  protected hasPrevRightWristPos = false;
+  protected hasPrevRacketPos = false;
+
+  // Procedural Lower-Body Footwork & Weight Transfer State
+  private footworkVel = new THREE.Vector3();
+  private footworkTimer = 0;
+  private footworkLungeDir: 'left' | 'right' | 'none' = 'none';
+  private footworkIsSplitStep = false;
+
+  public setFootworkKinematics(vel: THREE.Vector3, isSplitStep = false, lungeDir: 'left' | 'right' | 'none' = 'none'): void {
+    this.footworkVel.copy(vel);
+    this.footworkIsSplitStep = isSplitStep;
+    this.footworkLungeDir = lungeDir;
+  }
+
+  // Humanoid Body Group & Materials
+  protected humanoidGroup: THREE.Group = new THREE.Group();
+  protected humanoidBodyMat!: THREE.MeshStandardMaterial;
+  protected humanoidTrimMat!: THREE.MeshStandardMaterial;
+  protected humanoidGlowMat!: THREE.MeshStandardMaterial;
+  protected humanoidShoeMat!: THREE.MeshStandardMaterial;
+  protected humanoidShoeSoleMat!: THREE.MeshStandardMaterial;
+
+  // Humanoid Anatomical Components
+  protected chestMesh!: THREE.Mesh;
+  protected coreMesh!: THREE.Mesh;
+  protected pelvisMesh!: THREE.Mesh;
+  protected neckMesh!: THREE.Mesh;
+  protected humanoidHeadGroup!: THREE.Group;
+  protected humanoidHeadMesh!: THREE.Mesh;
+  protected humanoidVisorMesh!: THREE.Mesh;
+
+  // Humanoid Limbs
+  protected leftUpperArmMesh!: THREE.Mesh;
+  protected rightUpperArmMesh!: THREE.Mesh;
+  protected leftForearmMesh!: THREE.Mesh;
+  protected rightForearmMesh!: THREE.Mesh;
+  protected leftThighMesh!: THREE.Mesh;
+  protected rightThighMesh!: THREE.Mesh;
+  protected leftCalfMesh!: THREE.Mesh;
+  protected rightCalfMesh!: THREE.Mesh;
+
+  // Humanoid Joints / Cuffs
+  protected leftShoulderCap!: THREE.Mesh;
+  protected rightShoulderCap!: THREE.Mesh;
+  protected leftElbowRing!: THREE.Mesh;
+  protected rightElbowRing!: THREE.Mesh;
+  protected leftKneeCap!: THREE.Mesh;
+  protected rightKneeCap!: THREE.Mesh;
+
+  // Humanoid Shoes
+  protected leftShoeGroup!: THREE.Group;
+  protected rightShoeGroup!: THREE.Group;
 
   // Zero-allocation scratch objects for 60+ FPS inverse arm kinematics
   private static readonly scratchUpVector = new THREE.Vector3(0, 1, 0);
@@ -76,7 +140,26 @@ export class Avatar3D {
   private static readonly scratchQuat = new THREE.Quaternion();
   private static readonly defaultVelocity = new THREE.Vector3(0, 0, 0);
 
-  constructor(primaryColor = 0x00f2fe, secondaryColor = 0x39ff14) {
+  // Scratch objects for humanoid anatomical alignment
+  private static readonly scratchMid = new THREE.Vector3();
+  private static readonly scratchDir = new THREE.Vector3();
+  private static readonly scratchLateral = new THREE.Vector3();
+  private static readonly scratchSpine = new THREE.Vector3();
+  private static readonly scratchNormal = new THREE.Vector3();
+  private static readonly scratchBasisMat = new THREE.Matrix4();
+
+  constructor(
+    primaryColorOrOptions: number | { primaryColor?: number; secondaryColor?: number; avatarStyle?: AvatarStyle } = 0x00f2fe,
+    secondaryColor = 0x39ff14
+  ) {
+    let primaryColor = 0x00f2fe;
+    if (typeof primaryColorOrOptions === 'object') {
+      if (primaryColorOrOptions.primaryColor !== undefined) primaryColor = primaryColorOrOptions.primaryColor;
+      if (primaryColorOrOptions.secondaryColor !== undefined) secondaryColor = primaryColorOrOptions.secondaryColor;
+      if (primaryColorOrOptions.avatarStyle !== undefined) this.avatarStyle = primaryColorOrOptions.avatarStyle;
+    } else {
+      primaryColor = primaryColorOrOptions;
+    }
     this.primaryColor = primaryColor;
     this.secondaryColor = secondaryColor;
     this.group = new THREE.Group();
@@ -138,6 +221,12 @@ export class Avatar3D {
     this.buildBadmintonRacket();
     // Build Table Tennis Paddle
     this.buildTableTennisPaddle();
+    // Build Tennis Racket
+    this.buildTennisRacket();
+
+    // Build Procedural Athletic Humanoid Mannequin
+    this.buildHumanoidMesh();
+    this.applyAvatarStyle();
   }
 
   private buildHandModels(): void {
@@ -341,7 +430,479 @@ export class Avatar3D {
     this.group.add(this.paddleGroup);
   }
 
-  public setEquipment(type: 'badminton' | 'tabletennis' | 'none'): void {
+  public setAvatarStyle(style: 'humanoid' | 'cyber_skeleton'): void {
+    this.avatarStyle = style;
+    this.applyAvatarStyle();
+  }
+
+  protected applyAvatarStyle(): void {
+    const isHumanoid = this.avatarStyle === 'humanoid';
+    for (let i = 0; i < this.joints.length; i++) {
+      this.joints[i].visible = !isHumanoid;
+    }
+    for (let i = 0; i < this.bones.length; i++) {
+      this.bones[i].visible = !isHumanoid;
+    }
+    if (this.headMesh) {
+      this.headMesh.visible = !isHumanoid;
+    }
+    if (this.humanoidGroup) {
+      this.humanoidGroup.visible = isHumanoid;
+    }
+  }
+
+  public getTennisRacketGroup(): THREE.Group | null {
+    return this.tennisRacketGroup;
+  }
+
+  protected buildTennisRacket(): void {
+    this.tennisRacketGroup = new THREE.Group();
+
+    // 1. Ergonomic cushioned grip handle (~0.28m length)
+    const gripGeo = new THREE.CylinderGeometry(0.018, 0.021, 0.28, 16);
+    const gripMat = new THREE.MeshStandardMaterial({
+      color: 0x18181b,
+      roughness: 0.85,
+      metalness: 0.15
+    });
+    const grip = new THREE.Mesh(gripGeo, gripMat);
+    grip.position.y = 0.14;
+    this.tennisRacketGroup.add(grip);
+
+    // Butt cap with brand accent
+    const buttCapGeo = new THREE.CylinderGeometry(0.023, 0.023, 0.02, 16);
+    const buttCapMat = new THREE.MeshStandardMaterial({
+      color: this.primaryColor,
+      emissive: this.primaryColor,
+      emissiveIntensity: 0.4
+    });
+    const buttCap = new THREE.Mesh(buttCapGeo, buttCapMat);
+    buttCap.position.y = 0.01;
+    this.tennisRacketGroup.add(buttCap);
+
+    // Grip tape finishing collar accent
+    const collarGeo = new THREE.CylinderGeometry(0.022, 0.022, 0.018, 16);
+    const collarMat = new THREE.MeshStandardMaterial({ color: this.secondaryColor, roughness: 0.3 });
+    const collar = new THREE.Mesh(collarGeo, collarMat);
+    collar.position.y = 0.27;
+    this.tennisRacketGroup.add(collar);
+
+    // 2. Open throat / aerodynamic V-bridge
+    const throatMat = new THREE.MeshStandardMaterial({
+      color: 0x0f172a,
+      roughness: 0.25,
+      metalness: 0.85,
+      emissive: this.primaryColor,
+      emissiveIntensity: 0.2
+    });
+    const strutGeo = new THREE.CylinderGeometry(0.009, 0.011, 0.15, 12);
+
+    const leftStrut = new THREE.Mesh(strutGeo, throatMat);
+    leftStrut.position.set(0.028, 0.34, 0);
+    leftStrut.rotation.z = -0.22;
+    this.tennisRacketGroup.add(leftStrut);
+
+    const rightStrut = new THREE.Mesh(strutGeo, throatMat);
+    rightStrut.position.set(-0.028, 0.34, 0);
+    rightStrut.rotation.z = 0.22;
+    this.tennisRacketGroup.add(rightStrut);
+
+    // Throat crossbar bridge
+    const bridgeGeo = new THREE.BoxGeometry(0.065, 0.014, 0.016);
+    const bridge = new THREE.Mesh(bridgeGeo, throatMat);
+    bridge.position.set(0, 0.40, 0);
+    this.tennisRacketGroup.add(bridge);
+
+    // 3. Elliptical isometric racket head (~0.28m x 0.35m) with high-visibility neon frame
+    const frameGeo = new THREE.TorusGeometry(0.18, 0.015, 14, 40);
+    const frameMat = new THREE.MeshStandardMaterial({
+      color: this.primaryColor,
+      emissive: this.primaryColor,
+      emissiveIntensity: 0.95,
+      metalness: 0.65,
+      roughness: 0.2
+    });
+    this.tennisRacketFrameMat = frameMat;
+    const frame = new THREE.Mesh(frameGeo, frameMat);
+    frame.scale.set(0.88, 1.18, 1.0);
+    frame.position.y = 0.58;
+    this.tennisRacketMesh = frame;
+    this.tennisRacketGroup.add(frame);
+
+    // Synthetic gut string bed with wireframe matrix
+    const stringGeo = new THREE.CircleGeometry(0.17, 28);
+    const stringMat = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0.55,
+      wireframe: true
+    });
+    this.tennisRacketStringMat = stringMat;
+    const strings = new THREE.Mesh(stringGeo, stringMat);
+    strings.scale.set(0.88, 1.18, 1.0);
+    strings.position.y = 0.58;
+    this.tennisRacketGroup.add(strings);
+
+    // Sweet spot center badge
+    const stencilGeo = new THREE.RingGeometry(0.024, 0.040, 16);
+    const stencilMat = new THREE.MeshBasicMaterial({
+      color: this.secondaryColor,
+      transparent: true,
+      opacity: 0.8,
+      side: THREE.DoubleSide
+    });
+    const stencil = new THREE.Mesh(stencilGeo, stencilMat);
+    stencil.position.set(0, 0.58, 0.002);
+    this.tennisRacketGroup.add(stencil);
+
+    // Hand glove wrapping handle
+    const gloveMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.5, metalness: 0.3 });
+    const palmGeo = new THREE.BoxGeometry(0.052, 0.088, 0.046);
+    const palmMesh = new THREE.Mesh(palmGeo, gloveMat);
+    palmMesh.position.set(-0.012, 0.14, 0);
+    this.tennisRacketGroup.add(palmMesh);
+
+    const fingerMat = new THREE.MeshStandardMaterial({
+      color: this.primaryColor,
+      emissive: this.primaryColor,
+      emissiveIntensity: 0.35,
+      roughness: 0.3
+    });
+    for (let f = 0; f < 4; f++) {
+      const fingerGeo = new THREE.CylinderGeometry(0.008, 0.008, 0.042, 8);
+      const finger = new THREE.Mesh(fingerGeo, fingerMat);
+      finger.rotation.z = Math.PI / 2;
+      finger.position.set(0.014, 0.10 + f * 0.026, 0.016);
+      this.tennisRacketGroup.add(finger);
+    }
+    const thumbGeo = new THREE.CylinderGeometry(0.009, 0.009, 0.034, 8);
+    const thumb = new THREE.Mesh(thumbGeo, fingerMat);
+    thumb.rotation.x = Math.PI / 3;
+    thumb.position.set(-0.016, 0.16, -0.020);
+    this.tennisRacketGroup.add(thumb);
+
+    this.tennisRacketGroup.visible = false;
+    this.group.add(this.tennisRacketGroup);
+  }
+
+  protected buildHumanoidMesh(): void {
+    this.humanoidGroup = new THREE.Group();
+
+    // High quality athletic materials
+    this.humanoidBodyMat = new THREE.MeshStandardMaterial({
+      color: 0x1e293b,
+      roughness: 0.38,
+      metalness: 0.72
+    });
+
+    this.humanoidTrimMat = new THREE.MeshStandardMaterial({
+      color: this.primaryColor,
+      emissive: this.primaryColor,
+      emissiveIntensity: 0.45,
+      roughness: 0.25,
+      metalness: 0.6
+    });
+
+    this.humanoidGlowMat = new THREE.MeshStandardMaterial({
+      color: this.secondaryColor,
+      emissive: this.secondaryColor,
+      emissiveIntensity: 0.65,
+      roughness: 0.2
+    });
+
+    this.humanoidShoeMat = new THREE.MeshStandardMaterial({
+      color: 0x0f172a,
+      roughness: 0.5,
+      metalness: 0.4
+    });
+
+    this.humanoidShoeSoleMat = new THREE.MeshStandardMaterial({
+      color: 0xf8fafc,
+      roughness: 0.8,
+      metalness: 0.1
+    });
+
+    // 1. Torso: Chest / Thorax (contoured inverted trapezoid/box)
+    const chestGroup = new THREE.Group();
+    const thoraxGeo = new THREE.BoxGeometry(0.40, 0.32, 0.18);
+    const thorax = new THREE.Mesh(thoraxGeo, this.humanoidBodyMat);
+    thorax.castShadow = true;
+    chestGroup.add(thorax);
+
+    // Contoured pectoral armor plates
+    const pecGeo = new THREE.BoxGeometry(0.16, 0.13, 0.025);
+    const leftPec = new THREE.Mesh(pecGeo, this.humanoidTrimMat);
+    leftPec.position.set(0.09, 0.05, 0.095);
+    leftPec.rotation.y = 0.08;
+    chestGroup.add(leftPec);
+
+    const rightPec = new THREE.Mesh(pecGeo, this.humanoidTrimMat);
+    rightPec.position.set(-0.09, 0.05, 0.095);
+    rightPec.rotation.y = -0.08;
+    chestGroup.add(rightPec);
+
+    // Collarbone bridge trim
+    const clavicleGeo = new THREE.BoxGeometry(0.38, 0.028, 0.06);
+    const clavicle = new THREE.Mesh(clavicleGeo, this.humanoidGlowMat);
+    clavicle.position.set(0, 0.14, 0.07);
+    chestGroup.add(clavicle);
+
+    this.chestMesh = thorax; // Reference root
+    this.humanoidGroup.add(chestGroup);
+
+    // 2. Torso: Core (flexible abdominal midsection)
+    const coreGeo = new THREE.BoxGeometry(0.28, 0.14, 0.17);
+    this.coreMesh = new THREE.Mesh(coreGeo, this.humanoidBodyMat);
+    this.coreMesh.castShadow = true;
+    const abGeo = new THREE.BoxGeometry(0.08, 0.10, 0.02);
+    const ab = new THREE.Mesh(abGeo, this.humanoidTrimMat);
+    ab.position.set(0, 0, 0.085);
+    this.coreMesh.add(ab);
+    this.humanoidGroup.add(this.coreMesh);
+
+    // 3. Torso: Pelvis (hip box bridging spine to hips)
+    const pelvisGeo = new THREE.BoxGeometry(0.34, 0.17, 0.19);
+    this.pelvisMesh = new THREE.Mesh(pelvisGeo, this.humanoidBodyMat);
+    this.pelvisMesh.castShadow = true;
+    const beltGeo = new THREE.BoxGeometry(0.35, 0.035, 0.195);
+    const belt = new THREE.Mesh(beltGeo, this.humanoidTrimMat);
+    belt.position.set(0, 0.07, 0);
+    this.pelvisMesh.add(belt);
+    this.humanoidGroup.add(this.pelvisMesh);
+
+    // 4. Neck Column
+    const neckGeo = new THREE.CylinderGeometry(0.046, 0.052, 0.10, 14);
+    this.neckMesh = new THREE.Mesh(neckGeo, this.humanoidBodyMat);
+    this.humanoidGroup.add(this.neckMesh);
+
+    // 5. Head: Athletic Mannequin Head with Jawline & Cyber-Visor
+    this.humanoidHeadGroup = new THREE.Group();
+    const craniumGeo = new THREE.SphereGeometry(0.105, 18, 18);
+    this.humanoidHeadMesh = new THREE.Mesh(craniumGeo, this.humanoidBodyMat);
+    this.humanoidHeadMesh.castShadow = true;
+    this.humanoidHeadGroup.add(this.humanoidHeadMesh);
+
+    const jawGeo = new THREE.BoxGeometry(0.085, 0.075, 0.095);
+    const jaw = new THREE.Mesh(jawGeo, this.humanoidBodyMat);
+    jaw.position.set(0, -0.04, 0.03);
+    this.humanoidHeadGroup.add(jaw);
+
+    const visorGeo = new THREE.BoxGeometry(0.17, 0.046, 0.07);
+    this.humanoidVisorMesh = new THREE.Mesh(visorGeo, this.humanoidGlowMat);
+    this.humanoidVisorMesh.position.set(0, 0.015, 0.078);
+    this.humanoidHeadGroup.add(this.humanoidVisorMesh);
+    this.humanoidGroup.add(this.humanoidHeadGroup);
+
+    // 6. Shoulders & Upper Arms
+    const deltoidGeo = new THREE.SphereGeometry(0.062, 14, 14);
+    this.leftShoulderCap = new THREE.Mesh(deltoidGeo, this.humanoidTrimMat);
+    this.rightShoulderCap = new THREE.Mesh(deltoidGeo, this.humanoidTrimMat);
+    this.humanoidGroup.add(this.leftShoulderCap);
+    this.humanoidGroup.add(this.rightShoulderCap);
+
+    const upperArmGeo = new THREE.CylinderGeometry(0.038, 0.052, 1, 14);
+    this.leftUpperArmMesh = new THREE.Mesh(upperArmGeo, this.humanoidBodyMat);
+    this.leftUpperArmMesh.castShadow = true;
+    this.rightUpperArmMesh = new THREE.Mesh(upperArmGeo, this.humanoidBodyMat);
+    this.rightUpperArmMesh.castShadow = true;
+    this.humanoidGroup.add(this.leftUpperArmMesh);
+    this.humanoidGroup.add(this.rightUpperArmMesh);
+
+    // 7. Elbow Cuffs & Forearms
+    const elbowRingGeo = new THREE.TorusGeometry(0.040, 0.007, 8, 16);
+    this.leftElbowRing = new THREE.Mesh(elbowRingGeo, this.humanoidGlowMat);
+    this.rightElbowRing = new THREE.Mesh(elbowRingGeo, this.humanoidGlowMat);
+    this.humanoidGroup.add(this.leftElbowRing);
+    this.humanoidGroup.add(this.rightElbowRing);
+
+    const forearmGeo = new THREE.CylinderGeometry(0.028, 0.040, 1, 14);
+    this.leftForearmMesh = new THREE.Mesh(forearmGeo, this.humanoidBodyMat);
+    this.leftForearmMesh.castShadow = true;
+    this.rightForearmMesh = new THREE.Mesh(forearmGeo, this.humanoidBodyMat);
+    this.rightForearmMesh.castShadow = true;
+    this.humanoidGroup.add(this.leftForearmMesh);
+    this.humanoidGroup.add(this.rightForearmMesh);
+
+    // 8. Thighs & Knee Caps
+    const thighGeo = new THREE.CylinderGeometry(0.046, 0.068, 1, 16);
+    this.leftThighMesh = new THREE.Mesh(thighGeo, this.humanoidBodyMat);
+    this.leftThighMesh.castShadow = true;
+    this.rightThighMesh = new THREE.Mesh(thighGeo, this.humanoidBodyMat);
+    this.rightThighMesh.castShadow = true;
+    this.humanoidGroup.add(this.leftThighMesh);
+    this.humanoidGroup.add(this.rightThighMesh);
+
+    const kneeGeo = new THREE.BoxGeometry(0.08, 0.08, 0.04);
+    this.leftKneeCap = new THREE.Mesh(kneeGeo, this.humanoidTrimMat);
+    this.rightKneeCap = new THREE.Mesh(kneeGeo, this.humanoidTrimMat);
+    this.humanoidGroup.add(this.leftKneeCap);
+    this.humanoidGroup.add(this.rightKneeCap);
+
+    // 9. Calves
+    const calfGeo = new THREE.CylinderGeometry(0.034, 0.050, 1, 16);
+    this.leftCalfMesh = new THREE.Mesh(calfGeo, this.humanoidBodyMat);
+    this.leftCalfMesh.castShadow = true;
+    this.rightCalfMesh = new THREE.Mesh(calfGeo, this.humanoidBodyMat);
+    this.rightCalfMesh.castShadow = true;
+    this.humanoidGroup.add(this.leftCalfMesh);
+    this.humanoidGroup.add(this.rightCalfMesh);
+
+    // 10. Athletic Tennis Running Shoes
+    const createShoe = (): THREE.Group => {
+      const shoeGroup = new THREE.Group();
+      const soleGeo = new THREE.BoxGeometry(0.11, 0.045, 0.25);
+      const sole = new THREE.Mesh(soleGeo, this.humanoidShoeSoleMat);
+      sole.position.set(0, 0.022, 0.04);
+      sole.castShadow = true;
+      shoeGroup.add(sole);
+
+      const upperGeo = new THREE.BoxGeometry(0.105, 0.060, 0.22);
+      const upper = new THREE.Mesh(upperGeo, this.humanoidShoeMat);
+      upper.position.set(0, 0.052, 0.03);
+      upper.castShadow = true;
+      shoeGroup.add(upper);
+
+      const stripeGeo = new THREE.BoxGeometry(0.112, 0.018, 0.10);
+      const stripe = new THREE.Mesh(stripeGeo, this.humanoidTrimMat);
+      stripe.position.set(0, 0.048, 0.02);
+      shoeGroup.add(stripe);
+
+      const laceGeo = new THREE.BoxGeometry(0.045, 0.015, 0.06);
+      const lace = new THREE.Mesh(laceGeo, this.humanoidGlowMat);
+      lace.position.set(0, 0.082, 0.04);
+      shoeGroup.add(lace);
+
+      return shoeGroup;
+    };
+
+    this.leftShoeGroup = createShoe();
+    this.rightShoeGroup = createShoe();
+    this.humanoidGroup.add(this.leftShoeGroup);
+    this.humanoidGroup.add(this.rightShoeGroup);
+
+    this.group.add(this.humanoidGroup);
+  }
+
+  protected updateHumanoidMesh(): void {
+    if (!this.humanoidGroup || !this.humanoidGroup.visible) return;
+
+    const up = Avatar3D.scratchUpVector;
+
+    const orientLimb = (mesh: THREE.Mesh, pA: THREE.Vector3, pB: THREE.Vector3): void => {
+      const dist = pA.distanceTo(pB);
+      mesh.position.copy(pA).add(pB).multiplyScalar(0.5);
+      mesh.scale.set(1, Math.max(0.001, dist), 1);
+      const dir = Avatar3D.scratchDir.subVectors(pB, pA).normalize();
+      Avatar3D.scratchQuat.setFromUnitVectors(up, dir);
+      mesh.setRotationFromQuaternion(Avatar3D.scratchQuat);
+    };
+
+    // 1. Torso articulation: Chest, Core, Pelvis
+    const lSh = this.joints[PoseLandmark.LEFT_SHOULDER].position;
+    const rSh = this.joints[PoseLandmark.RIGHT_SHOULDER].position;
+    const lHip = this.joints[PoseLandmark.LEFT_HIP].position;
+    const rHip = this.joints[PoseLandmark.RIGHT_HIP].position;
+
+    const midShoulder = Avatar3D.scratchMid.copy(lSh).add(rSh).multiplyScalar(0.5);
+    const midHip = Avatar3D.scratchSArmVector.copy(lHip).add(rHip).multiplyScalar(0.5);
+
+    const spineVec = Avatar3D.scratchSpine.subVectors(midShoulder, midHip);
+    const spineLen = Math.max(0.01, spineVec.length());
+    const spineDir = spineVec.normalize();
+
+    const lateralVec = Avatar3D.scratchLateral.subVectors(lSh, rSh).normalize();
+    const normalVec = Avatar3D.scratchNormal.crossVectors(lateralVec, spineDir).normalize();
+    if (normalVec.z < 0) normalVec.negate();
+    const orthoLateral = Avatar3D.scratchLateral.crossVectors(spineDir, normalVec).normalize();
+
+    Avatar3D.scratchBasisMat.makeBasis(orthoLateral, spineDir, normalVec);
+    const torsoQuat = Avatar3D.scratchQuat.setFromRotationMatrix(Avatar3D.scratchBasisMat);
+
+    if (this.chestMesh?.parent) {
+      this.chestMesh.parent.position.copy(midHip).addScaledVector(spineDir, spineLen * 0.68);
+      this.chestMesh.parent.setRotationFromQuaternion(torsoQuat);
+    }
+
+    if (this.coreMesh) {
+      this.coreMesh.position.copy(midHip).addScaledVector(spineDir, spineLen * 0.36);
+      this.coreMesh.setRotationFromQuaternion(torsoQuat);
+    }
+
+    if (this.pelvisMesh) {
+      this.pelvisMesh.position.copy(midHip);
+      this.pelvisMesh.setRotationFromQuaternion(torsoQuat);
+    }
+
+    if (this.neckMesh) {
+      this.neckMesh.position.copy(midShoulder).addScaledVector(spineDir, 0.05);
+      this.neckMesh.setRotationFromQuaternion(torsoQuat);
+    }
+
+    const headPos = this.joints[PoseLandmark.NOSE].position;
+    if (this.humanoidHeadGroup) {
+      this.humanoidHeadGroup.position.copy(headPos);
+      this.humanoidHeadGroup.setRotationFromQuaternion(torsoQuat);
+    }
+
+    // 2. Arms (Upper arms, Deltoid caps, Elbow rings, Forearms)
+    if (this.leftShoulderCap) this.leftShoulderCap.position.copy(lSh);
+    if (this.rightShoulderCap) this.rightShoulderCap.position.copy(rSh);
+
+    const lElbow = this.joints[PoseLandmark.LEFT_ELBOW].position;
+    const rElbow = this.joints[PoseLandmark.RIGHT_ELBOW].position;
+    const lWrist = this.joints[PoseLandmark.LEFT_WRIST].position;
+    const rWrist = this.joints[PoseLandmark.RIGHT_WRIST].position;
+
+    if (this.leftUpperArmMesh) orientLimb(this.leftUpperArmMesh, lSh, lElbow);
+    if (this.rightUpperArmMesh) orientLimb(this.rightUpperArmMesh, rSh, rElbow);
+
+    if (this.leftElbowRing) this.leftElbowRing.position.copy(lElbow);
+    if (this.rightElbowRing) this.rightElbowRing.position.copy(rElbow);
+
+    if (this.leftForearmMesh) orientLimb(this.leftForearmMesh, lElbow, lWrist);
+    if (this.rightForearmMesh) orientLimb(this.rightForearmMesh, rElbow, rWrist);
+
+    // 3. Legs (Thighs, Knees, Calves, Shoes)
+    const lKnee = this.joints[PoseLandmark.LEFT_KNEE].position;
+    const rKnee = this.joints[PoseLandmark.RIGHT_KNEE].position;
+    const lAnkle = this.joints[PoseLandmark.LEFT_ANKLE].position;
+    const rAnkle = this.joints[PoseLandmark.RIGHT_ANKLE].position;
+
+    if (this.leftThighMesh) orientLimb(this.leftThighMesh, lHip, lKnee);
+    if (this.rightThighMesh) orientLimb(this.rightThighMesh, rHip, rKnee);
+
+    if (this.leftKneeCap) {
+      this.leftKneeCap.position.copy(lKnee);
+      this.leftKneeCap.position.z += 0.04;
+    }
+    if (this.rightKneeCap) {
+      this.rightKneeCap.position.copy(rKnee);
+      this.rightKneeCap.position.z += 0.04;
+    }
+
+    if (this.leftCalfMesh) orientLimb(this.leftCalfMesh, lKnee, lAnkle);
+    if (this.rightCalfMesh) orientLimb(this.rightCalfMesh, rKnee, rAnkle);
+
+    // 4. Shoes anchored to ground level Y = 0
+    const lFootIdx = this.joints[PoseLandmark.LEFT_FOOT_INDEX].position;
+    const rFootIdx = this.joints[PoseLandmark.RIGHT_FOOT_INDEX].position;
+
+    if (this.leftShoeGroup) {
+      this.leftShoeGroup.position.set(lAnkle.x, 0, lAnkle.z);
+      const lFootDir = Avatar3D.scratchDir.subVectors(lFootIdx, lAnkle);
+      const lFootAngle = Math.atan2(lFootDir.x, lFootDir.z);
+      this.leftShoeGroup.rotation.set(0, lFootAngle, 0);
+    }
+
+    if (this.rightShoeGroup) {
+      this.rightShoeGroup.position.set(rAnkle.x, 0, rAnkle.z);
+      const rFootDir = Avatar3D.scratchDir.subVectors(rFootIdx, rAnkle);
+      const rFootAngle = Math.atan2(rFootDir.x, rFootDir.z);
+      this.rightShoeGroup.rotation.set(0, rFootAngle, 0);
+    }
+  }
+
+  public setEquipment(type: 'badminton' | 'tabletennis' | 'tennis' | 'none'): void {
     this.currentEquipment = type;
     if (this.racketGroup) {
       this.racketGroup.visible = type === 'badminton';
@@ -351,13 +912,17 @@ export class Avatar3D {
       this.paddleGroup.visible = type === 'tabletennis';
       this.paddleGroup.traverse((c) => { c.visible = type === 'tabletennis'; });
     }
+    if (this.tennisRacketGroup) {
+      this.tennisRacketGroup.visible = type === 'tennis';
+      this.tennisRacketGroup.traverse((c) => { c.visible = type === 'tennis'; });
+    }
     this.applyDefaultPose(type === 'none' ? 'tabletennis' : type);
   }
 
   /**
    * Poses the avatar in a natural, athletic sports ready stance
    */
-  public applyDefaultPose(sport: 'badminton' | 'tabletennis' | 'sandbox' = 'tabletennis', isOpponent = false): void {
+  public applyDefaultPose(sport: 'badminton' | 'tabletennis' | 'tennis' | 'sandbox' = 'tabletennis', isOpponent = false): void {
     const hipY = 0.95;
     const shoulderY = 1.45; // 1.45m upright athletic shoulder height (just below 1.55m net tape)
     const headY = 1.75; // 1.75m true full-height standing athlete (visibly taller than 1.55m net tape)
@@ -406,6 +971,45 @@ export class Avatar3D {
         if (this.paddleGroup) {
           this.paddleGroup.position.set(0.28, 0.96, 0.44);
           this.paddleGroup.rotation.set(0.35, 0, -0.2);
+        }
+      }
+    } else if (sport === 'tennis') {
+      // Tennis athletic ready stance (bent knees, ready to split-step, racket held in front)
+      if (this.dominantArm === 'right') {
+        this.joints[PoseLandmark.LEFT_ELBOW].position.set(0.24, 1.05, 0.28);
+        this.joints[PoseLandmark.LEFT_WRIST].position.set(0.12, 1.08, 0.40);
+
+        this.joints[PoseLandmark.RIGHT_ELBOW].position.set(-0.30, 1.08, 0.24);
+        this.joints[PoseLandmark.RIGHT_WRIST].position.set(-0.16, 1.10, 0.42);
+
+        if (this.tennisRacketGroup) {
+          this.tennisRacketGroup.position.set(-0.16, 1.10, 0.42);
+          this.tennisRacketGroup.rotation.set(0.42, -0.15, 0.1);
+          this.tennisRacketGroup.scale.set(1.0, 1.0, 1.0);
+          this.tennisRacketGroup.visible = true;
+          this.tennisRacketGroup.traverse((c) => { c.visible = true; });
+        }
+        if (this.supportHandGroup) {
+          this.supportHandGroup.position.set(0.12, 1.08, 0.40);
+          this.supportHandGroup.rotation.set(-0.2, -0.3, 0);
+        }
+      } else {
+        this.joints[PoseLandmark.RIGHT_ELBOW].position.set(-0.24, 1.05, 0.28);
+        this.joints[PoseLandmark.RIGHT_WRIST].position.set(-0.12, 1.08, 0.40);
+
+        this.joints[PoseLandmark.LEFT_ELBOW].position.set(0.30, 1.08, 0.24);
+        this.joints[PoseLandmark.LEFT_WRIST].position.set(0.16, 1.10, 0.42);
+
+        if (this.tennisRacketGroup) {
+          this.tennisRacketGroup.position.set(0.16, 1.10, 0.42);
+          this.tennisRacketGroup.rotation.set(0.42, 0.15, -0.1);
+          this.tennisRacketGroup.scale.set(1.0, 1.0, 1.0);
+          this.tennisRacketGroup.visible = true;
+          this.tennisRacketGroup.traverse((c) => { c.visible = true; });
+        }
+        if (this.supportHandGroup) {
+          this.supportHandGroup.position.set(-0.12, 1.08, 0.40);
+          this.supportHandGroup.rotation.set(-0.2, 0.3, 0);
         }
       }
     } else {
@@ -457,7 +1061,10 @@ export class Avatar3D {
 
   public setDominantArm(arm: 'right' | 'left'): void {
     this.dominantArm = arm;
-    this.applyDefaultPose(this.racketGroup?.visible ? 'badminton' : (this.paddleGroup?.visible ? 'tabletennis' : 'badminton'));
+    const currentSport = this.currentEquipment === 'tennis'
+      ? 'tennis'
+      : (this.currentEquipment === 'tabletennis' ? 'tabletennis' : 'badminton');
+    this.applyDefaultPose(currentSport);
   }
 
   public getDominantWristWorldPosition(): THREE.Vector3 {
@@ -473,12 +1080,21 @@ export class Avatar3D {
   }
 
   public lockRacketToWrist(): void {
-    if (!this.racketGroup) return;
     const wristIdx = this.dominantArm === 'right' ? PoseLandmark.RIGHT_WRIST : PoseLandmark.LEFT_WRIST;
     const wrist = this.joints[wristIdx];
-    if (wrist) {
-      this.racketGroup.position.copy(wrist.position);
+    if (!wrist) return;
+
+    if (this.currentEquipment === 'tennis' && this.tennisRacketGroup) {
+      this.tennisRacketGroup.position.copy(wrist.position);
+      this.tennisRacketGroup.scale.set(1.0, 1.0, 1.0);
+      this.tennisRacketGroup.visible = true;
+      if (this.tennisRacketMesh) this.tennisRacketMesh.visible = true;
+      this.tennisRacketGroup.traverse((child) => { child.visible = true; });
+      return;
     }
+
+    if (!this.racketGroup) return;
+    this.racketGroup.position.copy(wrist.position);
     this.racketGroup.scale.set(1.0, 1.0, 1.0);
     this.racketGroup.visible = true;
     if (this.racketMesh) this.racketMesh.visible = true;
@@ -558,6 +1174,18 @@ export class Avatar3D {
       } else {
         this.racketGroup.visible = false;
         this.racketGroup.traverse((child) => { child.visible = false; });
+      }
+    }
+    if (this.tennisRacketGroup) {
+      if (this.currentEquipment === 'tennis') {
+        this.tennisRacketGroup.position.copy(wristPos);
+        this.tennisRacketGroup.visible = true;
+        this.tennisRacketGroup.scale.set(1.0, 1.0, 1.0);
+        this.tennisRacketGroup.traverse((child) => { child.visible = true; });
+        this.updateTennisRacketTransform(wristPos, elbowPos, shoulderPos, racketVelocity);
+      } else {
+        this.tennisRacketGroup.visible = false;
+        this.tennisRacketGroup.traverse((child) => { child.visible = false; });
       }
     }
     if (this.paddleGroup && this.currentEquipment === 'tabletennis') {
@@ -653,14 +1281,66 @@ export class Avatar3D {
     this.racketGroup.quaternion.slerp(targetQuat, 0.65);
   }
 
+  /**
+   * Computes an authentic tennis racket transform from active arm kinematics.
+   */
+  public updateTennisRacketTransform(
+    wristPos: THREE.Vector3,
+    elbowPos: THREE.Vector3,
+    shoulderPos: THREE.Vector3,
+    velocityVector: THREE.Vector3 = new THREE.Vector3(0, 0, 0)
+  ): void {
+    if (!this.tennisRacketGroup || this.currentEquipment !== 'tennis') return;
+
+    this.tennisRacketGroup.position.copy(wristPos);
+    this.tennisRacketGroup.visible = true;
+    this.tennisRacketGroup.scale.set(1.0, 1.0, 1.0);
+    if (this.tennisRacketMesh) this.tennisRacketMesh.visible = true;
+    this.tennisRacketGroup.traverse((child) => { child.visible = true; });
+
+    const forearmVec = new THREE.Vector3().subVectors(wristPos, elbowPos);
+    const forearmDir = forearmVec.length() > 0.01
+      ? forearmVec.clone().normalize()
+      : new THREE.Vector3(0, 0.45, 0.89);
+
+    const shaftDir = forearmDir.clone().lerp(new THREE.Vector3(0, 0.35, 0.92), 0.28).normalize();
+
+    const forwardRef = new THREE.Vector3(0, 0, 1);
+    let lateralX = new THREE.Vector3().crossVectors(shaftDir, forwardRef);
+    if (lateralX.lengthSq() < 0.001) {
+      lateralX.set(1, 0, 0);
+    } else {
+      lateralX.normalize();
+      if (lateralX.x < 0) lateralX.negate();
+    }
+    const normalZ = new THREE.Vector3().crossVectors(lateralX, shaftDir).normalize();
+    if (normalZ.z < 0) normalZ.negate();
+
+    const targetQuat = new THREE.Quaternion().setFromRotationMatrix(
+      new THREE.Matrix4().makeBasis(lateralX, shaftDir, normalZ)
+    );
+    this.tennisRacketGroup.quaternion.slerp(targetQuat, 0.65);
+  }
+
   // Temporal debounce state for isFullBodyStanding (15 consecutive frames ~250ms)
   private static standingDebounced = true;
   private static standingCandidate = true;
   private static standingCandidateFrames = 0;
 
+  // Frustum-Aware ProximityMode Baseline Calibration State
+  private static baselineTorsoScale = 0;
+  private static baselineScaleSamples = 0;
+
+  public static resetStandingCalibration(): void {
+    Avatar3D.baselineTorsoScale = 0;
+    Avatar3D.baselineScaleSamples = 0;
+  }
+
   /**
    * Validates if full-body standing pose is confident enough for footwork court mapping.
-   * Prevents tracking collapse during seated desk testing while fully allowing athletic stances and lunges.
+   * Features Frustum-Aware Posture Guard with ProximityMode:
+   * When user steps forward into camera FOV (torso width > 1.25x baseline calibration),
+   * knee/ankle occlusion does NOT trigger seated warnings if upper spine is vertical.
    */
   public static isFullBodyStanding(landmarks: Landmark3D[]): boolean {
     if (!landmarks || landmarks.length < 33) {
@@ -672,9 +1352,52 @@ export class Avatar3D {
     const rightAnkle = landmarks[PoseLandmark.RIGHT_ANKLE];
     const leftKnee = landmarks[PoseLandmark.LEFT_KNEE];
     const rightKnee = landmarks[PoseLandmark.RIGHT_KNEE];
+    const leftShoulder = landmarks[PoseLandmark.LEFT_SHOULDER];
+    const rightShoulder = landmarks[PoseLandmark.RIGHT_SHOULDER];
+    const nose = landmarks[PoseLandmark.NOSE];
 
-    // Visibility gate: hips must have basic visibility
+    // Visibility gates
     const hipVis = ((leftHip?.visibility ?? 0) + (rightHip?.visibility ?? 0)) * 0.5;
+    const shoulderVis = ((leftShoulder?.visibility ?? 0) + (rightShoulder?.visibility ?? 0)) * 0.5;
+
+    // Torso scale measurement (inter-clavicle distance)
+    let currentTorsoScale = 0;
+    if (leftShoulder && rightShoulder) {
+      currentTorsoScale = Math.hypot(rightShoulder.x - leftShoulder.x, rightShoulder.y - leftShoulder.y);
+    }
+
+    // 1. ProximityMode Posture Guard:
+    // When the player steps forward and torso width > 1.25x baseline calibration
+    const inProximityMode =
+      Avatar3D.baselineTorsoScale > 0 &&
+      currentTorsoScale > Avatar3D.baselineTorsoScale * 1.25;
+
+    if (inProximityMode && shoulderVis >= 0.25) {
+      // In ProximityMode, do not require knee or ankle visibility!
+      // Evaluate upper spine verticality (NOSE to MID_HIP or MID_SHOULDER to MID_HIP)
+      const midHipX = (leftHip.x + rightHip.x) * 0.5;
+      const midHipY = (leftHip.y + rightHip.y) * 0.5;
+      const refTopX = nose && (nose.visibility ?? 0) > 0.30 ? nose.x : (leftShoulder.x + rightShoulder.x) * 0.5;
+      const refTopY = nose && (nose.visibility ?? 0) > 0.30 ? nose.y : (leftShoulder.y + rightShoulder.y) * 0.5;
+
+      const spineDx = refTopX - midHipX;
+      const spineDy = refTopY - midHipY; // In camera space, nose is above hips => refTopY < midHipY
+      const spineAbsDy = Math.abs(spineDy);
+      const isUprightSpine = spineAbsDy >= 0.20 && (Math.abs(spineDx) / Math.max(0.01, spineAbsDy)) < 0.70;
+
+      // Vertical hip height relative to frame (hip should not have dropped into lower 12% of screen)
+      const isHipElevated = midHipY <= 0.88;
+
+      // Shoulder roll angle (should be athletic upright posture, not lying down)
+      const rollAngle = Math.abs(Math.atan2(rightShoulder.y - leftShoulder.y, rightShoulder.x - leftShoulder.x));
+      const isLevelShoulders = rollAngle < 0.65; // < ~37 degrees
+
+      if (isUprightSpine && isHipElevated && isLevelShoulders) {
+        // Player is visibly upright and stepping forward to take a ball on the rise!
+        return Avatar3D.updateStandingDebounce(true);
+      }
+    }
+
     if (hipVis < 0.25) return Avatar3D.updateStandingDebounce(false);
 
     // Leg & Knee visibility check
@@ -686,20 +1409,14 @@ export class Avatar3D {
     const hasKneesVisible = leftKneeVis >= 0.30 || rightKneeVis >= 0.30;
     if (!hasKneesVisible) {
       // Framing check: user is standing close to camera, knees cut off!
-      // Evaluate standing from torso height (hip to shoulder vertical distance) and torso angle.
-      const leftShoulder = landmarks[PoseLandmark.LEFT_SHOULDER];
-      const rightShoulder = landmarks[PoseLandmark.RIGHT_SHOULDER];
-      const shoulderVis = ((leftShoulder?.visibility ?? 0) + (rightShoulder?.visibility ?? 0)) * 0.5;
-
       if (shoulderVis >= 0.25 && hipVis >= 0.25 && leftShoulder && rightShoulder) {
         const shoulderY = (leftShoulder.y + rightShoulder.y) * 0.5;
         const hipY = (leftHip.y + rightHip.y) * 0.5;
-        const torsoHeight = Math.abs(hipY - shoulderY); // In 3D world coords, standing torso height is ~0.40 - 0.55m
+        const torsoHeight = Math.abs(hipY - shoulderY);
         const shoulderZ = ((leftShoulder.z ?? 0) + (rightShoulder.z ?? 0)) * 0.5;
         const hipZ = ((leftHip.z ?? 0) + (rightHip.z ?? 0)) * 0.5;
         const torsoDz = Math.abs(hipZ - shoulderZ);
 
-        // Standing torso height >= 0.28m with upright spine angle (torsoDz < 0.38m)
         if (torsoHeight >= 0.28 && torsoDz < 0.38) {
           return Avatar3D.updateStandingDebounce(true);
         }
@@ -707,12 +1424,11 @@ export class Avatar3D {
       return Avatar3D.updateStandingDebounce(false);
     }
 
-    // Vertical femur drop calculation (support both camera and world coordinate sign conventions):
+    // Vertical femur drop calculation:
     const leftDrop = Math.max(leftKnee.y - leftHip.y, leftHip.y - leftKnee.y, Math.abs(leftHip.y - leftKnee.y));
     const rightDrop = Math.max(rightKnee.y - rightHip.y, rightHip.y - rightKnee.y, Math.abs(rightHip.y - rightKnee.y));
     const verticalDrop = Math.max(leftDrop, rightDrop);
 
-    // Helper: angle between Knee -> Hip and Knee -> Ankle
     const calcKneeAngle = (hip: Landmark3D, knee: Landmark3D, ankle: Landmark3D): number => {
       const ax = hip.x - knee.x;
       const ay = hip.y - knee.y;
@@ -730,19 +1446,30 @@ export class Avatar3D {
       return (Math.acos(cosAngle) * 180) / Math.PI;
     };
 
-    // If verticalDrop >= 0.20m, the player is standing upright (even with bent athletic knees)
+    // If verticalDrop >= 0.20m, the player is standing upright
     if (verticalDrop >= 0.20) {
       let rawStanding = true;
-      const leftShoulder = landmarks[PoseLandmark.LEFT_SHOULDER];
-      const rightShoulder = landmarks[PoseLandmark.RIGHT_SHOULDER];
       if (leftShoulder && rightShoulder) {
         const shoulderSpan = Math.abs(rightShoulder.x - leftShoulder.x);
         if (shoulderSpan > 0.70) rawStanding = false;
       }
+
+      // Update baseline standing torso scale calibration while standing in full view
+      if (rawStanding && currentTorsoScale > 0.08) {
+        if (Avatar3D.baselineScaleSamples < 30) {
+          Avatar3D.baselineTorsoScale = Avatar3D.baselineScaleSamples === 0
+            ? currentTorsoScale
+            : Avatar3D.baselineTorsoScale * 0.9 + currentTorsoScale * 0.1;
+          Avatar3D.baselineScaleSamples++;
+        } else if (currentTorsoScale < Avatar3D.baselineTorsoScale * 1.15) {
+          Avatar3D.baselineTorsoScale = Avatar3D.baselineTorsoScale * 0.995 + currentTorsoScale * 0.005;
+        }
+      }
+
       return Avatar3D.updateStandingDebounce(rawStanding);
     }
 
-    // Only flag sitting if verticalDrop < 0.16m (horizontal thighs) AND both knee angles are < 105°
+    // Only flag sitting if verticalDrop < 0.16m AND both knee angles are < 105°
     if (verticalDrop < 0.16) {
       if (leftKneeVis >= 0.30 && rightKneeVis >= 0.30 && leftAnkleVis >= 0.25 && rightAnkleVis >= 0.25) {
         const leftAngle = calcKneeAngle(leftHip, leftKnee, leftAnkle);
@@ -751,12 +1478,10 @@ export class Avatar3D {
           return Avatar3D.updateStandingDebounce(false);
         }
       } else {
-        // Horizontal thighs and lower legs hidden under desk
         return Avatar3D.updateStandingDebounce(false);
       }
     }
 
-    // Default between 0.16m and 0.20m: treat as standing unless clearly seated
     return Avatar3D.updateStandingDebounce(true);
   }
 
@@ -813,7 +1538,35 @@ export class Avatar3D {
     if (enabled) {
       for (const bone of this.bones) bone.visible = false;
       if (this.racketGroup) this.racketGroup.visible = true;
+      if (this.tennisRacketGroup) this.tennisRacketGroup.visible = true;
       this.supportHandGroup.visible = true;
+    }
+
+    if (this.humanoidGroup) {
+      if (enabled) {
+        if (this.chestMesh?.parent) this.chestMesh.parent.visible = false;
+        if (this.coreMesh) this.coreMesh.visible = false;
+        if (this.pelvisMesh) this.pelvisMesh.visible = false;
+        if (this.neckMesh) this.neckMesh.visible = false;
+        if (this.humanoidHeadGroup) this.humanoidHeadGroup.visible = false;
+        if (this.leftThighMesh) this.leftThighMesh.visible = false;
+        if (this.rightThighMesh) this.rightThighMesh.visible = false;
+        if (this.leftKneeCap) this.leftKneeCap.visible = false;
+        if (this.rightKneeCap) this.rightKneeCap.visible = false;
+        if (this.leftCalfMesh) this.leftCalfMesh.visible = false;
+        if (this.rightCalfMesh) this.rightCalfMesh.visible = false;
+        if (this.leftShoeGroup) this.leftShoeGroup.visible = false;
+        if (this.rightShoeGroup) this.rightShoeGroup.visible = false;
+        if (this.leftUpperArmMesh) this.leftUpperArmMesh.visible = true;
+        if (this.rightUpperArmMesh) this.rightUpperArmMesh.visible = true;
+        if (this.leftForearmMesh) this.leftForearmMesh.visible = true;
+        if (this.rightForearmMesh) this.rightForearmMesh.visible = true;
+        if (this.leftShoulderCap) this.leftShoulderCap.visible = true;
+        if (this.rightShoulderCap) this.rightShoulderCap.visible = true;
+      } else {
+        const isHumanoid = this.avatarStyle === 'humanoid';
+        this.humanoidGroup.traverse((c) => { c.visible = isHumanoid; });
+      }
     }
   }
 
@@ -902,25 +1655,30 @@ export class Avatar3D {
   /**
    * Update bone cylinders to match current joint positions
    */
-  private updateBones(): void {
-    const upVector = new THREE.Vector3(0, 1, 0);
-    for (let b = 0; b < SKELETON_CONNECTIONS.length; b++) {
-      const [i1, i2] = SKELETON_CONNECTIONS[b];
-      const p1 = this.joints[i1].position;
-      const p2 = this.joints[i2].position;
+  protected updateBones(): void {
+    if (this.avatarStyle === 'cyber_skeleton') {
+      const upVector = Avatar3D.scratchUpVector;
+      for (let b = 0; b < SKELETON_CONNECTIONS.length; b++) {
+        const [i1, i2] = SKELETON_CONNECTIONS[b];
+        const p1 = this.joints[i1].position;
+        const p2 = this.joints[i2].position;
 
-      const bone = this.bones[b];
-      const dist = p1.distanceTo(p2);
-      // Overlap cylinder ends slightly into joint sphere centers (R=0.045m) to eliminate air gaps
-      bone.scale.set(1, Math.max(0.001, dist + 0.035), 1);
+        const bone = this.bones[b];
+        const dist = p1.distanceTo(p2);
+        // Overlap cylinder ends slightly into joint sphere centers (R=0.045m) to eliminate air gaps
+        bone.scale.set(1, Math.max(0.001, dist + 0.035), 1);
 
-      // Position bone at midpoint
-      bone.position.copy(p1).add(p2).multiplyScalar(0.5);
+        // Position bone at midpoint
+        bone.position.copy(p1).add(p2).multiplyScalar(0.5);
 
-      // Rotate bone to look from p1 to p2
-      const direction = new THREE.Vector3().subVectors(p2, p1).normalize();
-      const quaternion = new THREE.Quaternion().setFromUnitVectors(upVector, direction);
-      bone.setRotationFromQuaternion(quaternion);
+        // Rotate bone to look from p1 to p2
+        const direction = Avatar3D.scratchDir.subVectors(p2, p1).normalize();
+        const quaternion = Avatar3D.scratchQuat.setFromUnitVectors(upVector, direction);
+        bone.setRotationFromQuaternion(quaternion);
+      }
+    }
+    if (this.humanoidGroup && this.humanoidGroup.visible) {
+      this.updateHumanoidMesh();
     }
   }
 
@@ -951,23 +1709,81 @@ export class Avatar3D {
       current.lerp(target, alpha);
     };
 
-    // 1. Procedural Fixed-Height Athletic Base (Court Anchoring — Never collapses to floor)
-    // Feet: Fixed firmly on court surface at Y = 0.0m
-    // Knees: Natural athletic ready bend at Y = 0.45m
-    // Hips / Pelvis: Upright athletic standing height at Y = 0.95m
-    // Shoulders: Positioned upright at Y = 1.45m
-    // Head: Positioned upright at Y = 1.75m
-    const hipY = 0.95;
-    this.joints[PoseLandmark.LEFT_HIP].position.set(0.16, hipY, 0);
-    this.joints[PoseLandmark.RIGHT_HIP].position.set(-0.16, hipY, 0);
-    this.joints[PoseLandmark.LEFT_KNEE].position.set(0.19, 0.45, 0.06);
-    this.joints[PoseLandmark.RIGHT_KNEE].position.set(-0.19, 0.45, 0.06);
-    this.joints[PoseLandmark.LEFT_ANKLE].position.set(0.22, 0.08, -0.02);
-    this.joints[PoseLandmark.RIGHT_ANKLE].position.set(-0.22, 0.08, -0.02);
-    this.joints[PoseLandmark.LEFT_HEEL].position.set(0.22, 0.04, -0.06);
-    this.joints[PoseLandmark.RIGHT_HEEL].position.set(-0.22, 0.04, -0.06);
-    this.joints[PoseLandmark.LEFT_FOOT_INDEX].position.set(0.22, 0.00, 0.12);
-    this.joints[PoseLandmark.RIGHT_FOOT_INDEX].position.set(-0.22, 0.00, 0.12);
+    // 1. Procedural Athletic Dynamic Base (Footwork, Split-Step & Lunge Weight Transfer)
+    this.footworkTimer += frameDt;
+    const isMoving = this.footworkVel.length() > 0.25;
+    const isSplit = this.footworkIsSplitStep;
+    const isLungeRight = this.footworkLungeDir === 'right' || this.footworkVel.x > 0.8;
+    const isLungeLeft = this.footworkLungeDir === 'left' || this.footworkVel.x < -0.8;
+
+    // Ready idle bounce (balls of feet, breathing ready posture)
+    const idleBounceY = isMoving ? 0 : Math.sin(this.footworkTimer * 4.5) * 0.015;
+
+    // Weight shift and knee drop calculations
+    let hipShiftX = 0;
+    let hipHeight = 0.95 + idleBounceY;
+    let leftKneeY = 0.45 + idleBounceY;
+    let rightKneeY = 0.45 + idleBounceY;
+    let leftFootX = 0.22;
+    let rightFootX = -0.22;
+    let leftFootZ = -0.02;
+    let rightFootZ = -0.02;
+    let leftFootY = 0.08;
+    let rightFootY = 0.08;
+
+    if (isSplit) {
+      // Split-step: wide athletic base, knees bent, hips lowered
+      leftFootX = 0.32;
+      rightFootX = -0.32;
+      hipHeight = 0.88;
+      leftKneeY = 0.38;
+      rightKneeY = 0.38;
+      leftFootZ = 0.04;
+      rightFootZ = 0.04;
+    } else if (isLungeRight) {
+      // Right lateral reach / lunge: weight onto right leg (Avatar local -X is right)
+      hipShiftX = -0.08;
+      hipHeight = 0.89;
+      rightFootX = -0.36;
+      rightKneeY = 0.38;
+      leftKneeY = 0.48;
+      leftFootY = 0.10; // push-off heel raised
+      rightFootZ = 0.08;
+    } else if (isLungeLeft) {
+      // Left lateral reach / lunge: weight onto left leg (Avatar local +X is left)
+      hipShiftX = 0.08;
+      hipHeight = 0.89;
+      leftFootX = 0.36;
+      leftKneeY = 0.38;
+      rightKneeY = 0.48;
+      rightFootY = 0.10; // push-off heel raised
+      leftFootZ = 0.08;
+    } else if (this.footworkVel.z > 0.4) {
+      // Forward run / advance stride
+      const strideCycle = Math.sin(this.footworkTimer * 8.0);
+      leftFootZ = strideCycle * 0.14;
+      rightFootZ = -strideCycle * 0.14;
+      leftFootY = 0.08 + Math.max(0, strideCycle * 0.06);
+      rightFootY = 0.08 + Math.max(0, -strideCycle * 0.06);
+    } else if (this.footworkVel.z < -0.4) {
+      // Backward back-pedal stride
+      const strideCycle = Math.sin(this.footworkTimer * 8.0);
+      leftFootZ = -strideCycle * 0.12;
+      rightFootZ = strideCycle * 0.12;
+      leftFootY = 0.08 + Math.max(0, -strideCycle * 0.05);
+      rightFootY = 0.08 + Math.max(0, strideCycle * 0.05);
+    }
+
+    this.joints[PoseLandmark.LEFT_HIP].position.set(0.16 + hipShiftX, hipHeight, 0);
+    this.joints[PoseLandmark.RIGHT_HIP].position.set(-0.16 + hipShiftX, hipHeight, 0);
+    this.joints[PoseLandmark.LEFT_KNEE].position.set(leftFootX * 0.85 + hipShiftX * 0.5, leftKneeY, leftFootZ + 0.06);
+    this.joints[PoseLandmark.RIGHT_KNEE].position.set(rightFootX * 0.85 + hipShiftX * 0.5, rightKneeY, rightFootZ + 0.06);
+    this.joints[PoseLandmark.LEFT_ANKLE].position.set(leftFootX, leftFootY, leftFootZ);
+    this.joints[PoseLandmark.RIGHT_ANKLE].position.set(rightFootX, rightFootY, rightFootZ);
+    this.joints[PoseLandmark.LEFT_HEEL].position.set(leftFootX, leftFootY * 0.5, leftFootZ - 0.05);
+    this.joints[PoseLandmark.RIGHT_HEEL].position.set(rightFootX, rightFootY * 0.5, rightFootZ - 0.05);
+    this.joints[PoseLandmark.LEFT_FOOT_INDEX].position.set(leftFootX, 0.00, leftFootZ + 0.12);
+    this.joints[PoseLandmark.RIGHT_FOOT_INDEX].position.set(rightFootX, 0.00, rightFootZ + 0.12);
 
     // 2. Drive Only Upper Body with Webcam:
     // (1) Lateral spine tilt / torso lean from shoulder angle
@@ -1116,6 +1932,19 @@ export class Avatar3D {
       }
     }
 
+    if (this.tennisRacketGroup) {
+      if (this.currentEquipment === 'tennis') {
+        this.tennisRacketGroup.position.copy(wristPos);
+        this.tennisRacketGroup.visible = true;
+        this.tennisRacketGroup.scale.set(1.0, 1.0, 1.0);
+        this.tennisRacketGroup.traverse((child) => { child.visible = true; });
+        this.updateTennisRacketTransform(wristPos, elbowPos, shoulderPos, this.smoothedRacketVel);
+      } else {
+        this.tennisRacketGroup.visible = false;
+        this.tennisRacketGroup.traverse((child) => { child.visible = false; });
+      }
+    }
+
     if (this.paddleGroup) {
       if (this.currentEquipment === 'tabletennis') {
         this.paddleGroup.position.copy(wristPos);
@@ -1138,6 +1967,9 @@ export class Avatar3D {
     // Smoothly decay racket frame pulse
     if (this.racketFrameMat && this.racketFrameMat.emissiveIntensity > 0.7) {
       this.racketFrameMat.emissiveIntensity = THREE.MathUtils.lerp(this.racketFrameMat.emissiveIntensity, 0.7, 0.08);
+    }
+    if (this.tennisRacketFrameMat && this.tennisRacketFrameMat.emissiveIntensity > 0.7) {
+      this.tennisRacketFrameMat.emissiveIntensity = THREE.MathUtils.lerp(this.tennisRacketFrameMat.emissiveIntensity, 0.7, 0.08);
     }
 
     // Exponential Moving Average (EMA) smoothing on wrist and racket velocities
@@ -1212,8 +2044,12 @@ export class Avatar3D {
   }
 
   public pulseImpact(type: 'smash' | 'hit' | 'serve' = 'hit'): void {
+    const intensity = type === 'smash' ? 3.2 : (type === 'serve' ? 2.4 : 2.0);
     if (this.racketFrameMat) {
-      this.racketFrameMat.emissiveIntensity = type === 'smash' ? 3.2 : (type === 'serve' ? 2.4 : 2.0);
+      this.racketFrameMat.emissiveIntensity = intensity;
+    }
+    if (this.tennisRacketFrameMat) {
+      this.tennisRacketFrameMat.emissiveIntensity = intensity;
     }
   }
 
@@ -1248,6 +2084,19 @@ export class Avatar3D {
   }
 
   public getRacketWorldPosition(): THREE.Vector3 {
+    if (this.currentEquipment === 'tennis' && this.tennisRacketGroup) {
+      this.tennisRacketGroup.visible = true;
+      this.tennisRacketGroup.scale.set(1.0, 1.0, 1.0);
+      const pos = new THREE.Vector3();
+      this.tennisRacketGroup.getWorldPosition(pos);
+      const headOffsetY = 0.58 * (this.tennisRacketGroup.scale.y || 1);
+      const headOffset = new THREE.Vector3(0, headOffsetY, 0);
+      const quat = new THREE.Quaternion();
+      this.tennisRacketGroup.getWorldQuaternion(quat);
+      headOffset.applyQuaternion(quat);
+      pos.add(headOffset);
+      return pos;
+    }
     if (this.racketGroup) {
       this.racketGroup.visible = true;
       this.racketGroup.scale.set(1.0, 1.0, 1.0);
@@ -1277,15 +2126,16 @@ export class Avatar3D {
   }
 
   public keepRacketInViewport(_camera: THREE.PerspectiveCamera, _maxNdcY = 0.85, _minNdcY = -0.85): void {
-    if (!this.racketGroup) return;
+    if (!this.racketGroup && !this.tennisRacketGroup) return;
     this.lockRacketToWrist();
   }
 
   public getRacketStringNormal(): THREE.Vector3 {
-    if (this.racketGroup && this.racketGroup.visible) {
+    const activeGroup = (this.currentEquipment === 'tennis') ? this.tennisRacketGroup : this.racketGroup;
+    if (activeGroup && activeGroup.visible) {
       const normal = new THREE.Vector3(0, 0, 1);
       const quat = new THREE.Quaternion();
-      this.racketGroup.getWorldQuaternion(quat);
+      activeGroup.getWorldQuaternion(quat);
       normal.applyQuaternion(quat);
       return normal.normalize();
     }
@@ -1301,14 +2151,16 @@ export class Avatar3D {
     ballRadius = 0.06,
     ballPrevPos?: THREE.Vector3
   ): { hit: boolean; impactPoint: THREE.Vector3; normal: THREE.Vector3; distanceToCenter: number } {
-    if (!this.racketGroup || !this.racketGroup.visible) {
+    const activeGroup = (this.currentEquipment === 'tennis') ? this.tennisRacketGroup : this.racketGroup;
+    if (!activeGroup || !activeGroup.visible) {
       return { hit: false, impactPoint: ballPos.clone(), normal: new THREE.Vector3(0, 0, 1), distanceToCenter: 999 };
     }
 
     const headCenter = this.getRacketWorldPosition();
     const normal = this.getRacketStringNormal();
-    const headRadius = 0.22 * (this.racketGroup.scale.x || 1.15); // ~0.25m string radius
-    const halfThickness = 0.10;
+    const baseRadius = (this.currentEquipment === 'tennis') ? 0.18 : 0.22;
+    const headRadius = baseRadius * (activeGroup.scale.x || 1.0);
+    const halfThickness = (this.currentEquipment === 'tennis') ? 0.12 : 0.10;
 
     const toBall = new THREE.Vector3().subVectors(ballPos, headCenter);
     const distPerp = toBall.dot(normal);
@@ -1347,6 +2199,17 @@ export class Avatar3D {
   }
 
   public flashStringBedWhite(durationSec = 0.06): void {
+    if (this.currentEquipment === 'tennis' && this.tennisRacketStringMat) {
+      this.tennisRacketStringMat.color.setHex(0xffffff);
+      this.tennisRacketStringMat.opacity = 1.0;
+      setTimeout(() => {
+        if (this.tennisRacketStringMat) {
+          this.tennisRacketStringMat.color.setHex(0xffffff);
+          this.tennisRacketStringMat.opacity = 0.55;
+        }
+      }, durationSec * 1000);
+      return;
+    }
     if (!this.racketStringMat) return;
     this.racketStringMat.color.setHex(0xffffff);
     this.racketStringMat.opacity = 1.0;
@@ -1422,10 +2285,30 @@ export class Avatar3D {
       (this.headMesh.material as THREE.Material).transparent = isGhost;
       (this.headMesh.material as THREE.Material).opacity = isGhost ? 0.2 : 1.0;
     }
+    if (this.humanoidBodyMat) {
+      this.humanoidBodyMat.transparent = isGhost;
+      this.humanoidBodyMat.opacity = isGhost ? 0.25 : 1.0;
+    }
+    if (this.humanoidTrimMat) {
+      this.humanoidTrimMat.transparent = isGhost;
+      this.humanoidTrimMat.opacity = isGhost ? 0.35 : 1.0;
+    }
   }
 
   public setJointColor(colorHex: number): void {
     this.jointMat.color.setHex(colorHex);
     this.jointMat.emissive.setHex(colorHex);
+    if (this.humanoidTrimMat) {
+      this.humanoidTrimMat.color.setHex(colorHex);
+      this.humanoidTrimMat.emissive.setHex(colorHex);
+    }
+  }
+
+  public getAvatarStyle(): AvatarStyle {
+    return this.avatarStyle;
+  }
+
+  public destroy(): void {
+    // Three.js cleanup
   }
 }

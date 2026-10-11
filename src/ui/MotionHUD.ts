@@ -60,16 +60,25 @@ export class MotionHUD {
       sceneManager.onSceneChange((id) => {
         this.currentGameMode = id;
         this.updateEquipmentBadge();
+        if (this.actionCard) {
+          this.actionCard.style.display = id === 'boxing' ? 'none' : 'flex';
+        }
       });
     }
     this.buildDOM();
     this.bindEvents();
     this.updateEquipmentBadge();
+    if (this.actionCard && this.currentGameMode === 'boxing') {
+      this.actionCard.style.display = 'none';
+    }
   }
 
   public setGameMode(mode: GameModeId): void {
     this.currentGameMode = mode;
     this.updateEquipmentBadge();
+    if (this.actionCard) {
+      this.actionCard.style.display = mode === 'boxing' ? 'none' : 'flex';
+    }
   }
 
   private updateEquipmentBadge(): void {
@@ -80,6 +89,9 @@ export class MotionHUD {
     } else if (this.currentGameMode === 'tabletennis') {
       this.equipmentBadge.textContent = '🏓 VIRTUAL PADDLE ON HAND';
       this.equipmentBadge.style.color = '#ff4d4d';
+    } else if (this.currentGameMode === 'boxing') {
+      this.equipmentBadge.textContent = '🥊 VIRTUAL GLOVES ON HAND';
+      this.equipmentBadge.style.color = '#ff0055';
     } else {
       this.equipmentBadge.textContent = '🪞 MOTION MIRROR';
       this.equipmentBadge.style.color = '#a855f7';

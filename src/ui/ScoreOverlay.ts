@@ -317,6 +317,32 @@ export class ScoreOverlay {
           </ul>
         </div>
 
+        <!-- Lawn Tennis Card -->
+        <div class="rules-card">
+          <div class="rules-card-title">🎾 Lawn Tennis 3D Regulations</div>
+          <ul class="rules-list">
+            <li><strong>ITF Scoring Machine:</strong> Points score 0 (Love), 15, 30, 40, Deuce, and Advantage (Ad-In / Ad-Out).</li>
+            <li><strong>Service Boxes:</strong> Serves must cross the net and land in the diagonal service box.</li>
+            <li><strong>1st & 2nd Serve:</strong> Fault on 1st serve grants a 2nd serve. Double Fault awards a point to the receiver.</li>
+            <li><strong>Net Tape Let:</strong> A serve that touches the net tape and lands in the service box is a Let and replayed.</li>
+            <li><strong>Single Bounce:</strong> Ball may bounce at most once before being returned over the net.</li>
+            <li><strong>Set Scoring:</strong> First to target games leading by 2 wins the set. Tied games trigger a 7-point tiebreak.</li>
+          </ul>
+        </div>
+
+        <!-- Arcade Boxing Card -->
+        <div class="rules-card">
+          <div class="rules-card-title">🥊 Arcade Boxing 3D Pro Regulations</div>
+          <ul class="rules-list">
+            <li><strong>Match Format:</strong> 3 Rounds of 60 seconds each, or decisive Knockout (K.O.).</li>
+            <li><strong>Full-Motion Punches:</strong> Throw lightning Jabs, power Crosses, curved Hooks, and upward Uppercuts.</li>
+            <li><strong>High & Body Guard:</strong> Raise gloves in front of face to absorb 85% of incoming damage.</li>
+            <li><strong>Slips & Ducks:</strong> Shift head laterally to slip straights; drop down to duck under wild hooks.</li>
+            <li><strong>Counter Window:</strong> Slipping or blocking opponent heavy strikes triggers a 1.2s Vulnerable state for 2x Critical Damage!</li>
+            <li><strong>10-Count Knockdown:</strong> Depleting opponent HP sends them to the canvas for the referee 10-count.</li>
+          </ul>
+        </div>
+
         <!-- Controls & Gestures Card -->
         <div class="rules-card full">
           <div class="rules-card-title">🎮 Motion Tracking & Pause Controls</div>
@@ -381,10 +407,13 @@ export class ScoreOverlay {
     });
 
     this.sceneManager.onSceneChange((sceneId: string) => {
-      if (sceneId === 'sandbox') {
+      const wrapper = this.container.querySelector('.score-wrapper') as HTMLElement;
+      if (sceneId === 'sandbox' || sceneId === 'boxing') {
         this.scoreHud.style.display = 'none';
+        if (wrapper) wrapper.style.display = 'none';
       } else {
         this.scoreHud.style.display = 'flex';
+        if (wrapper) wrapper.style.display = 'flex';
       }
       this.victoryModalOverlay.style.display = 'none';
       this.pauseModalOverlay.style.display = 'none';
@@ -441,6 +470,22 @@ export class ScoreOverlay {
     this.p1ScoreText.textContent = `${score.player1Score}`;
     this.p2ScoreText.textContent = `${score.player2Score}`;
     this.rallyBadge.textContent = `RALLY ${score.rallyCount}`;
+
+    // Update sport-specific player icon
+    const p1NameEl = this.scoreHud.querySelector('.team-score-pill.player .pill-name');
+    if (p1NameEl) {
+      if (score.gameModeTitle?.includes('Tennis')) {
+        p1NameEl.textContent = '🎾 YOU';
+      } else if (score.gameModeTitle?.includes('Table')) {
+        p1NameEl.textContent = '🏓 YOU';
+      } else if (score.gameModeTitle?.includes('Badminton')) {
+        p1NameEl.textContent = '🏸 YOU';
+      } else if (score.gameModeTitle?.includes('Bowling')) {
+        p1NameEl.textContent = '🎳 YOU';
+      } else if (score.gameModeTitle?.includes('Boxing')) {
+        p1NameEl.textContent = '🥊 YOU';
+      }
+    }
 
     // Server indicator badge
     if (score.currentServer === 1) {
@@ -508,6 +553,8 @@ export class ScoreOverlay {
       }
 
       this.victoryModalOverlay.style.display = 'flex';
+    } else {
+      this.victoryModalOverlay.style.display = 'none';
     }
   }
 }
