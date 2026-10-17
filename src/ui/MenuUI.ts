@@ -138,19 +138,20 @@ export class MenuUI {
     };
     controls.appendChild(targetSelect);
 
-    // AI Difficulty Selector
+    // AI Difficulty Selector (Starter / Medium (Default) / Hard)
     const diffSelect = document.createElement('select');
     diffSelect.className = 'control-select';
     diffSelect.innerHTML = `
-      <option value="casual">Tier: Casual</option>
-      <option value="pro">Tier: Pro</option>
-      <option value="legend">Tier: Legend 🔥</option>
+      <option value="learner">Tier: Starter / Easy</option>
+      <option value="casual" selected>Tier: Medium (Default)</option>
+      <option value="pro">Tier: Hard 🔥</option>
     `;
     diffSelect.onchange = (e) => {
       const diff = (e.target as HTMLSelectElement).value as DifficultyLevel;
       this.sceneManager.setDifficulty(diff);
       this.updateMetaChips();
     };
+    controls.appendChild(diffSelect);
     // Dominant Hand Selector (Right-Handed default / Left-Handed)
     const handSelect = document.createElement('select');
     handSelect.className = 'control-select';

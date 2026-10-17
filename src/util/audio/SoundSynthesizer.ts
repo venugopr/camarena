@@ -745,6 +745,10 @@ export class SoundSynthesizer {
     noise.stop(t + dur);
   }
 
+  public boxingPunchWhoosh(velocity = 3.0): void {
+    this.boxingWhoosh(velocity * 3.0);
+  }
+
   /**
    * Brass boxing ring round bell chimes:
    * 880 Hz fundamental + 1760 Hz harmonic + metallic ring overtone with 1.8s decay.

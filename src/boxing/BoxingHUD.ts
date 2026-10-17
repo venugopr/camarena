@@ -8,12 +8,15 @@ export interface BoxingHUDState {
   maxRounds: number;
   roundTimeLeft: number; // seconds
   comboCount: number;
-  cameraPreset: 'arcade_ots' | 'first_person';
+  cameraPreset: 'classic_side' | 'wide_arena' | 'fighter_pov' | 'arcade_ots' | 'ringside' | 'first_person';
+  difficulty?: 'starter' | 'medium' | 'hard';
 }
 
 export class BoxingHUD {
   private container: HTMLElement;
   private rootEl: HTMLElement;
+  private onCameraCycleCallback?: () => void;
+  private onDifficultyChangeCallback?: (tier: 'starter' | 'medium' | 'hard') => void;
 
   // DOM Elements
   private pHealthFill!: HTMLElement;
@@ -35,6 +38,8 @@ export class BoxingHUD {
   private knockdownBanner!: HTMLElement;
   private damageVignette!: HTMLElement;
   private cameraPill!: HTMLElement;
+  private cameraPillContainer!: HTMLElement;
+  private diffButtons: Map<'starter' | 'medium' | 'hard', HTMLButtonElement> = new Map();
 
   // Timers
   private calloutTimer: any = null;
@@ -42,12 +47,26 @@ export class BoxingHUD {
   private pBufferHealth = 100;
   private oBufferHealth = 100;
 
-  constructor(container: HTMLElement) {
+  constructor(
+    container: HTMLElement,
+    onCameraCycle?: () => void,
+    onDifficultyChange?: (tier: 'starter' | 'medium' | 'hard') => void
+  ) {
     this.container = container;
+    this.onCameraCycleCallback = onCameraCycle;
+    this.onDifficultyChangeCallback = onDifficultyChange;
     this.rootEl = document.createElement('div');
     this.rootEl.className = 'boxing-hud-root';
     this.buildDOM();
     this.container.appendChild(this.rootEl);
+  }
+
+  public setOnCameraCycle(cb: () => void): void {
+    this.onCameraCycleCallback = cb;
+  }
+
+  public setOnDifficultyChange(cb: (tier: 'starter' | 'medium' | 'hard') => void): void {
+    this.onDifficultyChangeCallback = cb;
   }
 
   private buildDOM(): void {
@@ -78,7 +97,7 @@ export class BoxingHUD {
         /* Top Broadcast Banner */
         .boxing-top-bar {
           position: absolute;
-          top: 22px;
+          top: 68px;
           left: 50%;
           transform: translateX(-50%);
           display: flex;
@@ -359,7 +378,7 @@ export class BoxingHUD {
         /* Top-Left HOW TO PLAY Guide Card */
         .how-to-play-card {
           position: absolute;
-          top: 86px;
+          top: 138px;
           left: 18px;
           width: 250px;
           background: rgba(12, 16, 28, 0.92);
@@ -384,7 +403,7 @@ export class BoxingHUD {
         .boxing-controls-legend {
           position: absolute;
           bottom: 24px;
-          right: 20px;
+          left: 20px;
           background: rgba(10, 15, 25, 0.8);
           backdrop-filter: blur(8px);
           border: 1px solid rgba(255, 255, 255, 0.15);
@@ -398,24 +417,34 @@ export class BoxingHUD {
           z-index: 20;
         }
 
-        /* Camera Mode Pill (Bottom Left) */
+        /* Camera Mode Toggle Button (Top Right) */
         .camera-mode-pill {
           position: absolute;
-          bottom: 24px;
-          left: 20px;
-          background: rgba(10, 15, 25, 0.8);
-          backdrop-filter: blur(8px);
-          border: 1px solid rgba(255, 255, 255, 0.18);
+          top: 68px;
+          right: 20px;
+          background: rgba(10, 15, 25, 0.9);
+          backdrop-filter: blur(10px);
+          border: 1px solid rgba(0, 242, 254, 0.45);
           border-radius: 999px;
-          padding: 5px 14px;
-          font-size: 0.72rem;
-          font-weight: 700;
-          color: rgba(255, 255, 255, 0.85);
+          padding: 8px 16px;
+          font-size: 0.75rem;
+          font-weight: 800;
+          color: #00f2fe;
           letter-spacing: 1px;
           display: flex;
           align-items: center;
           gap: 6px;
-          z-index: 20;
+          z-index: 140;
+          pointer-events: auto;
+          cursor: pointer;
+          box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45);
+          transition: all 0.15s ease;
+        }
+        .camera-mode-pill:hover {
+          background: rgba(0, 242, 254, 0.22);
+          border-color: #00f2fe;
+          color: #ffffff;
+          box-shadow: 0 0 16px rgba(0, 242, 254, 0.5);
         }
         .how-to-play-header {
           display: flex;
@@ -461,12 +490,116 @@ export class BoxingHUD {
           color: rgba(255, 255, 255, 0.75);
           font-size: 0.7rem;
         }
+        /* Floating 3D-Projected Fighter Markers */
+        .fighter-world-marker {
+          position: absolute;
+          transform: translate(-50%, -100%);
+          padding: 4px 12px;
+          border-radius: 999px;
+          font-size: 0.72rem;
+          font-weight: 900;
+          letter-spacing: 1.4px;
+          white-space: nowrap;
+          pointer-events: none;
+          z-index: 45;
+          transition: opacity 0.15s ease;
+        }
+        .fighter-world-marker.player-marker {
+          background: rgba(6, 20, 36, 0.88);
+          border: 1.5px solid #00f2fe;
+          color: #00f2fe;
+          text-shadow: 0 0 10px rgba(0, 242, 254, 0.9);
+          box-shadow: 0 0 18px rgba(0, 242, 254, 0.55);
+        }
+        .fighter-world-marker.opponent-marker {
+          background: rgba(36, 6, 16, 0.88);
+          border: 1.5px solid #ff0055;
+          color: #ff0055;
+          text-shadow: 0 0 10px rgba(255, 0, 85, 0.9);
+          box-shadow: 0 0 18px rgba(255, 0, 85, 0.55);
+        }
+
+        /* Difficulty Level Selector Bar (Top Right, below Camera Mode button) */
+        .boxing-difficulty-selector {
+          position: absolute;
+          top: 112px;
+          right: 20px;
+          display: flex;
+          align-items: center;
+          gap: 4px;
+          background: rgba(10, 15, 25, 0.92);
+          backdrop-filter: blur(10px);
+          border: 1px solid rgba(255, 255, 255, 0.18);
+          border-radius: 999px;
+          padding: 4px 6px;
+          z-index: 140;
+          pointer-events: auto;
+          box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45);
+        }
+        .boxing-diff-label {
+          font-size: 0.65rem;
+          font-weight: 800;
+          color: rgba(255, 255, 255, 0.65);
+          letter-spacing: 1px;
+          padding: 0 6px 0 8px;
+          text-transform: uppercase;
+        }
+        .boxing-diff-btn {
+          background: transparent;
+          border: 1px solid transparent;
+          border-radius: 999px;
+          padding: 4px 11px;
+          font-size: 0.7rem;
+          font-weight: 800;
+          color: rgba(255, 255, 255, 0.72);
+          letter-spacing: 0.8px;
+          cursor: pointer;
+          transition: all 0.15s ease;
+        }
+        .boxing-diff-btn:hover {
+          color: #ffffff;
+          background: rgba(255, 255, 255, 0.1);
+        }
+        .boxing-diff-btn.active[data-tier="starter"] {
+          background: rgba(57, 255, 20, 0.2);
+          border-color: #39ff14;
+          color: #39ff14;
+          box-shadow: 0 0 12px rgba(57, 255, 20, 0.4);
+        }
+        .boxing-diff-btn.active[data-tier="medium"] {
+          background: rgba(0, 242, 254, 0.22);
+          border-color: #00f2fe;
+          color: #00f2fe;
+          box-shadow: 0 0 12px rgba(0, 242, 254, 0.45);
+        }
+        .boxing-diff-btn.active[data-tier="hard"] {
+          background: rgba(255, 0, 85, 0.25);
+          border-color: #ff0055;
+          color: #ff0055;
+          box-shadow: 0 0 12px rgba(255, 0, 85, 0.5);
+        }
       </style>
 
       <div class="boxing-vignette" id="boxing-vignette"></div>
 
-      <div class="camera-mode-pill" id="camera-mode-pill">
-        <span>📷</span> <span id="camera-mode-text">OTS [C]</span>
+      <!-- Floating World-Space Fighter Markers -->
+      <div class="fighter-world-marker player-marker" id="fighter-marker-player" style="left: 24%; top: 34%;">
+        👤 YOU (PLAYER)
+      </div>
+      <div class="fighter-world-marker opponent-marker" id="fighter-marker-opponent" style="left: 76%; top: 34%;">
+        🤖 IRON TITAN (AI)
+      </div>
+
+      <button class="camera-mode-pill" id="camera-mode-pill" title="Click or press [C] to cycle Camera View">
+        <span>📷</span> <span id="camera-mode-text">Classic Side Cam [C]</span>
+      </button>
+
+      <!-- Difficulty Level Selector (Starter / Medium (Default) / Hard) -->
+      <div class="boxing-difficulty-selector" id="boxing-difficulty-selector">
+        <span class="boxing-diff-label">AI TIER:</span>
+        <button class="boxing-diff-btn" data-tier="starter" title="Starter / Easy: AI attacks every 3.5s, 0.65s telegraph, 6-10 HP dmg, 20% block">Starter</button>
+        <button class="boxing-diff-btn active" data-tier="medium" title="Medium (Default): AI attacks every 2.2s, 0.40s telegraph, 10-14 HP dmg, 50% block">Medium</button>
+        <button class="boxing-diff-btn" data-tier="hard" title="Hard: AI attacks every 1.2s, 0.20s telegraph, 16-22 HP dmg, 80% block/slip">Hard</button>
       </div>
 
       <!-- Top-Left HOW TO PLAY Card -->
@@ -510,8 +643,8 @@ export class BoxingHUD {
         <!-- Player 1 -->
         <div class="fighter-gauge-card player">
           <div class="fighter-meta-row">
-            <span class="fighter-name cyan">🥊 YOU (CHALLENGER)</span>
-            <span class="fighter-hp-num" id="player-hp-text">100 / 100</span>
+            <span class="fighter-name cyan">👤 YOU (PLAYER)</span>
+            <span class="fighter-hp-num" id="player-hp-text">200 / 200</span>
           </div>
           <div class="health-bar-track">
             <div class="health-bar-buffer" id="player-hp-buffer" style="width: 100%;"></div>
@@ -521,15 +654,15 @@ export class BoxingHUD {
 
         <!-- Center Round & Timer -->
         <div class="round-clock-badge">
-          <span class="round-text" id="round-badge-text">ROUND 1</span>
-          <span class="clock-text" id="clock-badge-text">1:00</span>
+          <span class="round-text" id="round-badge-text">ROUND 1 / 3</span>
+          <span class="clock-text" id="clock-badge-text">0:50</span>
         </div>
 
         <!-- Opponent -->
         <div class="fighter-gauge-card opponent">
           <div class="fighter-meta-row">
-            <span class="fighter-name red">🤖 IRON TITAN (CHAMPION)</span>
-            <span class="fighter-hp-num" id="opp-hp-text">100 / 100</span>
+            <span class="fighter-name red">🤖 IRON TITAN (AI)</span>
+            <span class="fighter-hp-num" id="opp-hp-text">200 / 200</span>
           </div>
           <div class="health-bar-track">
             <div class="health-bar-buffer" id="opp-hp-buffer" style="width: 100%;"></div>
@@ -597,6 +730,35 @@ export class BoxingHUD {
     this.comboBadge = this.rootEl.querySelector('#combo-badge') as HTMLElement;
     this.knockdownBanner = this.rootEl.querySelector('#knockdown-banner') as HTMLElement;
     this.cameraPill = this.rootEl.querySelector('#camera-mode-text') as HTMLElement;
+    this.cameraPillContainer = this.rootEl.querySelector('#camera-mode-pill') as HTMLElement;
+    this.playerMarkerEl = this.rootEl.querySelector('#fighter-marker-player') as HTMLElement;
+    this.opponentMarkerEl = this.rootEl.querySelector('#fighter-marker-opponent') as HTMLElement;
+
+    if (this.cameraPillContainer) {
+      this.cameraPillContainer.onclick = (e) => {
+        e.stopPropagation();
+        if (this.onCameraCycleCallback) {
+          this.onCameraCycleCallback();
+        }
+      };
+    }
+
+    // Bind Difficulty Selector Buttons
+    const diffBtnNodes = this.rootEl.querySelectorAll('.boxing-diff-btn');
+    diffBtnNodes.forEach((node) => {
+      const btn = node as HTMLButtonElement;
+      const tier = btn.getAttribute('data-tier') as 'starter' | 'medium' | 'hard';
+      if (tier) {
+        this.diffButtons.set(tier, btn);
+        btn.onclick = (e) => {
+          e.stopPropagation();
+          this.setActiveDifficultyButton(tier);
+          if (this.onDifficultyChangeCallback) {
+            this.onDifficultyChangeCallback(tier);
+          }
+        };
+      }
+    });
 
     // Countdown & Telegraph & Guide
     const countdownBanner = this.rootEl.querySelector('#countdown-banner') as HTMLElement;
@@ -623,12 +785,36 @@ export class BoxingHUD {
     }
   }
 
+  public setActiveDifficultyButton(tier: 'starter' | 'medium' | 'hard'): void {
+    this.diffButtons.forEach((btn, key) => {
+      btn.classList.toggle('active', key === tier);
+    });
+  }
+
   private countdownBanner!: HTMLElement;
   private countdownRoundSub!: HTMLElement;
   private countdownMainText!: HTMLElement;
   private telegraphBanner!: HTMLElement;
   private telegraphText!: HTMLElement;
   private guideCard!: HTMLElement;
+  private playerMarkerEl!: HTMLElement;
+  private opponentMarkerEl!: HTMLElement;
+
+  public updateFighterMarkers(
+    playerScreen: { xPct: number; yPct: number; visible: boolean },
+    oppScreen: { xPct: number; yPct: number; visible: boolean }
+  ): void {
+    if (this.playerMarkerEl) {
+      this.playerMarkerEl.style.left = `${playerScreen.xPct.toFixed(1)}%`;
+      this.playerMarkerEl.style.top = `${playerScreen.yPct.toFixed(1)}%`;
+      this.playerMarkerEl.style.opacity = playerScreen.visible ? '1' : '0';
+    }
+    if (this.opponentMarkerEl) {
+      this.opponentMarkerEl.style.left = `${oppScreen.xPct.toFixed(1)}%`;
+      this.opponentMarkerEl.style.top = `${oppScreen.yPct.toFixed(1)}%`;
+      this.opponentMarkerEl.style.opacity = oppScreen.visible ? '1' : '0';
+    }
+  }
 
   public showCountdown(round: number, text: string): void {
     if (this.countdownBanner) {
@@ -641,6 +827,7 @@ export class BoxingHUD {
   public hideCountdown(): void {
     if (this.countdownBanner) {
       this.countdownBanner.style.display = 'none';
+      if (this.countdownMainText) this.countdownMainText.textContent = '';
     }
   }
 
@@ -700,7 +887,20 @@ export class BoxingHUD {
     this.timerText.textContent = `${mins}:${secs < 10 ? '0' : ''}${secs}`;
 
     // 5. Camera mode pill
-    this.cameraPill.textContent = state.cameraPreset === 'first_person' ? 'FPV [C]' : 'OTS [C]';
+    const camLabels: Record<string, string> = {
+      classic_side: 'Classic Side Cam [C]',
+      wide_arena: 'Wide Arena Cam [C]',
+      fighter_pov: 'Fighter POV Cam [C]',
+      arcade_ots: 'Classic Side Cam [C]',
+      ringside: 'Wide Arena Cam [C]',
+      first_person: 'Fighter POV Cam [C]',
+    };
+    this.cameraPill.textContent = camLabels[state.cameraPreset] || 'Classic Side Cam [C]';
+
+    // 6. Difficulty buttons
+    if (state.difficulty) {
+      this.setActiveDifficultyButton(state.difficulty);
+    }
   }
 
   public showCallout(badgeText: string, color = '#ffd700'): void {

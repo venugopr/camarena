@@ -1149,7 +1149,8 @@ export class Avatar3D {
     }
 
     const armVector = Avatar3D.scratchArmVector.subVectors(localTarget, shoulderPos);
-    const armLength = Math.min(1.05, Math.max(0.28, armVector.length()));
+    const maxHumanReach = 0.72;
+    const armLength = Math.min(maxHumanReach, Math.max(0.28, armVector.length()));
     const armDir = armVector.normalize();
 
     const wristPos = Avatar3D.scratchWristPos.copy(shoulderPos).addScaledVector(armDir, armLength);
@@ -1204,7 +1205,7 @@ export class Avatar3D {
       const sArmVector = Avatar3D.scratchSArmVector.subVectors(localSTarget, sShoulderPos);
 
       const isCrossBody = dominantArm === 'right' ? localSTarget.x < 0 : localSTarget.x > 0;
-      const maxReach = isCrossBody ? 0.95 : 0.78;
+      const maxReach = 0.72;
       const sArmLength = Math.min(maxReach, Math.max(0.20, sArmVector.length()));
       const sArmDir = sArmVector.normalize();
 

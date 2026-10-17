@@ -52,7 +52,7 @@ export class PunchClassifier {
 
   // Debounce timing
   private lastPunchTimestamp = 0;
-  private readonly PUNCH_DEBOUNCE_MS = 120; // 120ms debounce between punches
+  private readonly PUNCH_DEBOUNCE_MS = 180; // 180ms debounce between punches
 
   // Standing calibration baselines
   private neutralHeadY: number | null = null;
@@ -282,7 +282,7 @@ export class PunchClassifier {
     const isBelowChest = activeWrist.y < activeShoulder.y - 0.05;
     if (upwardSpeed > 1.4 && isBelowChest && elbowAngle >= 45 && elbowAngle <= 135) {
       const type: PunchType = activeArm === 'left' ? 'LEFT_UPPERCUT' : 'RIGHT_UPPERCUT';
-      const damage = Math.round(28 + (activeSpeed / 6.0) * 15);
+      const damage = Math.min(16, Math.max(12, Math.round(12 + (activeSpeed / 6.0) * 4)));
       return {
         type,
         arm: activeArm,
@@ -299,7 +299,7 @@ export class PunchClassifier {
     const lateralSpeed = Math.abs(activeVel.x);
     if (lateralSpeed > 1.5 && elbowAngle >= 50 && elbowAngle <= 130) {
       const type: PunchType = activeArm === 'left' ? 'LEFT_HOOK' : 'RIGHT_HOOK';
-      const damage = Math.round(25 + (activeSpeed / 5.5) * 14);
+      const damage = Math.min(16, Math.max(12, Math.round(12 + (activeSpeed / 5.5) * 4)));
       return {
         type,
         arm: activeArm,
@@ -316,12 +316,14 @@ export class PunchClassifier {
     const forwardSpeed = Math.abs(activeVel.z);
     if (forwardSpeed > 1.25 || (activeSpeed > 1.35 && shoulderDist > 0.28)) {
       // Determine Jab vs Cross:
-      // Lead hand is Jab, rear hand is Cross
+      // Lead hand is Jab (6–9 HP), rear hand is Cross (10–14 HP)
       const isLeadHand = this.dominantHand === 'right' ? activeArm === 'left' : activeArm === 'right';
       const type: PunchType = isLeadHand ? 'JAB' : 'CROSS';
-      const damage = isLeadHand
-        ? Math.round(15 + (activeSpeed / 6.0) * 10)
-        : Math.round(24 + (activeSpeed / 5.5) * 14);
+      const damage = isBodyPunch
+        ? Math.min(16, Math.max(12, Math.round(12 + (activeSpeed / 5.5) * 4)))
+        : isLeadHand
+          ? Math.min(9, Math.max(6, Math.round(6 + (activeSpeed / 6.0) * 3)))
+          : Math.min(14, Math.max(10, Math.round(10 + (activeSpeed / 5.5) * 4)));
 
       return {
         type,
@@ -343,7 +345,7 @@ export class PunchClassifier {
         arm: activeArm,
         speedMps: activeSpeed,
         speedKmh,
-        damage: 18,
+        damage: isBodyPunch ? 14 : isLeadHand ? 8 : 12,
         target: isBodyPunch ? 'body' : 'head',
         timestamp: nowMs,
         velocity: activeVel,
@@ -375,12 +377,12 @@ export class PunchClassifier {
     target?: TargetHurtbox
   ): void {
     const damageMap: Record<PunchType, number> = {
-      JAB: 16,
-      CROSS: 26,
-      LEFT_HOOK: 30,
-      RIGHT_HOOK: 32,
-      LEFT_UPPERCUT: 34,
-      RIGHT_UPPERCUT: 36,
+      JAB: 8,
+      CROSS: 12,
+      LEFT_HOOK: 14,
+      RIGHT_HOOK: 14,
+      LEFT_UPPERCUT: 15,
+      RIGHT_UPPERCUT: 15,
     };
     const targetMap: Record<PunchType, TargetHurtbox> = {
       JAB: 'head',
@@ -396,7 +398,7 @@ export class PunchClassifier {
       arm,
       speedMps,
       speedKmh: speedMps * 3.6,
-      damage: damageMap[type] || 20,
+      damage: damageMap[type] || 10,
       target: target || targetMap[type] || 'head',
       timestamp: performance.now(),
       velocity: { x: 0, y: 0, z: -speedMps },

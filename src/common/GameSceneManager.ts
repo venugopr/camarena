@@ -72,6 +72,10 @@ export class GameSceneManager {
 
   public setDifficulty(diff: DifficultyLevel): void {
     this.difficulty = diff;
+    if (this.activeScene && 'setDifficulty' in this.activeScene) {
+      (this.activeScene as any).setDifficulty(diff);
+      return;
+    }
     if (this.activeSceneId) {
       this.switchScene(this.activeSceneId);
     }

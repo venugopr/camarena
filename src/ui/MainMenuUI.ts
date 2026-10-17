@@ -278,19 +278,19 @@ export class MainMenuUI {
             </div>
 
             <div class="config-group">
-              <label class="config-label">AI REACTION LEVEL</label>
+              <label class="config-label">AI DIFFICULTY LEVEL</label>
               <div class="btn-toggle-row diff-toggles">
                 <button class="config-btn" data-diff="learner">
-                  <strong>Learner 🎓</strong>
-                  <small>100% gentle feeds & tutorial</small>
+                  <strong>Starter / Easy 🎓</strong>
+                  <small>Slow AI (3.6s), generous telegraph & gentle feeds</small>
                 </button>
                 <button class="config-btn active" data-diff="casual">
-                  <strong>Casual (Default)</strong>
-                  <small>65% return rate, relaxed pace</small>
+                  <strong>Medium (Default) ⚡</strong>
+                  <small>Balanced AI (2.4s), 50% guard & standard pace</small>
                 </button>
                 <button class="config-btn" data-diff="pro">
-                  <strong>Pro 🔥</strong>
-                  <small>95% return rate, corner angles</small>
+                  <strong>Hard 🔥</strong>
+                  <small>Rapid AI (1.4s), 80% guard & aggressive counters</small>
                 </button>
               </div>
             </div>
