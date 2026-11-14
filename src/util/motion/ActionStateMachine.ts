@@ -18,8 +18,8 @@ export interface ActionClassifierConfig {
 export class ActionStateMachine {
   private config: ActionClassifierConfig = {
     smashVelocityMps: 4.8,   // ~17.3 km/h at wrist (requires intentional fast swing)
-    driveVelocityMps: 2.8,   // ~10.1 km/h at wrist (fluid arm stroke)
-    liftVelocityMps: 2.2,    // ~7.9 km/h at wrist (natural gentle underhand serve/lift)
+    driveVelocityMps: 2.2,   // ~7.9 km/h at wrist (fluid arm stroke or lateral sweep)
+    liftVelocityMps: 2.0,    // ~7.2 km/h at wrist (natural gentle underhand serve/lift)
     cooldownMs: 320          // 320ms refractory period
   };
 
@@ -62,12 +62,31 @@ export class ActionStateMachine {
   ): { activeAction: ActionType; lastEvent: ActionEvent | null } {
     const isCoolingDown = timestamp - this.lastActionTime < this.config.cooldownMs;
 
-    // Check lower-body lunges continuously
+    // Determine primary swinging arm
+    const arm = metrics.dominantArm;
+    const wristIdx = arm === 'right' ? PoseLandmark.RIGHT_WRIST : PoseLandmark.LEFT_WRIST;
+    const shoulderIdx = arm === 'right' ? PoseLandmark.RIGHT_SHOULDER : PoseLandmark.LEFT_SHOULDER;
+
+    const wristVel = velocities[wristIdx] || { x: 0, y: 0, z: 0 };
+    const wristSpeed = Math3D.length(wristVel);
+    const wristSpeedKmh = wristSpeed * 3.6;
+
+    const localWrist = normalizedLandmarks[wristIdx];
+    const localShoulder = normalizedLandmarks[shoulderIdx];
+    const localWristVelX = Math3D.dot(wristVel, basis.right);
+
+    // Check lower-body lunges & active lateral hand movements (allow waist-level table tennis strokes above mid-thigh)
+    const isHandRaisedAboveHip = Boolean(localWrist && localWrist.y > -0.10);
     if (metrics.isLungingLeft) {
       this.currentAction = 'LUNGE_LEFT';
     } else if (metrics.isLungingRight) {
       this.currentAction = 'LUNGE_RIGHT';
-    } else if (!isCoolingDown) {
+    } else if (isHandRaisedAboveHip && wristSpeed >= 0.55 && (Math.abs(localWristVelX) > 0.35 || Math.abs(localWrist.x) > 0.14)) {
+      const isForehandSide = arm === 'right'
+        ? localWrist.x >= -0.02 || localWristVelX > 0.35
+        : localWrist.x <= 0.02 || localWristVelX < -0.35;
+      this.currentAction = isForehandSide ? 'FOREHAND_DRIVE' : 'BACKHAND_DRIVE';
+    } else if (wristSpeed < 0.55 || !isCoolingDown) {
       this.currentAction = 'READY_STANCE';
     }
 
@@ -75,39 +94,22 @@ export class ActionStateMachine {
       return { activeAction: this.currentAction, lastEvent: this.lastActionEvent };
     }
 
-    // Determine primary swinging arm
-    const arm = metrics.dominantArm;
-    const wristIdx = arm === 'right' ? PoseLandmark.RIGHT_WRIST : PoseLandmark.LEFT_WRIST;
-    const elbowIdx = arm === 'right' ? PoseLandmark.RIGHT_ELBOW : PoseLandmark.LEFT_ELBOW;
-    const shoulderIdx = arm === 'right' ? PoseLandmark.RIGHT_SHOULDER : PoseLandmark.LEFT_SHOULDER;
-
-    const wristVel = velocities[wristIdx] || { x: 0, y: 0, z: 0 };
-    const wristSpeed = Math3D.length(wristVel);
-    const wristSpeedKmh = wristSpeed * 3.6;
-
-    // Desk jitter suppression: Natural resting webcam pixel noise produces ~1.0-1.8 m/s.
-    // If the wrist is moving below 2.2 m/s (~7.9 km/h), do not classify as any swing/stroke action.
-    if (wristSpeed < 2.2) {
-      this.currentAction = 'READY_STANCE';
+    // Never emit stroke events when the hand is hanging down below mid-thigh or moving below 1.6 m/s
+    if (!isHandRaisedAboveHip || wristSpeed < 1.6) {
       return { activeAction: this.currentAction, lastEvent: this.lastActionEvent };
     }
 
-    // Local coordinates relative to torso/hip root
-    const localWrist = normalizedLandmarks[wristIdx];
-    const localShoulder = normalizedLandmarks[shoulderIdx];
     const elbowAngle = arm === 'right' ? metrics.rightElbowAngleDeg : metrics.leftElbowAngleDeg;
 
     // World height relative to shoulder
     const wristWorld = worldLandmarks[wristIdx];
-    const shoulderWorld = worldLandmarks[shoulderIdx];
-    const isWristAboveShoulder = localWrist.y > localShoulder.y + 0.15; // Raised high along spine axis
+    const isWristAboveShoulder = localWrist.y > localShoulder.y + 0.15;
 
     // Downward velocity along torso vertical axis
     const downwardSpeed = -wristVel.y;
     const forwardSpeed = wristVel.z;
 
     // 1. OVERHEAD SMASH DETECTION
-    // High hand + high velocity + forward/downward trajectory + extended arm
     if (isWristAboveShoulder && wristSpeed >= this.config.smashVelocityMps) {
       if (downwardSpeed > 1.2 || forwardSpeed > 1.5 || wristSpeed > 5.5) {
         const power = Math.min(100, Math.round((wristSpeed / 7.5) * 100));
@@ -131,7 +133,6 @@ export class ActionStateMachine {
         this.emitAction(event);
         return { activeAction: event.type, lastEvent: event };
       } else if (wristVel.y > 0.5) {
-        // High hand with upward punch: OVERHEAD CLEAR
         const power = Math.min(100, Math.round((wristSpeed / 6.0) * 100));
         const event: ActionEvent = {
           type: 'OVERHEAD_CLEAR',
@@ -157,11 +158,12 @@ export class ActionStateMachine {
 
     // 2. FOREHAND VS BACKHAND DRIVES
     if (wristSpeed >= this.config.driveVelocityMps) {
-      // Analyze cross-body reach in local torso frame
-      // For right hand: positive local X is right (forehand side), negative local X is left (backhand side)
-      // For left hand: inverted
-      const isForehandSide = arm === 'right' ? localWrist.x >= -0.05 : localWrist.x <= 0.05;
-      const isMovingOutward = arm === 'right' ? wristVel.x > 0.8 : wristVel.x < -0.8;
+      // Combine wrist position relative to torso and vertical/lateral swing velocity
+      // Note: localWrist.x > 0 is the anatomical right side; upward/forward swings on or from the forehand side are FOREHAND_DRIVE
+      const upwardSpeed = Math3D.dot(wristVel, basis.up);
+      const isForehandSide = arm === 'right'
+        ? localWrist.x >= -0.02 || upwardSpeed > 0.85 || localWristVelX > 0.55
+        : localWrist.x <= 0.02 || upwardSpeed > 0.85 || localWristVelX < -0.55;
 
       if (isForehandSide) {
         const power = Math.min(100, Math.round((wristSpeed / 5.5) * 100));
@@ -185,7 +187,6 @@ export class ActionStateMachine {
         this.emitAction(event);
         return { activeAction: event.type, lastEvent: event };
       } else {
-        // Cross-torso or outward snap: Backhand
         const power = Math.min(100, Math.round((wristSpeed / 5.0) * 100));
         const event: ActionEvent = {
           type: 'BACKHAND_DRIVE',
@@ -210,7 +211,7 @@ export class ActionStateMachine {
     }
 
     // 3. UNDERHAND LIFT / DROP
-    const isWristLow = localWrist.y < 0.1; // Hand below mid-torso
+    const isWristLow = localWrist.y < 0.1;
     if (isWristLow && wristSpeed >= this.config.liftVelocityMps && wristVel.y > 0.8) {
       const power = Math.min(100, Math.round((wristSpeed / 4.0) * 100));
       const isDrop = wristSpeed < 2.5;

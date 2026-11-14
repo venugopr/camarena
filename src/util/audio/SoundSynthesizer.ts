@@ -288,19 +288,34 @@ export class SoundSynthesizer {
     osc.stop(t + 0.07);
   }
 
-  public tableTennisPaddleHit(power = 1.0): void {
+  public tableTennisPaddleHit(power = 1.0, brushRatio = 0, isWoodRim = false): void {
     if (this.isMuted) return;
     const ctx = this.getContext();
     if (!ctx) return;
 
     const t = ctx.currentTime;
-    const vol = Math.min(0.65, 0.32 + Math.min(power, 3.0) * 0.10);
+    const vol = Math.min(0.70, 0.32 + Math.min(power, 3.5) * 0.10);
 
-    // Layer 1: Wood core resonant pop
+    if (isWoodRim) {
+      const rimOsc = ctx.createOscillator();
+      rimOsc.type = 'square';
+      rimOsc.frequency.setValueAtTime(1750, t);
+      rimOsc.frequency.exponentialRampToValueAtTime(520, t + 0.028);
+      const rimGain = ctx.createGain();
+      rimGain.gain.setValueAtTime(vol * 0.85, t);
+      rimGain.gain.exponentialRampToValueAtTime(0.001, t + 0.032);
+      rimOsc.connect(rimGain);
+      rimGain.connect(ctx.destination);
+      rimOsc.start(t);
+      rimOsc.stop(t + 0.035);
+      return;
+    }
+
+    // Layer 1: Wood core resonant pop + sponge compression
     const osc = ctx.createOscillator();
     osc.type = 'triangle';
-    osc.frequency.setValueAtTime(680 + Math.min(power, 3.0) * 60, t);
-    osc.frequency.exponentialRampToValueAtTime(200, t + 0.04);
+    osc.frequency.setValueAtTime(680 + Math.min(power, 3.5) * 65, t);
+    osc.frequency.exponentialRampToValueAtTime(195, t + 0.042);
 
     const gain = ctx.createGain();
     gain.gain.setValueAtTime(vol, t);
@@ -311,14 +326,15 @@ export class SoundSynthesizer {
     osc.start(t);
     osc.stop(t + 0.06);
 
-    // Layer 2: Rubber impact surface snap
-    const dur = 0.022;
+    // Layer 2: Rubber impact surface snap + tangential spin brush "zip"
+    const dur = 0.022 + brushRatio * 0.024;
     const noise = this.makeNoiseSource(ctx, dur);
     const filter = ctx.createBiquadFilter();
-    filter.type = 'highpass';
-    filter.frequency.setValueAtTime(2200, t);
+    filter.type = brushRatio > 0.35 ? 'bandpass' : 'highpass';
+    filter.frequency.setValueAtTime(brushRatio > 0.35 ? 3400 : 2200, t);
+    if (brushRatio > 0.35) filter.Q.value = 1.8;
     const noiseGain = ctx.createGain();
-    noiseGain.gain.setValueAtTime(vol * 0.75, t);
+    noiseGain.gain.setValueAtTime(vol * (0.75 + brushRatio * 0.25), t);
     noiseGain.gain.exponentialRampToValueAtTime(0.001, t + dur);
     noise.connect(filter);
     filter.connect(noiseGain);

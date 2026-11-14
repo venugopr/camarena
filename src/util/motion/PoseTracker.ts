@@ -309,6 +309,7 @@ export class PoseTracker {
   }
 
   private prevWorldLandmarks: Landmark3D[] | null = null;
+  private prevRaw2D: Landmark3D[] | null = null;
   private lowConfidenceHoldCount: number[] = new Array(33).fill(0);
 
   /**
@@ -362,10 +363,39 @@ export class PoseTracker {
     const filteredPositions = filtered.positions as Landmark3D[];
     const velocities = filtered.velocities;
 
-    // Attach visibility tags
+    // Attach visibility tags and suppress monocular Z-depth & lowered-hip velocity hallucinations at rest
+    const lHipW = sanitizedWorld3D[PoseLandmark.LEFT_HIP];
+    const rHipW = sanitizedWorld3D[PoseLandmark.RIGHT_HIP];
+    const worldHipMidY = lHipW && rHipW ? (lHipW.y + rHipW.y) * 0.5 : 0;
+    const safeDt = Math.max(0.008, dt);
+
     for (let i = 0; i < filteredPositions.length; i++) {
       filteredPositions[i].visibility = sanitizedWorld3D[i]?.visibility ?? 1.0;
+      const v = velocities[i];
+      if (v) {
+        const planarSpeed = Math.hypot(v.x, v.y);
+        const raw2DSpeed =
+          this.trackingMode === 'webcam' && this.prevRaw2D && this.prevRaw2D[i] && raw2D[i]
+            ? Math.hypot(raw2D[i].x - this.prevRaw2D[i].x, raw2D[i].y - this.prevRaw2D[i].y) / safeDt
+            : planarSpeed;
+        const isWristJoint = i === PoseLandmark.RIGHT_WRIST || i === PoseLandmark.LEFT_WRIST;
+        const isHangingAtHip =
+          this.trackingMode === 'webcam' &&
+          isWristJoint &&
+          sanitizedWorld3D[i] &&
+          sanitizedWorld3D[i].y >= worldHipMidY + 0.10 &&
+          raw2DSpeed < 0.22;
+
+        if (planarSpeed < 0.18 || (this.trackingMode === 'webcam' && raw2DSpeed < 0.11) || isHangingAtHip) {
+          v.x = 0;
+          v.y = 0;
+          v.z = 0;
+        } else if (this.trackingMode === 'webcam' && Math.abs(v.z) > planarSpeed * 1.25) {
+          v.z = Math.sign(v.z) * planarSpeed * 1.25;
+        }
+      }
     }
+    this.prevRaw2D = raw2D.map(l => ({ ...l }));
 
     // 2. Predictive Occlusion & Kinematic Dead-Reckoning
     const occlRepaired = this.occlusionPredictor.processLandmarks(filteredPositions, velocities, dt);
@@ -447,9 +477,9 @@ export class PoseTracker {
     this.syntheticAnimTime += dt;
     const animT = this.syntheticAnimTime;
 
-    // Base athletic ready stance
-    let hipY = 0.95 + Math.sin(t * 4) * 0.02; // Gentle ready bounce
-    let hipX = Math.sin(t * 1.5) * 0.1;       // Natural weight transfer
+    // Base athletic ready stance (steady at rest so rackets/paddles do not shake continuously)
+    let hipY = 0.95;
+    let hipX = 0;
     let hipZ = 0;
 
     let rightArmX = 0.35;
@@ -469,22 +499,25 @@ export class PoseTracker {
     if (this.syntheticAction === 'forehand') {
       const progress = Math.min(1.0, animT / 0.52);
       if (progress < 0.35) {
+        // Phase 1: Raise/cock racket UP and back (prepares serve without firing early)
         const p = progress / 0.35;
-        rightArmX = 0.35 + p * 0.40;
-        rightArmY = 0.75 - p * 0.12;
-        rightArmZ = 0.25 - p * 0.60;
+        rightArmX = 0.35 + p * 0.35;
+        rightArmY = 0.80 + p * 0.42;
+        rightArmZ = 0.25 - p * 0.45;
         hipX = 0.02;
-      } else if (progress < 0.65) {
-        const p = (progress - 0.35) / 0.30;
-        rightArmX = 0.75 - p * 1.05;
-        rightArmY = 0.63 + p * 0.45;
-        rightArmZ = -0.35 + p * 1.25;
+      } else if (progress < 0.72) {
+        // Phase 2: Bring racket DOWN and forward to strike the ball
+        const p = (progress - 0.35) / 0.37;
+        rightArmX = 0.70 - p * 0.90;
+        rightArmY = 1.22 - p * 0.58;
+        rightArmZ = -0.20 + p * 1.05;
         hipX = -0.02;
       } else {
-        const p = (progress - 0.65) / 0.35;
-        rightArmX = -0.30 + p * 0.65;
-        rightArmY = 1.08 - p * 0.28;
-        rightArmZ = 0.90 - p * 0.65;
+        // Phase 3: Follow-through recovery back to ready stance
+        const p = (progress - 0.72) / 0.28;
+        rightArmX = -0.20 + p * 0.55;
+        rightArmY = 0.64 + p * 0.16;
+        rightArmZ = 0.85 - p * 0.60;
       }
       if (progress >= 1.0) this.syntheticAction = 'idle';
     } else if (this.syntheticAction === 'smash') {

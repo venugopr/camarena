@@ -367,8 +367,9 @@ export class MotionHUD {
     if (!frame) return;
 
     // Update Telemetry & Speedometer with resting deadzone (< 4.0 km/h)
-    const rawSpeedKmh = Math.max(frame.metrics.rightWristSpeedKmh, frame.metrics.leftWristSpeedKmh);
-    const speedKmh = rawSpeedKmh < 4.0 ? 0 : rawSpeedKmh;
+    const isLeftDom = frame.metrics.dominantArm === 'left';
+    const rawSpeedKmh = isLeftDom ? frame.metrics.leftWristSpeedKmh : frame.metrics.rightWristSpeedKmh;
+    const speedKmh = rawSpeedKmh < 4.5 ? 0 : rawSpeedKmh;
     this.actionSpeed.textContent = `${speedKmh.toFixed(0)} KM/H`;
 
     if (speedKmh > 60) {
@@ -383,12 +384,40 @@ export class MotionHUD {
     this.meterFill.style.width = `${powerRatio}%`;
 
     this.telemetryYaw.textContent = `YAW: ${frame.metrics.torsoYawDeg.toFixed(0)}°`;
-    if (frame.metrics.isLungingRight) {
-      this.telemetryLunge.textContent = 'LUNGE: RIGHT ❯❯';
+
+    const lShoulder = frame.rawLandmarks[PoseLandmark.LEFT_SHOULDER];
+    const rShoulder = frame.rawLandmarks[PoseLandmark.RIGHT_SHOULDER];
+    const lHip = frame.rawLandmarks[PoseLandmark.LEFT_HIP];
+    const rHip = frame.rawLandmarks[PoseLandmark.RIGHT_HIP];
+    const nose = frame.rawLandmarks[PoseLandmark.NOSE];
+    const rWrist = frame.rawLandmarks[PoseLandmark.RIGHT_WRIST];
+    const lWrist = frame.rawLandmarks[PoseLandmark.LEFT_WRIST];
+    const domWrist = isLeftDom ? lWrist : rWrist;
+    const domWristVel = isLeftDom ? frame.metrics.leftWristVelocity : frame.metrics.rightWristVelocity;
+
+    const torsoScreenX = lShoulder && rShoulder ? (lShoulder.x + rShoulder.x) * 0.5 : 0.5;
+    const hipScreenY = lHip && rHip ? (lHip.y + rHip.y) * 0.5 : 0.68;
+    const isHandRaisedForPlay = domWrist ? domWrist.y < hipScreenY + 0.08 : false;
+    const neutralHandOffset = isLeftDom ? 0.02 : -0.02;
+    const handReachFromNeutral = domWrist ? (domWrist.x - torsoScreenX) - neutralHandOffset : 0;
+
+    const isBodySteppingRight = frame.metrics.isLungingRight || torsoScreenX < 0.36;
+    const isBodySteppingLeft = frame.metrics.isLungingLeft || torsoScreenX > 0.64;
+    const isHandMovingRight = isHandRaisedForPlay && ((domWristVel && domWristVel.x < -0.45) || handReachFromNeutral < -0.09);
+    const isHandMovingLeft = isHandRaisedForPlay && ((domWristVel && domWristVel.x > 0.45) || handReachFromNeutral > 0.09);
+
+    if (isBodySteppingRight) {
+      this.telemetryLunge.textContent = 'MOVE: RIGHT ❯❯';
       this.telemetryLunge.style.color = '#39ff14';
-    } else if (frame.metrics.isLungingLeft) {
-      this.telemetryLunge.textContent = 'LUNGE: ❮❮ LEFT';
+    } else if (isBodySteppingLeft) {
+      this.telemetryLunge.textContent = 'MOVE: ❮❮ LEFT';
       this.telemetryLunge.style.color = '#39ff14';
+    } else if (isHandMovingRight) {
+      this.telemetryLunge.textContent = 'HAND: RIGHT ❯❯';
+      this.telemetryLunge.style.color = '#00f2fe';
+    } else if (isHandMovingLeft) {
+      this.telemetryLunge.textContent = 'HAND: ❮❮ LEFT';
+      this.telemetryLunge.style.color = '#00f2fe';
     } else {
       this.telemetryLunge.textContent = 'LUNGE: NEUTRAL';
       this.telemetryLunge.style.color = 'inherit';
@@ -397,8 +426,6 @@ export class MotionHUD {
     this.telemetryFps.textContent = `FPS: ${this.tracker.getFps() || 60}`;
 
     // Live Depth & Distance Guidance
-    const lShoulder = frame.rawLandmarks[PoseLandmark.LEFT_SHOULDER];
-    const rShoulder = frame.rawLandmarks[PoseLandmark.RIGHT_SHOULDER];
     const depthEl = this.pipContainer.querySelector('#pip-depth-indicator') as HTMLElement;
     if (depthEl && lShoulder && rShoulder && (lShoulder.visibility ?? 1) > 0.35 && (rShoulder.visibility ?? 1) > 0.35) {
       const shoulderSpan = Math.abs(lShoulder.x - rShoulder.x);
@@ -414,10 +441,7 @@ export class MotionHUD {
       }
     }
 
-    // Update Posture guidance badge
-    const nose = frame.rawLandmarks[PoseLandmark.NOSE];
-    const rWrist = frame.rawLandmarks[PoseLandmark.RIGHT_WRIST];
-    const lWrist = frame.rawLandmarks[PoseLandmark.LEFT_WRIST];
+    // Update Posture & Hand Movement guidance badge
     const isHandRaised = Boolean(
       rWrist && lWrist && nose &&
       (rWrist.visibility ?? 1) > 0.4 &&
@@ -430,15 +454,29 @@ export class MotionHUD {
       this.postureBadge.textContent = '🙌 PAUSE GESTURE';
       this.postureBadge.style.background = 'rgba(255, 0, 85, 0.85)';
       this.postureBadge.style.color = '#fff';
-    } else if (frame.metrics.isLungingRight) {
-      this.postureBadge.textContent = 'LUNGE RIGHT ❯❯';
+    } else if (isBodySteppingRight) {
+      this.postureBadge.textContent = 'STEP RIGHT ❯❯';
       this.postureBadge.style.background = 'rgba(57, 255, 20, 0.2)';
       this.postureBadge.style.color = '#39ff14';
-    } else if (frame.metrics.isLungingLeft) {
-      this.postureBadge.textContent = '❮❮ LUNGE LEFT';
+    } else if (isBodySteppingLeft) {
+      this.postureBadge.textContent = '❮❮ STEP LEFT';
       this.postureBadge.style.background = 'rgba(57, 255, 20, 0.2)';
       this.postureBadge.style.color = '#39ff14';
-    } else if (frame.activeAction && frame.activeAction !== 'READY_STANCE') {
+    } else if (isHandMovingRight) {
+      this.postureBadge.textContent = 'HAND RIGHT ❯❯';
+      this.postureBadge.style.background = 'rgba(0, 242, 254, 0.2)';
+      this.postureBadge.style.color = '#00f2fe';
+      if (speedKmh < 10) {
+        this.actionTitle.textContent = 'HAND RIGHT (FH)';
+      }
+    } else if (isHandMovingLeft) {
+      this.postureBadge.textContent = '❮❮ HAND LEFT';
+      this.postureBadge.style.background = 'rgba(0, 242, 254, 0.2)';
+      this.postureBadge.style.color = '#00f2fe';
+      if (speedKmh < 10) {
+        this.actionTitle.textContent = 'HAND LEFT (BH)';
+      }
+    } else if (isHandRaisedForPlay && speedKmh > 0 && frame.activeAction && frame.activeAction !== 'READY_STANCE') {
       this.postureBadge.textContent = frame.activeAction.replace('_', ' ');
       this.postureBadge.style.background = 'rgba(0, 242, 254, 0.2)';
       this.postureBadge.style.color = '#00f2fe';
@@ -446,6 +484,9 @@ export class MotionHUD {
       this.postureBadge.textContent = 'READY STANCE';
       this.postureBadge.style.background = 'rgba(0, 0, 0, 0.6)';
       this.postureBadge.style.color = '#94a3b8';
+      if (speedKmh === 0) {
+        this.actionTitle.textContent = 'READY STANCE';
+      }
     }
 
     // Render 2D Skeleton in PIP overlay

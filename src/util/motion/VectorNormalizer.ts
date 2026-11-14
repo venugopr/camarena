@@ -148,17 +148,17 @@ export class VectorNormalizer {
     };
 
     // Local Right vector (from left hip towards right hip)
-    let right = Math3D.normalize(Math3D.sub(rightHip, leftHip));
+    const right = Math3D.normalize(Math3D.sub(rightHip, leftHip));
 
     // Spine vector (from hip midpoint towards shoulder midpoint)
     const spine = Math3D.sub(midShoulder, origin);
 
     // Gram-Schmidt orthogonalization: ensure Up is perpendicular to Right
     const rightProj = Math3D.scale(right, Math3D.dot(spine, right));
-    let up = Math3D.normalize(Math3D.sub(spine, rightProj));
+    const up = Math3D.normalize(Math3D.sub(spine, rightProj));
 
     // Forward vector (perpendicular to coronal plane: Right cross Up)
-    let forward = Math3D.normalize(Math3D.cross(right, up));
+    const forward = Math3D.normalize(Math3D.cross(right, up));
 
     // Calculate torso angles in degrees
     const torsoYawDeg = (Math.atan2(forward.x, forward.z) * 180) / Math.PI;
@@ -248,7 +248,21 @@ export class VectorNormalizer {
     const rightWristSpeedKmh = rightSpeedMps * 3.6;
     const leftWristSpeedKmh = leftSpeedMps * 3.6;
 
-    const dominantArm = this.dominantHand;
+    // Active-hand auto-selection: if the configured dominant hand is hanging down idle at the hip
+    // while the other hand is actively raised above the waist, track the raised hand seamlessly.
+    let dominantArm = this.dominantHand;
+    if (rightWrist && leftWrist) {
+      const hipY = basis.origin.y;
+      const rightHanging = rightWrist.y >= hipY - 0.03 && rightSpeedMps < 0.6;
+      const leftHanging = leftWrist.y >= hipY - 0.03 && leftSpeedMps < 0.6;
+      const rightRaised = rightWrist.y < hipY - 0.10;
+      const leftRaised = leftWrist.y < hipY - 0.10;
+      if (this.dominantHand === 'right' && rightHanging && leftRaised) {
+        dominantArm = 'left';
+      } else if (this.dominantHand === 'left' && leftHanging && rightRaised) {
+        dominantArm = 'right';
+      }
+    }
 
     // Lower body kinematics: lunge and weight shift
     const currentHipHeight = basis.origin.y;
@@ -268,7 +282,6 @@ export class VectorNormalizer {
     }
 
     // Lunge depth: hip center dropping lower than baseline (in meters)
-    // Note: in world coords, -y is up or down depending on camera, here we measure relative offset
     const lungeDepth = Math.max(0, currentHipHeight - this.neutralHipHeight);
 
     // Lateral weight distribution: projection of hip center relative to ankle midpoint
@@ -286,10 +299,13 @@ export class VectorNormalizer {
       Math3D.sub(leftAnkle, leftKnee)
     );
 
-    // Lunge detection criteria: widened stance + deep knee bend + hip drop
-    const isStanceWidened = currentAnkleWidth > (this.neutralAnkleWidth * 1.3);
-    const isLungingRight = isStanceWidened && (rightKneeAngle < 135 || lateralShiftRatio > 0.35);
-    const isLungingLeft = isStanceWidened && (leftKneeAngle < 135 || lateralShiftRatio < -0.35);
+    // Lunge & Lateral Step Detection:
+    // Detects both deep wide-stance lunges and standing lateral steps/weight shifts to right or left
+    const isStanceWidened = currentAnkleWidth > (this.neutralAnkleWidth * 1.25);
+    const isSteppingRight = basis.origin.x < -0.14 || (!isStanceWidened && lateralShiftRatio < -0.25);
+    const isSteppingLeft = basis.origin.x > 0.14 || (!isStanceWidened && lateralShiftRatio > 0.25);
+    const isLungingRight = (isStanceWidened && (rightKneeAngle < 135 || lateralShiftRatio > 0.35)) || isSteppingRight;
+    const isLungingLeft = (isStanceWidened && (leftKneeAngle < 135 || lateralShiftRatio < -0.35)) || isSteppingLeft;
 
     // Jump detection: both ankles elevated significantly
     const isInAir = (currentHipHeight < this.neutralHipHeight - 0.15);

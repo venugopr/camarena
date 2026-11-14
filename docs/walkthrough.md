@@ -1,6 +1,12 @@
 # Walkthrough — CamArena: Modular Multi-Game Motion Tracking Sports Platform
 
-**CamArena** is an athletic 3D motion tracking sports arena built with **HTML5, TypeScript, Three.js, MediaPipe Pose, and Web Audio API**. It supports **Badminton 3D**, **Table Tennis 3D**, and a **Motion Mirror & Biomechanical Calibration Sandbox**.
+**CamArena** is an athletic 3D motion tracking sports arena built with **HTML5, TypeScript, Three.js, MediaPipe Pose, and Web Audio API**. It supports **Bowling 3D Pro**, **Boxing 3D Pro**, **Table Tennis 3D Pro**, **Lawn Tennis 3D Pro**, **Badminton 3D**, and a **Motion Mirror & Biomechanical Calibration Sandbox**.
+
+> 📚 **Detailed Sports Wiki**: For deep dives into governing rules, biomechanics, aerodynamics, continuous collision swept volumes, and AI engines, visit the [**CamArena Sports Wiki**](file:///docs/wiki/README.md):
+> - 🎳 [Arcade Bowling 3D Pro Wiki](file:///docs/wiki/bowling.md)
+> - 🥊 [Arcade Boxing 3D Pro Wiki](file:///docs/wiki/boxing.md)
+> - 🏓 [Table Tennis 3D Pro Wiki](file:///docs/wiki/table_tennis.md)
+> - 🎾 [Lawn Tennis 3D Pro Wiki](file:///docs/wiki/lawn_tennis.md)
 
 This document details all implemented features, user experience overhauls, gameplay mechanics, controls, and verification results.
 

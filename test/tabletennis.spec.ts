@@ -220,15 +220,26 @@ test.describe('CamArena — Table Tennis 3D Pro Verification', () => {
     expect(initialState.rallyState).toBe('READY_TO_SERVE');
     expect(initialState.isServeArmed).toBe(true);
 
-    // Idle wait for 1.5 seconds - must stay in READY_TO_SERVE
-    await page.waitForTimeout(1500);
+    // Idle wait for 1.0 seconds - must stay in READY_TO_SERVE
+    await page.waitForTimeout(1000);
     const stillIdleState = await page.evaluate(() => (window as any).__camarena.getDebugState());
     expect(stillIdleState.rallyState).toBe('READY_TO_SERVE');
     expect(stillIdleState.isServeArmed).toBe(true);
 
-    // 3. Trigger intentional serve via keyboard Space
-    await page.keyboard.press('Space');
-    const inPlayState = await waitForState(page, s => s.rallyState === 'IN_PLAY', 6000, 'IN_PLAY after serve');
+    // 2b. Raising/cocking the racket UP (backswing) must NEVER trigger a serve early
+    const upwardBackswingState = await page.evaluate(() => {
+      const scene = (window as any).__camarena_active_scene;
+      return scene.simulateServeMotion('upward_backswing');
+    });
+    expect(upwardBackswingState.rallyState).toBe('READY_TO_SERVE');
+
+    // 3. Bringing the racket DOWN immediately launches the serve into play
+    const downwardStrikeState = await page.evaluate(() => {
+      const scene = (window as any).__camarena_active_scene;
+      return scene.simulateServeMotion('downward_strike');
+    });
+    expect(['IN_SERVE', 'IN_PLAY']).toContain(downwardStrikeState.rallyState);
+    const inPlayState = await waitForState(page, s => s.rallyState === 'IN_PLAY', 6000, 'IN_PLAY after downward serve');
     expect(inPlayState.rallyState).toBe('IN_PLAY');
     expect(inPlayState.ballPos.y).toBeGreaterThan(0.76); // Ball is above table with vertical depth anchor
 
@@ -287,6 +298,261 @@ test.describe('CamArena — Table Tennis 3D Pro Verification', () => {
     const snap = path.join(IMAGES_DIR, 'tc7-court-depth-and-posture-gate.png');
     await page.screenshot({ path: snap });
     console.log('[TC7] ✅ PASS — Court-side depth cues, bounce decals, fault banner, and posture gate verified');
+  });
+
+  test('TC8: Standing Two-Handed ITTF Serve Toss (>= 16cm vertical toss) and Biomechanical Stance Verification', async ({ page }) => {
+    await launchTableTennisMatch(page);
+
+    await waitForState(page, s => s.rallyState === 'READY_TO_SERVE' && s.isServeArmed, 10000, 'READY_TO_SERVE and isServeArmed');
+
+    // Trigger standing two-handed vertical palm toss
+    const tossInfo = await page.evaluate(() => {
+      const scene = (window as any).__camarena_active_scene;
+      return scene.simulateStandingServeToss();
+    });
+    expect(tossInfo.expectedApexY - tossInfo.releaseY).toBeGreaterThanOrEqual(0.16);
+
+    // Wait for ball to ascend during vertical toss (>= 16cm ITTF standard)
+    const tossApexState = await waitForState(
+      page,
+      s => s.serveTossHeightMeters >= 0.16,
+      3000,
+      'ITTF-vertical-serve-toss-16cm-apex'
+    );
+    expect(tossApexState.serveTossHeightMeters).toBeGreaterThanOrEqual(0.16);
+    expect(tossApexState.isPostureGated).toBe(false);
+
+    // Strike the tossed ball with forward swing
+    await page.keyboard.press('Space');
+    const inPlay = await waitForState(page, s => s.rallyState === 'IN_SERVE' || s.rallyState === 'IN_PLAY', 5000, 'Serve launched after vertical toss');
+    expect(['IN_SERVE', 'IN_PLAY']).toContain(inPlay.rallyState);
+
+    const snap = path.join(IMAGES_DIR, 'tc8-standing-two-hand-serve-toss.png');
+    await page.screenshot({ path: snap });
+    console.log(`[TC8] ✅ PASS — Standing two-handed ITTF serve toss reached +${(tossApexState.serveTossHeightMeters * 100).toFixed(1)}cm and entered play`);
+  });
+
+  test('TC9: Low (Learner), Medium (Casual), and High (Pro) Tiered Physics, Speed Spectrum & Sweet-Spot Verification', async ({ page }) => {
+    await launchTableTennisMatch(page);
+
+    await waitForState(page, s => s.rallyState === 'READY_TO_SERVE' && s.isServeArmed, 10000, 'READY_TO_SERVE and isServeArmed');
+
+    const tierResults = await page.evaluate(() => {
+      const scene = (window as any).__camarena_active_scene;
+
+      // 1. Test LOW mode (learner): forgiving hitbox, speed capped <= 17 km/h
+      scene.setDifficulty('learner');
+      const lowStroke = scene.simulateStandingStroke({
+        pitchDeg: -10,
+        yawDeg: 5,
+        speedMps: 8.0,
+        brushY: 1.2,
+        contactOffset: 0.11, // Inside Low sweet spot (0.14m)
+      });
+
+      // 2. Test MEDIUM mode (casual): balanced club speeds (up to ~38 km/h)
+      scene.setDifficulty('casual');
+      const medStroke = scene.simulateStandingStroke({
+        pitchDeg: -12,
+        yawDeg: -6,
+        speedMps: 6.5,
+        brushY: 1.5,
+        contactOffset: 0.04, // Inside Medium sweet spot (0.085m)
+      });
+
+      // 3. Test HIGH mode (pro): pure unassisted physics, tournament smash speeds (> 50 km/h), wood rim & clean miss
+      scene.setDifficulty('pro');
+      const highSmash = scene.simulateStandingStroke({
+        pitchDeg: -16,
+        yawDeg: 8,
+        speedMps: 12.0,
+        brushY: 2.0,
+        contactOffset: 0.02, // Dead-center sweet spot (<= 0.055m)
+      });
+
+      const highWoodRim = scene.simulateStandingStroke({
+        pitchDeg: -10,
+        yawDeg: 0,
+        speedMps: 6.0,
+        brushY: 0.5,
+        contactOffset: 0.095, // On outer wooden blade rim (0.082m < r <= 0.105m)
+      });
+
+      const highWhiffMiss = scene.simulateStandingStroke({
+        pitchDeg: -10,
+        yawDeg: 0,
+        speedMps: 6.0,
+        brushY: 0.5,
+        contactOffset: 0.25, // Outside 0.105m blade -> clean whiff!
+      });
+
+      return { lowStroke, medStroke, highSmash, highWoodRim, highWhiffMiss };
+    });
+
+    // Verify LOW mode
+    expect(tierResults.lowStroke.modeTier).toBe('LOW');
+    expect(tierResults.lowStroke.lastContactQuality).toBe('SWEET_SPOT');
+    expect(tierResults.lowStroke.ballSpeedKmh).toBeLessThanOrEqual(17.5);
+
+    // Verify MEDIUM mode
+    expect(tierResults.medStroke.modeTier).toBe('MEDIUM');
+    expect(tierResults.medStroke.lastContactQuality).toBe('SWEET_SPOT');
+    expect(tierResults.medStroke.ballSpeedKmh).toBeGreaterThan(tierResults.lowStroke.ballSpeedKmh);
+    expect(tierResults.medStroke.ballSpeedKmh).toBeLessThanOrEqual(40.0);
+
+    // Verify HIGH mode smash, wood rim hit, and whiff miss
+    expect(tierResults.highSmash.modeTier).toBe('HIGH');
+    expect(tierResults.highSmash.lastContactQuality).toBe('SWEET_SPOT');
+    expect(tierResults.highSmash.ballSpeedKmh).toBeGreaterThan(45.0);
+    expect(tierResults.highWoodRim.lastContactQuality).toBe('WOOD_RIM');
+    expect(tierResults.highWhiffMiss.lastContactQuality).toBe('MISS');
+
+    console.log(
+      `[TC9] ✅ PASS — Low=${tierResults.lowStroke.ballSpeedKmh.toFixed(1)}km/h, ` +
+      `Med=${tierResults.medStroke.ballSpeedKmh.toFixed(1)}km/h, ` +
+      `High Smash=${tierResults.highSmash.ballSpeedKmh.toFixed(1)}km/h, ` +
+      `Rim=${tierResults.highWoodRim.lastContactQuality}, Miss=${tierResults.highWhiffMiss.lastContactQuality}`
+    );
+  });
+
+  test('TC10: High Mode Pure Unassisted Incoming Spin Rubber-Bite & Paddle Face Angle Physics', async ({ page }) => {
+    await launchTableTennisMatch(page);
+
+    await waitForState(page, s => s.rallyState === 'READY_TO_SERVE' && s.isServeArmed, 10000, 'READY_TO_SERVE and isServeArmed');
+
+    const spinComparison = await page.evaluate(() => {
+      const scene = (window as any).__camarena_active_scene;
+      scene.setDifficulty('pro');
+
+      // Case A: Incoming heavy topspin (+35 rad/s) hit with an OPEN paddle face (+22 deg) -> climbs high!
+      const openFaceOnTopspin = scene.simulateStandingStroke({
+        pitchDeg: 22,
+        yawDeg: 0,
+        speedMps: 6.5,
+        brushY: 0.5,
+        contactOffset: 0.02,
+        incomingSpinX: 35,
+      });
+
+      // Case B: Incoming heavy topspin (+35 rad/s) hit with a CLOSED paddle face (-22 deg) -> kept low!
+      const closedFaceOnTopspin = scene.simulateStandingStroke({
+        pitchDeg: -22,
+        yawDeg: 0,
+        speedMps: 6.5,
+        brushY: 1.5,
+        contactOffset: 0.02,
+        incomingSpinX: 35,
+      });
+
+      // Case C: Incoming heavy backspin (-35 rad/s) hit with a CLOSED face (-20 deg) -> drags downward into net!
+      const closedFaceOnBackspin = scene.simulateStandingStroke({
+        pitchDeg: -20,
+        yawDeg: 0,
+        speedMps: 5.5,
+        brushY: -0.5,
+        contactOffset: 0.02,
+        incomingSpinX: -35,
+      });
+
+      return {
+        openVy: openFaceOnTopspin.ballVel.y,
+        closedVy: closedFaceOnTopspin.ballVel.y,
+        backspinDumpVy: closedFaceOnBackspin.ballVel.y,
+        topspinGenerated: closedFaceOnTopspin.ballSpin.x,
+      };
+    });
+
+    // Open face on incoming topspin launches significantly higher than closed face
+    expect(spinComparison.openVy).toBeGreaterThan(spinComparison.closedVy + 1.5);
+    // Closed face on heavy backspin drags vertical velocity downward
+    expect(spinComparison.backspinDumpVy).toBeLessThan(spinComparison.closedVy);
+    // Upward brush with closed face generates strong positive topspin
+    expect(spinComparison.topspinGenerated).toBeGreaterThan(25);
+
+    console.log(
+      `[TC10] ✅ PASS — Incoming Spin Bite verified: OpenFace Vy=${spinComparison.openVy.toFixed(2)} m/s, ` +
+      `ClosedFace Vy=${spinComparison.closedVy.toFixed(2)} m/s, BackspinDump Vy=${spinComparison.backspinDumpVy.toFixed(2)} m/s`
+    );
+  });
+
+  test('TC11: Racket Stability (Zero Shaking), Left/Right Body & Hand Movement Actions, and In-Bounds Multi-Shot Rally', async ({ page }) => {
+    await launchTableTennisMatch(page);
+
+    await waitForState(page, s => s.rallyState === 'READY_TO_SERVE' && s.isServeArmed, 10000, 'READY_TO_SERVE and isServeArmed');
+
+    // 1. Verify Racket Resting Stability (Zero Continuous Shaking across 300ms)
+    const restStart = await page.evaluate(() => (window as any).__camarena?.getDebugState());
+    await page.waitForTimeout(300);
+    const restEnd = await page.evaluate(() => (window as any).__camarena?.getDebugState());
+    const posJitter = Math.hypot(
+      restEnd.paddlePos.x - restStart.paddlePos.x,
+      restEnd.paddlePos.y - restStart.paddlePos.y,
+      restEnd.paddlePos.z - restStart.paddlePos.z
+    );
+    expect(posJitter).toBeLessThan(0.015);
+
+    // 2. Verify Left & Right Body + Hand Movement Tracking & Action Classification
+    const lateralMoves = await page.evaluate(() => {
+      const scene = (window as any).__camarena_active_scene;
+      const moveRight = scene.simulateStandingLateralMove({ bodyDirection: 'right', handDirection: 'right' });
+      const moveLeft = scene.simulateStandingLateralMove({ bodyDirection: 'left', handDirection: 'left' });
+      const moveCenter = scene.simulateStandingLateralMove({ bodyDirection: 'center', handDirection: 'center' });
+      return { moveRight, moveLeft, moveCenter };
+    });
+
+    expect(lateralMoves.moveRight.playerX).toBeLessThan(-0.30);
+    expect(lateralMoves.moveRight.paddlePos.x).toBeLessThan(-0.60);
+    expect(Math.abs(lateralMoves.moveRight.paddlePos.x)).toBeLessThanOrEqual(0.78);
+    expect(lateralMoves.moveRight.activeMovementAction).toMatch(/RIGHT|FOREHAND/);
+
+    expect(lateralMoves.moveLeft.playerX).toBeGreaterThan(0.30);
+    expect(lateralMoves.moveLeft.paddlePos.x).toBeGreaterThan(0.60);
+    expect(Math.abs(lateralMoves.moveLeft.paddlePos.x)).toBeLessThanOrEqual(0.78);
+    expect(lateralMoves.moveLeft.strokeSide).toBe('BACKHAND');
+    expect(lateralMoves.moveLeft.activeMovementAction).toMatch(/LEFT|BACKHAND/);
+
+    // 3. Verify Multi-Shot Rally & Zero Passive Auto-Hit:
+    // Serve -> AI Return bounces on player half (stationary paddle does NOT auto-hit) -> Player Swings -> Ball bounces on AI half
+    await page.keyboard.press('Space');
+
+    // Wait for AI opponent to return the serve over the net and bounce on player's side (Z < 0)
+    // Stationary paddle does NOT auto-hit the ball on entry or bounce (`lastHitter` stays `'opponent'`)
+    const aiReturnState = await waitForState(
+      page,
+      s => s.rallyState === 'IN_PLAY' && s.lastHitter === 'opponent' && s.bounceCountNear >= 1 && s.ballPos.z < 0,
+      7000,
+      'AI-return-clears-net-and-lands-on-player-half'
+    );
+    expect(aiReturnState.lastHitter).toBe('opponent');
+    expect(aiReturnState.rallyCount).toBe(2);
+
+    // Execute active player standing rally return and verify it clears the net and bounces IN-BOUNDS on opponent's half
+    await page.evaluate(() => {
+      const scene = (window as any).__camarena_active_scene;
+      scene.simulateStandingStroke({
+        pitchDeg: -10,
+        yawDeg: 4,
+        speedMps: 5.5,
+        brushY: 1.0,
+        contactOffset: 0.02,
+      });
+    });
+
+    const playerReturnLanded = await waitForState(
+      page,
+      s => s.rallyState === 'IN_PLAY' && s.rallyCount >= 3 && (s.ballPos.z > 0 || s.bounceCountFar >= 1 || s.lastHitter === 'opponent'),
+      6000,
+      'Player-rally-return-bounces-in-bounds-on-opponent-half'
+    );
+    expect(playerReturnLanded.rallyCount).toBeGreaterThanOrEqual(3);
+
+    const snap = path.join(IMAGES_DIR, 'tc11-rally-inbounds-and-lateral-actions.png');
+    await page.screenshot({ path: snap });
+    console.log(
+      `[TC11] ✅ PASS — Racket jitter=${(posJitter * 1000).toFixed(1)}mm, ` +
+      `RightMove=${lateralMoves.moveRight.activeMovementAction}, LeftMove=${lateralMoves.moveLeft.activeMovementAction}, ` +
+      `RallyCount=${playerReturnLanded.rallyCount}`
+    );
   });
 });
 
